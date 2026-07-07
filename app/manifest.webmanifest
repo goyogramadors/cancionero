@@ -1,0 +1,14 @@
+{
+  "name": "Cancionero",
+  "short_name": "Cancionero",
+  "description": "Cancionero propio: letras, acordes, transposición y práctica al piano.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    { "src": "pwa/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

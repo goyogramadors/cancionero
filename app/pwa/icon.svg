@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#ffffff"/>
+  <rect x="16" y="16" width="480" height="480" rx="72" fill="none" stroke="#141414" stroke-width="20"/>
+  <!-- clave: nota -->
+  <circle cx="188" cy="330" r="46" fill="#141414"/>
+  <rect x="226" y="150" width="20" height="188" fill="#141414"/>
+  <path d="M246 150 L360 124 L360 172 L246 198 Z" fill="#141414"/>
+  <!-- teclas -->
+  <g stroke="#141414" stroke-width="12" fill="none">
+    <line x1="150" y1="410" x2="362" y2="410"/>
+  </g>
+</svg>

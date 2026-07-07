@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <title>Cancionero</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="pwa/icon.svg">
+  <link rel="apple-touch-icon" href="pwa/icon.svg">
+  <link rel="stylesheet" href="css/base.css">
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <span class="wordmark">Cancionero</span>
+      <nav class="tabs" id="navPrimary" role="tablist"></nav>
+      <div id="navSecondary"></div>
+    </header>
+    <main id="view"></main>
+  </div>
+
+  <!-- Núcleo (orden importa: primero teoría/registro/utilidades/datos) -->
+  <script src="core/music.js"></script>
+  <script src="core/registry.js"></script>
+  <script src="core/ui.js"></script>
+  <script src="core/store.js"></script>
+  <script src="core/github.js"></script>
+  <script src="data/songs.js"></script>
+
+  <!-- Herramientas (cada una se auto-registra). Para sumar otra: añade su <script> aquí. -->
+  <script src="tools/songbook/songbook.js"></script>
+  <script src="tools/practice/practice.js"></script>
+  <script src="tools/settings/settings.js"></script>
+
+  <!-- Arranque (siempre al final) -->
+  <script src="core/app.js"></script>
+</body>
+</html>

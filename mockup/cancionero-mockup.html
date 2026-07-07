@@ -1,0 +1,1115 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cancionero — Mockup de interfaz</title>
+<style>
+  :root{
+    --bg:#ffffff; --ink:#141414; --mut:#767676; --faint:#a8a8a8;
+    --line:#e3e3e3; --panel:#fafafa; --chip:#f0f0f0; --inv:#141414; --inv-ink:#ffffff;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#121212; --ink:#ececec; --mut:#9a9a9a; --faint:#6e6e6e;
+      --line:#2c2c2c; --panel:#1a1a1a; --chip:#242424; --inv:#ececec; --inv-ink:#121212; }
+  }
+  :root[data-theme="dark"]{ --bg:#121212; --ink:#ececec; --mut:#9a9a9a; --faint:#6e6e6e;
+    --line:#2c2c2c; --panel:#1a1a1a; --chip:#242424; --inv:#ececec; --inv-ink:#121212; }
+  :root[data-theme="light"]{ --bg:#ffffff; --ink:#141414; --mut:#767676; --faint:#a8a8a8;
+    --line:#e3e3e3; --panel:#fafafa; --chip:#f0f0f0; --inv:#141414; --inv-ink:#ffffff; }
+
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
+    font-size:15px; line-height:1.45;
+  }
+  .app{max-width:1060px;margin:0 auto;padding:0 20px 80px}
+
+  /* ---------- top bar ---------- */
+  header.top{
+    display:flex;align-items:baseline;gap:28px;
+    padding:22px 0 14px;border-bottom:1px solid var(--ink);
+    flex-wrap:wrap;
+  }
+  .wordmark{font-weight:700;letter-spacing:.28em;font-size:13px;text-transform:uppercase}
+  nav.tabs{display:flex;gap:4px;margin-left:auto}
+  nav.tabs button{
+    background:none;border:none;color:var(--mut);cursor:pointer;
+    font:inherit;font-size:13px;letter-spacing:.08em;text-transform:uppercase;
+    padding:6px 12px;border-radius:2px;
+  }
+  nav.tabs button[aria-selected="true"]{background:var(--inv);color:var(--inv-ink)}
+  nav.tabs button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+  .mock-note{width:100%;font-size:12px;color:var(--faint);padding-top:6px}
+
+  .view{display:none;padding-top:26px}
+  .view.active{display:block}
+
+  /* ---------- repertorio ---------- */
+  .rep-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+  h1{font-size:26px;font-weight:700;margin:0;text-wrap:balance}
+  .count{font-size:13px;color:var(--mut)}
+  input.search{
+    width:100%;margin:14px 0 4px;padding:10px 12px;font:inherit;
+    border:1px solid var(--line);border-radius:2px;background:var(--bg);color:var(--ink);
+  }
+  input.search::placeholder{color:var(--faint)}
+  table.rep{width:100%;border-collapse:collapse;margin-top:10px}
+  table.rep th{
+    text-align:left;font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--mut);font-weight:600;padding:10px 8px;border-bottom:1px solid var(--ink);
+  }
+  table.rep td{padding:13px 8px;border-bottom:1px solid var(--line);vertical-align:baseline}
+  table.rep tr.song{cursor:pointer}
+  table.rep tr.song:hover td{background:var(--panel)}
+  table.rep tr.stub td{color:var(--faint);cursor:default}
+  .t-title{font-weight:600}
+  .t-key{font-family:ui-monospace,Consolas,"Cascadia Mono",monospace;font-size:13px}
+  .badge{
+    display:inline-block;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+    border:1px solid var(--line);border-radius:2px;padding:2px 7px;color:var(--mut);white-space:nowrap;
+  }
+  .stub .badge{border-style:dashed}
+
+  /* ---------- song view ---------- */
+  .back{background:none;border:none;color:var(--mut);cursor:pointer;font:inherit;font-size:13px;padding:0 0 14px}
+  .back:hover{color:var(--ink)}
+  .song-head h1{font-size:28px}
+  .artist{color:var(--mut);margin:2px 0 0;font-size:15px}
+
+  .controls{
+    display:flex;flex-wrap:wrap;gap:10px 22px;align-items:center;
+    border-top:1px solid var(--ink);border-bottom:1px solid var(--line);
+    padding:12px 0;margin:18px 0 8px;
+  }
+  .ctl{display:flex;align-items:center;gap:8px}
+  .ctl-label{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut)}
+  .seg{display:flex;border:1px solid var(--line);border-radius:2px;overflow:hidden}
+  .seg button{
+    background:var(--bg);border:none;color:var(--mut);cursor:pointer;font:inherit;
+    font-size:12.5px;padding:6px 11px;border-right:1px solid var(--line);
+  }
+  .seg button:last-child{border-right:none}
+  .seg button[aria-pressed="true"]{background:var(--inv);color:var(--inv-ink)}
+  .seg button:focus-visible{outline:2px solid var(--ink);outline-offset:-2px}
+  .stepper{display:flex;align-items:center;border:1px solid var(--line);border-radius:2px}
+  .stepper button{background:var(--bg);border:none;color:var(--ink);cursor:pointer;font-size:15px;padding:4px 11px;line-height:1.4}
+  .stepper .val{
+    font-family:ui-monospace,Consolas,monospace;font-size:13px;min-width:52px;text-align:center;
+    border-left:1px solid var(--line);border-right:1px solid var(--line);padding:4px 6px;
+  }
+  label.check{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--mut);cursor:pointer;user-select:none}
+  label.check input{accent-color:var(--ink)}
+
+  .song-layout{display:grid;grid-template-columns:minmax(0,1fr) 218px;gap:36px;align-items:start}
+  .song-layout.no-panel{grid-template-columns:minmax(0,1fr)}
+  @media (max-width:760px){ .song-layout{grid-template-columns:minmax(0,1fr)} }
+
+  /* parts */
+  .part{margin:26px 0}
+  .part-head{display:flex;align-items:baseline;gap:12px;margin-bottom:8px}
+  .part-name{font-size:11px;letter-spacing:.16em;text-transform:uppercase;font-weight:700}
+  .part-note{font-size:12px;color:var(--mut)}
+  .part-ref{font-size:10.5px;color:var(--mut);border:1px dashed var(--faint);border-radius:2px;padding:2px 7px;letter-spacing:.06em;text-transform:uppercase}
+  .part-body{overflow-x:auto}
+  pre.line{
+    margin:0;font-family:ui-monospace,Consolas,"Cascadia Mono","Menlo",monospace;
+    font-size:14px;line-height:1.5;
+  }
+  pre.line.chords{color:var(--ink);font-weight:700}
+  pre.line.lyric{color:var(--ink);font-weight:400;margin-bottom:10px}
+  .cantar pre.line.lyric{font-size:17px;line-height:1.9;margin-bottom:0}
+  .grid-row{font-family:ui-monospace,Consolas,monospace;font-weight:700;font-size:14.5px;letter-spacing:.02em;margin:3px 0}
+  .grid-row .sep{color:var(--faint);font-weight:400;padding:0 6px}
+  .collapsed-ref{
+    border:1px dashed var(--line);border-radius:2px;padding:10px 14px;color:var(--mut);
+    font-size:13px;display:flex;gap:10px;align-items:baseline;
+  }
+
+  /* side panel */
+  aside.chordpanel{
+    border-left:1px solid var(--line);padding-left:22px;
+    position:sticky;top:16px;
+  }
+  @media (max-width:760px){
+    aside.chordpanel{border-left:none;border-top:1px solid var(--line);padding:16px 0 0;position:static}
+    .diag-list{display:flex;overflow-x:auto;gap:14px}
+  }
+  .panel-title{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);margin:0 0 12px;font-weight:600}
+  .diag-list{display:flex;flex-direction:column;gap:14px}
+  @media (max-width:760px){ .diag-list{flex-direction:row} }
+  .diag{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:86px}
+  .diag .nm{font-family:ui-monospace,Consolas,monospace;font-weight:700;font-size:13px}
+  .diag .alt{font-size:10.5px;color:var(--faint);cursor:pointer;border-bottom:1px dotted var(--faint)}
+  .diag svg{display:block}
+  .nodata{font-size:11px;color:var(--faint);border:1px dashed var(--line);border-radius:2px;padding:14px 10px;text-align:center;width:86px}
+
+  /* ---------- editor ---------- */
+  .ed-grid{display:grid;grid-template-columns:1fr 1fr;gap:28px}
+  @media (max-width:760px){ .ed-grid{grid-template-columns:1fr} }
+  .ed-col h2{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);font-weight:600;margin:0 0 10px}
+  textarea.paste{
+    width:100%;min-height:250px;padding:12px;font-family:ui-monospace,Consolas,monospace;
+    font-size:13px;border:1px solid var(--line);border-radius:2px;background:var(--bg);color:var(--ink);
+    resize:vertical;line-height:1.5;
+  }
+  .parsed{border:1px solid var(--line);border-radius:2px;padding:14px;background:var(--panel);overflow-x:auto}
+  .tag{
+    display:inline-block;font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+    background:var(--chip);color:var(--mut);border-radius:2px;padding:1px 6px;margin:8px 0 3px;
+  }
+  .tag.first{margin-top:0}
+  .ed-note{font-size:12.5px;color:var(--mut);margin-top:10px;max-width:62ch}
+  .demo-dash{margin-top:34px;border-top:1px solid var(--line);padding-top:22px}
+  .demo-dash h2{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);font-weight:600;margin:0 0 4px}
+  .demo-dash p{font-size:12.5px;color:var(--mut);margin:0 0 12px;max-width:66ch}
+  .dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:28px}
+  @media (max-width:760px){ .dash-grid{grid-template-columns:1fr} }
+  input.dash-in{
+    width:100%;padding:10px 12px;font-family:ui-monospace,Consolas,monospace;font-size:13px;
+    border:1px solid var(--line);border-radius:2px;background:var(--bg);color:var(--ink);
+  }
+  .dash-out{border:1px solid var(--line);border-radius:2px;padding:12px;background:var(--panel);min-height:66px}
+  .dash-out div{font-family:ui-monospace,Consolas,monospace;font-size:13px;padding:2px 0;border-bottom:1px dotted var(--line)}
+  .dash-out div:last-child{border-bottom:none}
+
+  /* ---------- modo edición: ladrillos ---------- */
+  .btn-edit{
+    background:var(--bg);border:1px solid var(--line);border-radius:2px;color:var(--ink);
+    cursor:pointer;font:inherit;font-size:12.5px;padding:6px 12px;
+  }
+  .btn-edit[aria-pressed="true"]{background:var(--inv);color:var(--inv-ink);border-color:var(--inv)}
+  .btn-edit:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+  .edit-hint{
+    font-size:12.5px;color:var(--mut);border:1px dashed var(--line);border-radius:2px;
+    padding:9px 13px;margin:14px 0 4px;
+  }
+  .edrow{margin-bottom:14px}
+  .edchords{
+    position:relative;height:26px;cursor:copy;
+    border-bottom:1px dotted var(--line);
+  }
+  .brick{
+    position:absolute;top:1px;
+    font-family:ui-monospace,Consolas,"Cascadia Mono",monospace;font-size:13px;font-weight:700;
+    background:var(--bg);border:1px solid var(--ink);border-radius:2px;
+    padding:0 5px;line-height:20px;cursor:grab;user-select:none;touch-action:none;white-space:nowrap;
+    box-shadow:2px 2px 0 var(--line);
+  }
+  .brick.drag{cursor:grabbing;box-shadow:3px 3px 0 var(--faint);z-index:5}
+  .edrow pre.line.lyric{margin-bottom:0}
+  .gchip{cursor:pointer;border-bottom:1px dashed var(--faint)}
+  .pop{
+    position:absolute;z-index:20;background:var(--bg);border:1px solid var(--ink);border-radius:2px;
+    box-shadow:3px 3px 0 var(--line);padding:8px;display:flex;gap:6px;align-items:center;
+  }
+  .pop input{
+    width:82px;font-family:ui-monospace,Consolas,monospace;font-size:13px;font-weight:700;
+    border:1px solid var(--line);border-radius:2px;padding:4px 6px;background:var(--bg);color:var(--ink);
+  }
+  .pop button{
+    background:var(--bg);border:1px solid var(--line);border-radius:2px;color:var(--ink);
+    cursor:pointer;font:inherit;font-size:12px;padding:4px 8px;
+  }
+  .pop button.ok{background:var(--inv);color:var(--inv-ink);border-color:var(--inv)}
+  .pop button.del{color:var(--mut)}
+
+  /* edición de letra */
+  .ledrow{margin-bottom:9px}
+  pre.line.chords.dim{color:var(--faint);font-weight:700}
+  .lyric-edit{
+    font-family:ui-monospace,Consolas,"Cascadia Mono","Menlo",monospace;
+    font-size:14px;line-height:1.5;white-space:pre-wrap;
+    outline:none;border-bottom:1px dashed var(--line);min-height:1.5em;
+    caret-color:var(--ink);padding:1px 0;
+  }
+  .lyric-edit:focus{border-bottom-color:var(--ink);background:var(--panel)}
+
+  /* ---------- botón mini-app + vista práctica ---------- */
+  .mini-app-btn{
+    display:inline-flex;align-items:center;gap:6px;
+    background:var(--bg);border:1px solid var(--line);border-radius:2px;color:var(--mut);
+    cursor:pointer;font:inherit;font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+    padding:5px 9px;
+  }
+  .mini-app-btn:hover{color:var(--ink);border-color:var(--ink)}
+  .mini-app-btn[aria-pressed="true"]{background:var(--inv);color:var(--inv-ink);border-color:var(--inv)}
+  .mini-app-btn:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+  .mini-app-btn svg{display:block}
+
+  #view-practice{max-width:470px;margin:0 auto}
+  .pr-wrap{border:1px solid var(--ink);border-radius:4px;padding:16px;margin-top:6px;display:flex;flex-direction:column;gap:15px}
+  .pr-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;font-size:11px;color:var(--mut)}
+  .pr-top .lbl{letter-spacing:.1em;text-transform:uppercase;font-weight:600}
+  .pr-next-box{text-align:right;line-height:1.5}
+  .pr-next-chord{font-family:ui-monospace,Consolas,monospace;font-weight:700;font-size:15px;color:var(--ink)}
+  .pr-tonal{font-size:10.5px;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:3px 11px;white-space:nowrap}
+  .pr-stage{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:120px;gap:4px}
+  .pr-degree{font-family:ui-monospace,Consolas,monospace;font-size:20px;color:var(--faint);font-weight:700;letter-spacing:.1em;min-height:24px}
+  .pr-chord{font-family:ui-monospace,Consolas,monospace;font-size:62px;font-weight:800;letter-spacing:-.02em;line-height:1;text-align:center;text-wrap:balance}
+  .pr-piano{display:flex;justify-content:center}
+  .pr-kb{position:relative}
+  .pr-key.white{position:absolute;top:0;background:var(--bg);border:1px solid var(--ink);border-radius:0 0 2px 2px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:6px;box-sizing:border-box}
+  .pr-key.black{position:absolute;top:0;background:var(--ink);border:1px solid var(--ink);border-radius:0 0 2px 2px;z-index:2;display:flex;align-items:flex-end;justify-content:center;padding-bottom:5px;box-sizing:border-box}
+  .pr-key .dot{width:8px;height:8px;border-radius:50%;opacity:0}
+  .pr-key.white.on .dot{opacity:1;background:var(--ink)}
+  .pr-key.black .dot{width:6px;height:6px}
+  .pr-key.black.on .dot{opacity:1;background:var(--bg)}
+  .pr-beats{display:flex;gap:13px;justify-content:center}
+  .pr-beat{width:9px;height:9px;border-radius:50%;background:var(--chip);border:1px solid var(--line);transition:transform .08s}
+  .pr-beat.on{background:var(--ink);border-color:var(--ink)}
+  .pr-beat.on.first{transform:scale(1.3)}
+  .pr-controls{display:flex;flex-direction:column;gap:9px}
+  .pr-selects{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+  .pr-selects select{background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:2px;font:inherit;font-size:12px;padding:7px 6px}
+  .pr-selects select:disabled{opacity:.4}
+  .pr-toggles{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+  .pr-toggle{display:flex;flex-direction:column;align-items:center;gap:3px;background:var(--bg);border:1px solid var(--line);border-radius:2px;color:var(--mut);cursor:pointer;font:inherit;padding:7px 2px}
+  .pr-toggle .big{font-size:14px;font-weight:800;line-height:1}
+  .pr-toggle .cap{font-size:9px;font-weight:700;letter-spacing:.03em}
+  .pr-toggle[aria-pressed="true"]{background:var(--inv);color:var(--inv-ink);border-color:var(--inv)}
+  .pr-toggle:disabled{opacity:.3;cursor:not-allowed}
+  .pr-toggle:focus-visible{outline:2px solid var(--ink);outline-offset:1px}
+  .pr-transport{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .pr-play{display:flex;align-items:center;justify-content:center;gap:8px;background:var(--inv);color:var(--inv-ink);border:1px solid var(--inv);border-radius:3px;cursor:pointer;font:inherit;font-weight:700;font-size:13px;letter-spacing:.08em;padding:12px}
+  .pr-play.playing{background:var(--bg);color:var(--ink);border-color:var(--ink)}
+  .pr-bpm{display:flex;align-items:center;justify-content:space-between;gap:6px;border:1px solid var(--line);border-radius:3px;padding:6px 8px}
+  .pr-bpm .val{font-family:ui-monospace,Consolas,monospace;font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;min-width:42px;text-align:center}
+  .pr-bpm button{background:var(--bg);border:1px solid var(--line);border-radius:2px;color:var(--ink);cursor:pointer;font-size:15px;width:28px;height:28px;line-height:1}
+  .pr-bpm .cap{font-size:9px;color:var(--mut);font-weight:700;letter-spacing:.05em}
+
+  .footer-note{margin-top:56px;border-top:1px solid var(--line);padding-top:14px;font-size:12px;color:var(--faint);max-width:70ch}
+  ::selection{background:var(--ink);color:var(--bg)}
+</style>
+
+<div class="app">
+  <header class="top">
+    <span class="wordmark">Cancionero</span>
+    <nav class="tabs" role="tablist">
+      <button role="tab" id="tab-rep" aria-selected="true" onclick="show('rep')">Repertorio</button>
+      <button role="tab" id="tab-song" aria-selected="false" onclick="show('song')">Canción</button>
+      <button role="tab" id="tab-ed" aria-selected="false" onclick="show('ed')">Agregar canción</button>
+    </nav>
+    <button class="mini-app-btn" id="miniAppBtn" aria-pressed="false" onclick="show('practice')" title="Práctica de acordes al piano">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="1"></rect><line x1="9" y1="4" x2="9" y2="14"></line><line x1="15" y1="4" x2="15" y2="14"></line></svg>
+      Práctica
+    </button>
+    <span class="mock-note">Mockup navegable — transposición, notación y perfiles de vista funcionan de verdad sobre dos canciones de tu repertorio.</span>
+  </header>
+
+  <!-- ============ REPERTORIO ============ -->
+  <section class="view active" id="view-rep">
+    <div class="rep-head">
+      <h1>Repertorio</h1>
+      <span class="count" id="repCount"></span>
+    </div>
+    <input class="search" placeholder="Buscar por título, intérprete o acorde…" oninput="filterRep(this.value)">
+    <table class="rep">
+      <thead><tr><th>Canción</th><th>Intérprete</th><th>Tono</th><th>Partes</th><th></th></tr></thead>
+      <tbody id="repBody"></tbody>
+    </table>
+  </section>
+
+  <!-- ============ CANCIÓN ============ -->
+  <section class="view" id="view-song">
+    <button class="back" onclick="show('rep')">← Repertorio</button>
+    <div class="song-head">
+      <h1 id="sTitle"></h1>
+      <p class="artist" id="sArtist"></p>
+    </div>
+
+    <div class="controls">
+      <div class="ctl">
+        <span class="ctl-label">Vista</span>
+        <div class="seg" id="segProfile">
+          <button data-p="cantar" onclick="setProfile('cantar')">Cantar</button>
+          <button data-p="piano" onclick="setProfile('piano')">Piano</button>
+          <button data-p="guitarra" aria-pressed="true" onclick="setProfile('guitarra')">Guitarra</button>
+          <button data-p="acordes" onclick="setProfile('acordes')">Solo acordes</button>
+        </div>
+      </div>
+      <div class="ctl">
+        <span class="ctl-label">Tono</span>
+        <div class="stepper">
+          <button onclick="step(-1)" aria-label="Bajar medio tono">−</button>
+          <span class="val" id="keyVal">C</span>
+          <button onclick="step(1)" aria-label="Subir medio tono">+</button>
+        </div>
+      </div>
+      <div class="ctl">
+        <span class="ctl-label">Notación</span>
+        <div class="seg" id="segNot">
+          <button data-n="am" aria-pressed="true" onclick="setNotation('am')">A · B · C</button>
+          <button data-n="lat" onclick="setNotation('lat')">DO · RE · MI</button>
+        </div>
+      </div>
+      <label class="check" id="ckDiagWrap"><input type="checkbox" id="ckDiag" checked onchange="renderSong()"> Diagramas al costado</label>
+      <label class="check"><input type="checkbox" id="ckExpand" onchange="renderSong()"> Expandir partes repetidas</label>
+      <div class="ctl">
+        <span class="ctl-label">Editar</span>
+        <div class="seg" id="segEdit">
+          <button data-e="acordes" onclick="setEdit('acordes')">Acordes</button>
+          <button data-e="letra" onclick="setEdit('letra')">Letra</button>
+        </div>
+      </div>
+    </div>
+    <div class="edit-hint" id="editHint" style="display:none"></div>
+
+    <div class="song-layout" id="songLayout">
+      <div id="songBody"></div>
+      <aside class="chordpanel" id="chordPanel">
+        <p class="panel-title" id="panelTitle">Acordes de la canción</p>
+        <div class="diag-list" id="diagList"></div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ============ EDITOR ============ -->
+  <section class="view" id="view-ed">
+    <h1>Agregar canción</h1>
+    <p class="ed-note">Pega cualquier cosa: letra sola, letra con acordes encima, o solo un esquema de acordes. La app detecta qué es cada línea y arma la estructura; después puedes corregir arrastrando los acordes sobre la sílaba exacta.</p>
+    <div class="ed-grid" style="margin-top:18px">
+      <div class="ed-col">
+        <h2>1 · Pegar</h2>
+        <textarea class="paste" spellcheck="false">Intro: SOL
+
+SOL                      FA#m
+Hace falta que te diga
+SI                       MIm
+que me muero por tener algo contigo
+
+Coro:
+DO                       MI
+es que no te has dado cuenta
+LAm
+de lo mucho que me cuesta ser tu amigo</textarea>
+      </div>
+      <div class="ed-col">
+        <h2>2 · Lo que la app entiende</h2>
+        <div class="parsed">
+          <span class="tag first">Parte detectada · Intro (solo acordes)</span>
+          <div class="grid-row">G</div>
+          <span class="tag">Parte detectada · Parte A</span>
+          <pre class="line chords">G                        F#m</pre>
+          <pre class="line lyric">Hace falta que te diga</pre>
+          <pre class="line chords">B                        Em</pre>
+          <pre class="line lyric">que me muero por tener algo contigo</pre>
+          <span class="tag">Parte detectada · Coro</span>
+          <pre class="line chords">C                        E</pre>
+          <pre class="line lyric">es que no te has dado cuenta</pre>
+          <pre class="line chords">Am</pre>
+          <pre class="line lyric">de lo mucho que me cuesta ser tu amigo</pre>
+        </div>
+        <p class="ed-note">Detectó notación latina y la normalizó. Si más adelante pegas otra estrofa con la misma secuencia de acordes, la app la marca como repetición de la Parte A y la letra nueva hereda la estructura.</p>
+      </div>
+    </div>
+
+    <div class="demo-dash">
+      <h2>Regla del guion — pruébala</h2>
+      <p>Al escribir letra corrida, cada «-» corta la línea y salta a la fila siguiente. Escribe aquí:</p>
+      <div class="dash-grid">
+        <div><input class="dash-in" id="dashIn" value="Hace falta que te diga - que me muero - por tener algo contigo" oninput="dashDemo()"></div>
+        <div class="dash-out" id="dashOut"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PRÁCTICA DE ACORDES ============ -->
+  <section class="view" id="view-practice">
+    <button class="back" onclick="show('rep')">← Cancionero</button>
+    <div class="rep-head"><h1>Práctica de acordes</h1></div>
+    <p class="ed-note" style="margin-bottom:8px">Generador de acordes al azar con metrónomo, para practicar cambios al piano. Elige un campo tonal (o modo libre), activa las alteraciones que quieras y sigue el pulso; el teclado ilumina las notas de cada acorde.</p>
+    <div class="pr-wrap">
+      <div class="pr-top">
+        <span class="lbl" id="pr-measure">Compás 1/4</span>
+        <span class="pr-tonal" id="pr-tonal" style="display:none"></span>
+        <span class="pr-next-box"><span class="lbl">Siguiente</span><br><span class="pr-next-chord" id="pr-next">Sol</span></span>
+      </div>
+      <div class="pr-stage">
+        <span class="pr-degree" id="pr-degree"></span>
+        <span class="pr-chord" id="pr-chord">Do</span>
+      </div>
+      <div class="pr-piano" id="pr-piano"></div>
+      <div class="pr-beats" id="pr-beats"></div>
+      <div class="pr-controls">
+        <div class="pr-selects">
+          <select id="pr-field" onchange="prField(this.value)" aria-label="Campo tonal"></select>
+          <select id="pr-mode" onchange="prMode(this.value)" aria-label="Modo"><option value="Mayor">Mayor</option><option value="Menor">Menor</option></select>
+          <select id="pr-perchord" onchange="prPerChord(this.value)" aria-label="Compases por acorde"><option value="1">1 compás</option><option value="2">2 compases</option><option value="4" selected>4 compases</option></select>
+        </div>
+        <div class="pr-toggles">
+          <button class="pr-toggle" id="pr-t-sharps" aria-pressed="false" onclick="prToggle('sharps')"><span class="big">♯</span><span class="cap">Sost.</span></button>
+          <button class="pr-toggle" id="pr-t-minors" aria-pressed="false" onclick="prToggle('minors')"><span class="big">m</span><span class="cap">Menor</span></button>
+          <button class="pr-toggle" id="pr-t-sevenths" aria-pressed="false" onclick="prToggle('sevenths')"><span class="big">7</span><span class="cap">Séptima</span></button>
+          <button class="pr-toggle" id="pr-t-inv" aria-pressed="false" onclick="prToggle('inversions')"><span class="big">/</span><span class="cap">Bajo</span></button>
+          <button class="pr-toggle" id="pr-t-not" onclick="prNotation()"><span class="big">♪</span><span class="cap" id="pr-not-cap">Do/Re</span></button>
+        </div>
+        <div class="pr-transport">
+          <button class="pr-play" id="pr-play" onclick="prPlayToggle()">INICIAR</button>
+          <div class="pr-bpm">
+            <span class="cap">BPM</span>
+            <button onclick="prSetBpm(-5)" aria-label="Bajar BPM">−</button>
+            <span class="val" id="pr-bpm">60</span>
+            <button onclick="prSetBpm(5)" aria-label="Subir BPM">+</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <p class="footer-note">Mockup de interfaz · Cancionero propio (PWA estática + repo Git). Blanco y negro, sin dependencias externas. Las canciones «A primeira vista» y «Unchained Melody» están cargadas con su estructura real; el resto del repertorio aparece como referencia.</p>
+</div>
+
+<script>
+/* ================= música: motor mínimo real ================= */
+const NOTES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const LATIN = {C:'DO','C#':'DO#',D:'RE','D#':'RE#',E:'MI',F:'FA','F#':'FA#',G:'SOL','G#':'SOL#',A:'LA','A#':'LA#',B:'SI'};
+const FLAT2SHARP = {Db:'C#',Eb:'D#',Gb:'F#',Ab:'G#',Bb:'A#'};
+
+function parseChord(s){
+  const m = s.match(/^([A-G][#b]?)([^\/]*)(?:\/([A-G][#b]?))?$/);
+  if(!m) return null;
+  const norm = r => FLAT2SHARP[r] || r;
+  return {root:norm(m[1]), suf:m[2]||'', bass:m[3]?norm(m[3]):null};
+}
+function tNote(n,k){ return NOTES[(NOTES.indexOf(n)+k+120)%12]; }
+function dispChord(s,k,not){
+  const c = parseChord(s); if(!c) return s;
+  const r = tNote(c.root,k), b = c.bass? tNote(c.bass,k):null;
+  let suf = c.suf.replace('dim','º');
+  const nm = n => not==='lat'? LATIN[n] : n;
+  return nm(r)+suf+(b? '/'+nm(b):'');
+}
+const FORMULAS = {'':[0,4,7],'m':[0,3,7],'7':[0,4,7,10],'m7':[0,3,7,10],'maj7':[0,4,7,11],
+  'dim':[0,3,6],'dim7':[0,3,6,9],'m7b5':[0,3,6,10],'6':[0,4,7,9],'m6':[0,3,7,9],
+  'sus4':[0,5,7],'4':[0,5,7],'9':[0,4,7,10,2],'aug':[0,4,8]};
+
+/* ================= datos: canciones reales ================= */
+const VOICINGS = {
+  'C':['x32010'], 'Am':['x02210'], 'F':['133211','xx3211'], 'G':['320033','355433'],
+  'Em':['022000'], 'Dm':['xx0231'], 'E':['022100'], 'A':['x02220'], 'D':['xx0232'],
+  'C7':['x32310'], 'Fm':['133111'], 'G#dim':['4x343x'], 'F#dim':['2x121x'],
+  'Am/G#':['4x2210'], 'Am/G':['3x2210'], 'D#':['x65343'], 'B':['x24442'], 'F#m':['244222'],
+};
+
+const SONGS = [
+  {
+    id:'primeira', title:'A primeira vista', artist:'Chico César', key:'C', loaded:true,
+    parts:[
+      {name:'Intro', grid:[['C','G#dim','Am','F#dim','F','F#dim','G']], note:'x1'},
+      {name:'Parte A', lines:[
+        {l:' Cuando no tenía nada deseé, cuando todo era ausencia esperé,', a:[[0,'C'],[17,'G#dim'],[27,'Am'],[47,'F#dim']]},
+        {l:' cuando tuve frío temblé, cuando tuve coraje llamé.', a:[[0,'F'],[24,'F#dim'],[46,'G']]},
+        {l:' Cuando llegó carta la abrí, cuando escuché a Prince bailé,', a:[[0,'C'],[14,'G#dim'],[27,'Am'],[46,'F#dim']]},
+        {l:' cuando el ojo brilló entendí, cuando me crecieron alas volé.', a:[[0,'F'],[29,'F#dim'],[53,'G']]},
+        {l:' Cuando me llamó allá fui, cuando me di cuenta estaba ahí,', a:[[0,'C'],[14,'G#dim'],[25,'Am'],[41,'F#dim']]},
+        {l:' cuando te encontré me perdí, en cuanto te vi me enamoré…', a:[[0,'F'],[28,'F#dim'],[43,'G#dim']]},
+      ]},
+      {name:'Inter coral', grid:[['Am','Am/G#','Am/G','F#dim','F','F#dim','G'],['C','G#dim','Am','F#dim','F','F#dim','G']]},
+      {name:'Parte A', ref:'Parte A', refNote:'misma estructura de acordes', lines:[
+        {l:' Cuando llegó carta la abrí, cuando oí a Salif Keita bailé,', a:[[0,'C'],[14,'G#dim'],[27,'Am'],[46,'F#dim']]},
+        {l:' cuando el ojo brilló entendí, cuando me crecieron alas volé.', a:[[0,'F'],[29,'F#dim'],[53,'G']]},
+        {l:' Cuando me llamó allá fui, cuando me di cuenta estaba ahí,', a:[[0,'C'],[14,'G#dim'],[25,'Am'],[41,'F#dim']]},
+        {l:' cuando te encontré me perdí, en cuanto te vi me enamoré…', a:[[0,'F'],[28,'F#dim'],[43,'G#dim']]},
+      ]},
+      {name:'Inter coral', ref:'Inter coral', refNote:'se repite', grid:[['Am','Am/G#','Am/G','F#dim','F','F#dim','G'],['C','G#dim','Am','F#dim','F','F#dim','G']]},
+      {name:'Final coral', grid:[['C','G#dim','Am','F#dim','F','F#dim','G'],['C','G#dim','Am','F#dim','F']], note:'solo cuerdas'},
+    ]
+  },
+  {
+    id:'unchained', title:'Unchained Melody', artist:'Elvis Presley', key:'C', loaded:true,
+    parts:[
+      {name:'Parte A', grid:[['C','Am','F','G'],['C','Am','G','%']], note:'2 arpegios por nota · x2'},
+      {name:'Parte B', grid:[['C','G','Am','Em'],['F','G','C','C7']], note:'2 arpegios por nota · x2'},
+      {name:'Parte C', grid:[['F','G','F','D#'],['F','G','C']], note:'1 arpegio por nota, excepto C · x2'},
+      {name:'Coda', grid:[['C','Am','F','Fm','C']], note:'1 arpegio por nota'},
+    ]
+  },
+  {id:'x1', title:'Amor violento', artist:'Los Tres', key:'—', loaded:false},
+  {id:'x2', title:'Algo contigo', artist:'Vicentico', key:'G', loaded:false},
+  {id:'x3', title:'Ahora quién', artist:'Marc Anthony', key:'A#m', loaded:false},
+  {id:'x4', title:'Flaca', artist:'Andrés Calamaro', key:'—', loaded:false},
+  {id:'x5', title:'Adiós Santiago querido', artist:'Tradicional', key:'Dm', loaded:false},
+  {id:'x6', title:'Porque yo te amo', artist:'Sandro', key:'—', loaded:false},
+];
+
+/* ================= estado ================= */
+let cur = SONGS[0];
+let transp = 0;
+let notation = 'am';
+let profile = 'guitarra';
+let editMode = null; /* null | 'acordes' | 'letra' */
+let chW = 8.4; /* ancho de un carácter monoespaciado, se mide al vuelo */
+
+/* ================= navegación ================= */
+function show(v){
+  if(v!=='practice') stopPractice();
+  for(const id of ['rep','song','ed']){
+    document.getElementById('view-'+id).classList.toggle('active', id===v);
+    document.getElementById('tab-'+id).setAttribute('aria-selected', id===v);
+  }
+  document.getElementById('view-practice').classList.toggle('active', v==='practice');
+  document.getElementById('miniAppBtn').setAttribute('aria-pressed', v==='practice');
+  if(v==='practice') updatePractice();
+  window.scrollTo(0,0);
+}
+
+/* ================= repertorio ================= */
+function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;')}
+function renderRep(filter){
+  const tb = document.getElementById('repBody');
+  const f = (filter||'').toLowerCase();
+  const rows = SONGS.filter(s=> !f || (s.title+' '+s.artist).toLowerCase().includes(f));
+  tb.innerHTML = rows.map(s=>{
+    if(!s.loaded) return `<tr class="stub"><td class="t-title">${esc(s.title)}</td><td>${esc(s.artist)}</td><td class="t-key">${s.key}</td><td>—</td><td><span class="badge">Por migrar</span></td></tr>`;
+    const pn = s.parts.filter(p=>!p.ref).length;
+    const hasLyrics = s.parts.some(p=>p.lines);
+    return `<tr class="song" onclick="openSong('${s.id}')"><td class="t-title">${esc(s.title)}</td><td>${esc(s.artist)}</td><td class="t-key">${s.key}</td><td>${pn} partes</td><td><span class="badge">${hasLyrics?'Letra + acordes':'Solo acordes'}</span></td></tr>`;
+  }).join('');
+  document.getElementById('repCount').textContent = SONGS.length + ' canciones · ' + SONGS.filter(s=>s.loaded).length + ' migradas al mockup';
+}
+function filterRep(v){renderRep(v)}
+function openSong(id){
+  cur = SONGS.find(s=>s.id===id); transp=0; editMode=null; closePop();
+  const hasLyrics = cur.parts.some(p=>p.lines);
+  if(!hasLyrics && (profile==='cantar')) profile='guitarra';
+  renderSong(); show('song');
+}
+function setEdit(m){
+  editMode = (editMode===m) ? null : m;
+  if(editMode) measureCh();
+  closePop(); renderSong();
+}
+
+/* ================= canción ================= */
+function step(k){ transp+=k; renderSong(); }
+function setNotation(n){ notation=n; renderSong(); }
+function setProfile(p){ profile=p; renderSong(); }
+
+function chordRow(a){
+  let plain='', html='';
+  for(const [pos,name] of a){
+    const d = dispChord(name, transp, notation);
+    const target = Math.max(pos, plain.length? plain.length+1 : 0);
+    const pad = ' '.repeat(target - plain.length);
+    plain += pad + d;
+    html += pad + '<span>'+esc(d)+'</span>';
+  }
+  return html;
+}
+function gridRow(seq){
+  return seq.map(c=> c==='%' ? '<span class="sep">%</span>' : esc(dispChord(c,transp,notation))).join('<span class="sep">·</span>');
+}
+
+function songChords(){
+  const set=[];
+  for(const p of cur.parts){
+    const push=c=>{ if(c!=='%' && !set.includes(c)) set.push(c); };
+    if(p.grid) p.grid.forEach(r=>r.forEach(push));
+    if(p.lines) p.lines.forEach(l=>l.a.forEach(([,c])=>push(c)));
+  }
+  return set;
+}
+
+function renderSong(){
+  document.getElementById('sTitle').textContent = cur.title;
+  document.getElementById('sArtist').textContent = cur.artist;
+  document.getElementById('keyVal').textContent =
+    dispChord(cur.key==='—'?'C':cur.key, transp, notation) + (transp? (transp>0?' +':' ')+transp+'½':'');
+
+  document.querySelectorAll('#segProfile button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.p===profile));
+  document.querySelectorAll('#segNot button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.n===notation));
+
+  const expand = document.getElementById('ckExpand').checked;
+  const edAc = editMode==='acordes', edLe = editMode==='letra';
+  const showLyrics = editMode ? true : profile!=='acordes';
+  const body = document.getElementById('songBody');
+  body.className = (!editMode && profile==='cantar') ? 'cantar' : '';
+
+  document.querySelectorAll('#segEdit button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.e===editMode));
+  const hint = document.getElementById('editHint');
+  hint.style.display = editMode? '':'none';
+  hint.innerHTML = edAc
+    ? `<b>Editar acordes</b> — cada acorde es un ladrillo: <b>arrástralo</b> por la línea y se imanta al carácter de la letra donde cae. <b>Tócalo</b> para cambiarlo o eliminarlo. <b>Clic en el espacio vacío</b> sobre la letra para agregar uno (acepta DO/RE/MI o C/D/E). En las grillas, toca un acorde para cambiarlo.`
+    : `<b>Editar letra</b> — escribe directo sobre cada verso; los acordes quedan de referencia arriba, en gris. Un <b>guion «-» parte la línea</b> y baja el resto a una fila nueva. <b>Enter</b> también divide; <b>Retroceso</b> al inicio de una fila la une con la anterior.`;
+
+  let out='';
+  for(let pi=0; pi<cur.parts.length; pi++){
+    const p = cur.parts[pi];
+    const head = `<div class="part-head"><span class="part-name">${esc(p.name)}</span>`
+      + (p.note? `<span class="part-note">${esc(p.note)}</span>`:'')
+      + (p.ref? `<span class="part-ref">↺ ${esc(p.refNote||'repite '+p.ref)}</span>`:'')
+      + `</div>`;
+
+    if(!editMode && p.ref && !expand && !(showLyrics && p.lines)){
+      out += `<div class="part">${head}<div class="collapsed-ref">Se toca igual que «${esc(p.ref)}» — activa «Expandir partes repetidas» para verla completa.</div></div>`;
+      continue;
+    }
+    let inner='';
+    if(p.lines && showLyrics){
+      for(let li=0; li<p.lines.length; li++){
+        const ln = p.lines[li];
+        if(edAc){
+          inner += editableRow(pi, li, ln);
+        } else if(edLe){
+          inner += editableLyricRow(pi, li, ln);
+        } else {
+          if(profile!=='cantar' && ln.a.length) inner += `<pre class="line chords">${chordRow(ln.a)}</pre>`;
+          inner += `<pre class="line lyric">${esc(ln.l)}</pre>`;
+        }
+      }
+    } else if(p.lines && !showLyrics){
+      for(const ln of p.lines){
+        if(ln.a.length) inner += `<div class="grid-row">${gridRow(ln.a.map(x=>x[1]))}</div>`;
+      }
+    }
+    if(p.grid && (profile!=='cantar' || !p.lines || editMode)){
+      for(let gi=0; gi<p.grid.length; gi++){
+        inner += `<div class="grid-row">${edAc? gridRowEdit(pi,gi,p.grid[gi]) : gridRow(p.grid[gi])}</div>`;
+      }
+    }
+    if(p.grid && profile==='cantar' && p.lines===undefined && !editMode){
+      inner = `<div class="collapsed-ref">Parte instrumental</div>`;
+    }
+    if(!inner) inner = `<div class="collapsed-ref">Parte instrumental</div>`;
+    out += `<div class="part">${head}<div class="part-body">${inner}</div></div>`;
+  }
+  body.innerHTML = out;
+
+  /* panel de diagramas */
+  const wantPanel = document.getElementById('ckDiag').checked && profile!=='cantar';
+  document.getElementById('songLayout').classList.toggle('no-panel', !wantPanel);
+  document.getElementById('chordPanel').style.display = wantPanel? '':'none';
+  document.getElementById('ckDiagWrap').style.visibility = profile==='cantar' ? 'hidden':'visible';
+  if(wantPanel){
+    document.getElementById('panelTitle').textContent = profile==='piano' ? 'Acordes · piano' : 'Acordes · guitarra';
+    const list = document.getElementById('diagList');
+    list.innerHTML = songChords().map(c=>{
+      const name = dispChord(c, transp, notation);
+      if(profile==='piano') return diagPiano(c, name);
+      return diagGuitar(c, name);
+    }).join('');
+  }
+}
+
+/* ================= diagramas SVG ================= */
+function diagGuitar(chord, name){
+  const stored = transp===0 ? VOICINGS[chord] : VOICINGS[dispChord(chord,transp,'am')];
+  if(!stored) return `<div class="diag"><span class="nm">${esc(name)}</span><div class="nodata">voicing pendiente</div></div>`;
+  const v = stored[0];
+  const frets = v.split('').map(c=> c==='x'? -1 : parseInt(c,10));
+  const maxF = Math.max(...frets);
+  const base = maxF>4 ? Math.min(...frets.filter(f=>f>0)) : 1;
+  const W=78,H=96,left=10,top=18,cw=(W-2*left)/5,rh=(H-top-6)/4;
+  let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-label="${esc(name)}">`;
+  for(let i=0;i<6;i++) s+=`<line x1="${left+i*cw}" y1="${top}" x2="${left+i*cw}" y2="${H-6}" stroke="var(--ink)" stroke-width="1"/>`;
+  for(let j=0;j<5;j++) s+=`<line x1="${left}" y1="${top+j*rh}" x2="${W-left}" y2="${top+j*rh}" stroke="var(--ink)" stroke-width="${j===0&&base===1?3:1}"/>`;
+  frets.forEach((f,i)=>{
+    const x=left+i*cw;
+    if(f===-1) s+=`<text x="${x}" y="${top-6}" font-size="9" text-anchor="middle" fill="var(--mut)">×</text>`;
+    else if(f===0) s+=`<circle cx="${x}" cy="${top-9}" r="3" fill="none" stroke="var(--ink)"/>`;
+    else{
+      const rel=f-base+1;
+      s+=`<circle cx="${x}" cy="${top+(rel-0.5)*rh}" r="5" fill="var(--ink)"/>`;
+    }
+  });
+  if(base>1) s+=`<text x="${W-2}" y="${top+rh*0.6}" font-size="9" text-anchor="end" fill="var(--mut)">${base}f</text>`;
+  s+='</svg>';
+  const alts = stored.length>1 ? `<span class="alt" title="Elegir digitación para esta canción">${stored.length} digitaciones ▾</span>` : '';
+  return `<div class="diag"><span class="nm">${esc(name)}</span>${s}${alts}</div>`;
+}
+
+function diagPiano(chord, name){
+  const c = parseChord(chord); if(!c) return '';
+  const f = FORMULAS[c.suf.replace('º','dim')] || FORMULAS[''];
+  const root = (NOTES.indexOf(c.root)+transp+120)%12;
+  const pcs = new Set(f.map(iv=>(root+iv)%12));
+  if(c.bass) pcs.add((NOTES.indexOf(c.bass)+transp+120)%12);
+  const whites=[0,2,4,5,7,9,11], blacks=[[1,0],[3,1],[6,3],[8,4],[10,5]];
+  const kw=12, W=7*kw+2, H=52;
+  let s=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-label="${esc(name)}">`;
+  whites.forEach((pc,i)=>{
+    s+=`<rect x="${1+i*kw}" y="1" width="${kw}" height="${H-2}" fill="var(--bg)" stroke="var(--ink)"/>`;
+    if(pcs.has(pc)) s+=`<circle cx="${1+i*kw+kw/2}" cy="${H-10}" r="3.4" fill="var(--ink)"/>`;
+  });
+  blacks.forEach(([pc,after])=>{
+    const x=1+(after+1)*kw-4;
+    s+=`<rect x="${x}" y="1" width="8" height="${H*0.58}" fill="var(--ink)"/>`;
+    if(pcs.has(pc)) s+=`<circle cx="${x+4}" cy="${H*0.58-7}" r="3" fill="var(--bg)"/>`;
+  });
+  s+='</svg>';
+  return `<div class="diag"><span class="nm">${esc(name)}</span>${s}</div>`;
+}
+
+/* ================= modo edición: ladrillos ================= */
+function measureCh(){
+  const el=document.createElement('pre');
+  el.className='line lyric';
+  el.style.cssText='position:absolute;visibility:hidden;margin:0';
+  el.textContent='0000000000';
+  document.body.appendChild(el);
+  chW=el.getBoundingClientRect().width/10;
+  el.remove();
+}
+function editableRow(pi,li,ln){
+  const chips=ln.a.map((c,ci)=>
+    `<span class="brick" data-pi="${pi}" data-li="${li}" data-ci="${ci}" style="left:${(c[0]*chW).toFixed(1)}px">${esc(dispChord(c[1],transp,notation))}</span>`
+  ).join('');
+  return `<div class="edrow"><div class="edchords" data-pi="${pi}" data-li="${li}" title="Clic para agregar un acorde aquí">${chips}</div><pre class="line lyric">${esc(ln.l)}</pre></div>`;
+}
+function gridRowEdit(pi,gi,row){
+  return row.map((c,i)=> c==='%'
+    ? '<span class="sep">%</span>'
+    : `<span class="gchip" data-pi="${pi}" data-gi="${gi}" data-i="${i}" title="Clic para cambiar">${esc(dispChord(c,transp,notation))}</span>`
+  ).join('<span class="sep">·</span>');
+}
+
+/* entrada de acordes: acepta americano (Am, F#dim) y latino (LAm, FA#º) */
+const LAT_IN=[['SOL#','G#'],['SOL','G'],['DO#','C#'],['DO','C'],['RE#','D#'],['RE','D'],
+              ['MI','E'],['FA#','F#'],['FA','F'],['LA#','A#'],['LA','A'],['SI','B']];
+function normalizeInput(s){
+  if(!s) return null;
+  const conv=x=>{
+    const u=x.toUpperCase();
+    for(const [l,a] of LAT_IN){ if(u.startsWith(l)) return a+x.slice(l.length); }
+    return x;
+  };
+  let [main,bass]=s.replace(/º/g,'dim').split('/');
+  main=conv(main.trim()); if(bass) bass=conv(bass.trim());
+  const c=parseChord(main+(bass?'/'+bass:''));
+  if(!c) return null;
+  /* se des-transpone para que lo escrito coincida con lo que se ve en pantalla */
+  const r=tNote(c.root,-transp), b=c.bass? tNote(c.bass,-transp):null;
+  return r+c.suf+(b?'/'+b:'');
+}
+
+/* popover cambiar / eliminar / agregar */
+let pop=null;
+function closePop(){ if(pop){ pop.remove(); pop=null; } }
+function openPop(rect, initial, onCommit, onDelete){
+  closePop();
+  pop=document.createElement('div'); pop.className='pop';
+  pop.innerHTML=`<input value="${esc(initial)}" aria-label="Acorde" placeholder="Am · LAm…">`
+    +`<button class="ok">OK</button>`
+    +(onDelete? `<button class="del" title="Quitar este acorde">Eliminar</button>`:'');
+  document.body.appendChild(pop);
+  pop.style.left=Math.max(8, Math.min(rect.left+window.scrollX, window.scrollX+document.documentElement.clientWidth-200))+'px';
+  pop.style.top=(rect.bottom+window.scrollY+6)+'px';
+  const inp=pop.querySelector('input');
+  inp.focus(); inp.select();
+  const commit=()=>{
+    const v=normalizeInput(inp.value.trim());
+    if(v) onCommit(v);
+    closePop(); renderSong();
+  };
+  pop.querySelector('.ok').onclick=commit;
+  inp.onkeydown=e=>{ if(e.key==='Enter') commit(); if(e.key==='Escape') closePop(); };
+  if(onDelete) pop.querySelector('.del').onclick=()=>{ onDelete(); closePop(); renderSong(); };
+}
+document.addEventListener('pointerdown',e=>{
+  if(pop && !pop.contains(e.target)) closePop();
+}, true);
+
+/* arrastre de ladrillos con imán al carácter */
+let drag=null;
+const songBodyEl=document.getElementById('songBody');
+songBodyEl.addEventListener('pointerdown',e=>{
+  const br=e.target.closest('.brick'); if(!br || editMode!=='acordes') return;
+  e.preventDefault();
+  br.setPointerCapture(e.pointerId);
+  drag={br, startX:e.clientX, startLeft:parseFloat(br.style.left)||0, moved:false, pos:undefined};
+  br.classList.add('drag');
+});
+songBodyEl.addEventListener('pointermove',e=>{
+  if(!drag) return;
+  const dx=e.clientX-drag.startX;
+  if(Math.abs(dx)>4) drag.moved=true;
+  if(!drag.moved) return;
+  const ln=cur.parts[+drag.br.dataset.pi].lines[+drag.br.dataset.li];
+  let pos=Math.round((drag.startLeft+dx)/chW);
+  pos=Math.max(0, Math.min(ln.l.length-1, pos));
+  drag.pos=pos;
+  drag.br.style.left=(pos*chW).toFixed(1)+'px';
+});
+songBodyEl.addEventListener('pointerup',e=>{
+  if(!drag) return;
+  const {br,moved,pos}=drag;
+  br.classList.remove('drag'); drag=null;
+  const pi=+br.dataset.pi, li=+br.dataset.li, ci=+br.dataset.ci;
+  const ln=cur.parts[pi].lines[li];
+  if(moved && pos!==undefined){
+    ln.a[ci][0]=pos;
+    ln.a.sort((x,y)=>x[0]-y[0]);
+    renderSong();
+  } else {
+    openPop(br.getBoundingClientRect(), dispChord(ln.a[ci][1],transp,notation),
+      v=>{ ln.a[ci][1]=v; },
+      ()=>{ ln.a.splice(ci,1); });
+  }
+});
+songBodyEl.addEventListener('click',e=>{
+  if(editMode!=='acordes') return;
+  if(e.target.classList.contains('edchords')){
+    const zone=e.target, rect=zone.getBoundingClientRect();
+    const pi=+zone.dataset.pi, li=+zone.dataset.li;
+    const ln=cur.parts[pi].lines[li];
+    const pos=Math.max(0, Math.min(ln.l.length-1, Math.round((e.clientX-rect.left)/chW)));
+    openPop({left:e.clientX, bottom:rect.bottom}, '',
+      v=>{ ln.a.push([pos,v]); ln.a.sort((x,y)=>x[0]-y[0]); });
+    return;
+  }
+  const g=e.target.closest('.gchip');
+  if(g){
+    const pi=+g.dataset.pi, gi=+g.dataset.gi, i=+g.dataset.i;
+    openPop(g.getBoundingClientRect(), g.textContent,
+      v=>{ cur.parts[pi].grid[gi][i]=v; });
+  }
+});
+
+/* ================= edición de letra: filas + guion ================= */
+function editableLyricRow(pi,li,ln){
+  const ctx = ln.a.length ? `<pre class="line chords dim">${chordRow(ln.a)}</pre>` : '';
+  return `<div class="ledrow">${ctx}<div class="lyric-edit" contenteditable="true" spellcheck="false" data-pi="${pi}" data-li="${li}">${esc(ln.l)}</div></div>`;
+}
+function focusLyric(pi,li,offset){
+  const el=songBodyEl.querySelector(`.lyric-edit[data-pi="${pi}"][data-li="${li}"]`);
+  if(!el) return;
+  el.focus();
+  const node=el.firstChild;
+  const range=document.createRange(), sel=window.getSelection();
+  if(node){ range.setStart(node, Math.min(offset, node.textContent.length)); }
+  else { range.setStart(el, 0); }
+  range.collapse(true); sel.removeAllRanges(); sel.addRange(range);
+}
+/* al reasignar acordes a la línea nueva: los que caen tras el corte se mueven */
+function splitLine(part, li, cut){
+  const ln=part.lines[li];
+  const before=ln.l.slice(0,cut), after=ln.l.slice(cut);
+  const stay=[], move=[];
+  for(const c of ln.a){
+    if(c[0] <= before.length) stay.push(c);
+    else move.push([c[0]-before.length, c[1]]);
+  }
+  ln.l=before; ln.a=stay;
+  part.lines.splice(li+1, 0, {l:after, a:move});
+}
+/* el guion parte la fila en cuanto se teclea */
+songBodyEl.addEventListener('input',e=>{
+  const el=e.target.closest('.lyric-edit'); if(!el || editMode!=='letra') return;
+  const pi=+el.dataset.pi, li=+el.dataset.li;
+  const part=cur.parts[pi], ln=part.lines[li];
+  const text=el.textContent;
+  const d=text.indexOf('-');
+  if(d>=0){
+    ln.l = text.slice(0,d) + text.slice(d+1); /* quita el guion */
+    splitLine(part, li, d);
+    renderSong(); focusLyric(pi, li+1, 0);
+  } else {
+    ln.l = text; /* sin re-render: conserva el cursor */
+  }
+});
+songBodyEl.addEventListener('keydown',e=>{
+  if(editMode!=='letra') return;
+  const el=e.target.closest('.lyric-edit'); if(!el) return;
+  const pi=+el.dataset.pi, li=+el.dataset.li, part=cur.parts[pi];
+  const sel=window.getSelection();
+  const caret=sel.anchorOffset;
+  if(e.key==='Enter'){
+    e.preventDefault();
+    part.lines[li].l = el.textContent;
+    splitLine(part, li, caret);
+    renderSong(); focusLyric(pi, li+1, 0);
+  } else if(e.key==='Backspace' && caret===0 && li>0){
+    e.preventDefault();
+    part.lines[li].l = el.textContent;
+    const prev=part.lines[li-1], ln=part.lines[li], joinAt=prev.l.length;
+    prev.l += ln.l;
+    for(const c of ln.a) prev.a.push([c[0]+joinAt, c[1]]);
+    prev.a.sort((a,b)=>a[0]-b[0]);
+    part.lines.splice(li,1);
+    renderSong(); focusLyric(pi, li-1, joinAt);
+  }
+});
+
+/* ================= demo del guion ================= */
+function dashDemo(){
+  const v = document.getElementById('dashIn').value;
+  document.getElementById('dashOut').innerHTML =
+    v.split('-').map(x=>x.trim()).filter(Boolean).map(esc).map(x=>`<div>${x}</div>`).join('') || '<div style="color:var(--faint)">…</div>';
+}
+
+/* ================= práctica de acordes (mini-app) ================= */
+const LAT2={C:'Do','C#':'Do#',D:'Re','D#':'Re#',E:'Mi',F:'Fa','F#':'Fa#',G:'Sol','G#':'Sol#',A:'La','A#':'La#',B:'Si'};
+let pBpm=60, pPlaying=false, pBeat=1, pMeasure=1;
+let pSharps=false, pMinors=false, pSevenths=false, pInversions=false, pLatin=true;
+let pField='Libre', pMode='Mayor', pPerChord=4;
+let pCurrent={nombre:'C',grado:''}, pNext={nombre:'G',grado:''};
+let prCtx=null, prTimer=null;
+
+function prFmt(name){
+  if(!name) return '';
+  let [main,bass]=name.split('/');
+  const m=main.match(/^[A-G]#?/); if(!m) return name;
+  const root=m[0], rest=main.slice(root.length);
+  let out=(pLatin?LAT2[root]:root)+rest;
+  if(bass) out+='/'+(pLatin?LAT2[bass]:bass);
+  return out;
+}
+/* teclas activas 0..23 (2 octavas): tríada/7ma en la octava alta + fundamental o bajo en la baja */
+function practiceKeys(name){
+  const set=new Set();
+  const c=parseChord(name); if(!c) return set;
+  const rootPc=NOTES.indexOf(c.root);
+  const f=FORMULAS[c.suf] || FORMULAS[''];
+  f.forEach(iv=> set.add(((rootPc+iv)%12)+12));
+  if(c.bass) set.add(NOTES.indexOf(c.bass)%12);
+  else set.add(rootPc);
+  return set;
+}
+function prGen(prevName){
+  const naturals=['C','D','E','F','G','A','B'], sharps=['C#','D#','F#','G#','A#'], chrom=NOTES;
+  const intMaj=[0,2,4,5,7,9,11], intMin=[0,2,3,5,7,8,10];
+  const romMaj=['I','ii','iii','IV','V','vi','vii°'], romMin=['i','ii°','III','iv','v','VI','VII'];
+  let nombre='', grado='';
+  if(pField!=='Libre'){
+    const rootIdx=chrom.indexOf(pField);
+    const intervalos=pMode==='Mayor'?intMaj:intMin;
+    const romanos=pMode==='Mayor'?romMaj:romMin;
+    const cualidades=pMode==='Mayor'?['','m','m','','','m','dim']:['m','dim','','m','m','','',''];
+    const rnd=Math.floor(Math.random()*7);
+    const notaRaiz=chrom[(rootIdx+intervalos[rnd])%12];
+    let cualidad=cualidades[rnd], extension='';
+    if(pSevenths && Math.random()>0.4){
+      const sMaj=['maj7','m7','m7','maj7','7','m7','m7b5'], sMin=['m7','m7b5','maj7','m7','m7','maj7','7'];
+      const ext=pMode==='Mayor'?sMaj[rnd]:sMin[rnd];
+      if(ext==='m7b5'){cualidad='m7b5';extension='';}
+      else if(ext==='maj7'){cualidad='';extension='maj7';}
+      else if(ext==='7'){cualidad='';extension='7';}
+      else if(ext==='m7'){cualidad='m';extension='7';}
+    }
+    nombre=notaRaiz+cualidad+extension; grado=romanos[rnd];
+  } else {
+    let disp=[...naturals]; if(pSharps) disp=disp.concat(sharps);
+    const raiz=disp[Math.floor(Math.random()*disp.length)];
+    let cualidad=(pMinors && Math.random()>0.5)?'m':'';
+    let extension=(pSevenths && Math.random()>0.4)?'7':'';
+    nombre=raiz+cualidad+extension;
+  }
+  if(pInversions && Math.random()>0.4){
+    const rm=nombre.match(/^[A-G]#?/), rb=rm?rm[0]:'C', ri=chrom.indexOf(rb);
+    let offs=[0];
+    offs.push((nombre.includes('m') && !nombre.includes('maj'))?3:4);
+    offs.push((nombre.includes('dim')||nombre.includes('m7b5'))?6:7);
+    const bo=offs[Math.floor(Math.random()*(offs.length-1))+1];
+    nombre+='/'+chrom[(ri+bo)%12];
+  }
+  if(nombre===prevName) return prGen(prevName);
+  return {nombre,grado};
+}
+function prFieldOptions(){
+  const sel=document.getElementById('pr-field');
+  let h='<option value="Libre">Modo libre</option><optgroup label="Tono">';
+  NOTES.forEach(n=> h+=`<option value="${n}">${pLatin?LAT2[n]:n}</option>`);
+  sel.innerHTML=h+'</optgroup>'; sel.value=pField;
+}
+function prBuildPiano(){
+  const W=22, BW=13, H=88;
+  const whiteSemis=[0,2,4,5,7,9,11,12,14,16,17,19,21,23];
+  const blacks=[[1,0],[3,1],[6,3],[8,4],[10,5],[13,7],[15,8],[18,10],[20,11],[22,12]];
+  let h=`<div class="pr-kb" style="width:${14*W}px;height:${H}px">`;
+  whiteSemis.forEach((s,i)=> h+=`<div class="pr-key white" data-s="${s}" style="left:${i*W}px;width:${W}px;height:${H}px"><span class="dot"></span></div>`);
+  blacks.forEach(([s,after])=> h+=`<div class="pr-key black" data-s="${s}" style="left:${((after+1)*W-BW/2).toFixed(1)}px;width:${BW}px;height:${Math.round(H*0.6)}px"><span class="dot"></span></div>`);
+  document.getElementById('pr-piano').innerHTML=h+'</div>';
+  document.getElementById('pr-beats').innerHTML=[1,2,3,4].map(t=>`<span class="pr-beat" data-t="${t}"></span>`).join('');
+}
+function setPressed(id,on){ document.getElementById(id).setAttribute('aria-pressed', on?'true':'false'); }
+function updatePractice(){
+  const tonal=pField!=='Libre';
+  document.getElementById('pr-measure').textContent=`Compás ${pMeasure}/${pPerChord}`;
+  const tl=document.getElementById('pr-tonal');
+  tl.style.display=tonal?'':'none';
+  if(tonal) tl.textContent=`Tono ${prFmt(pField)} ${pMode}`;
+  document.getElementById('pr-degree').textContent=pCurrent.grado||'';
+  document.getElementById('pr-chord').textContent=prFmt(pCurrent.nombre);
+  document.getElementById('pr-next').textContent=(pNext.grado?pNext.grado+' ':'')+prFmt(pNext.nombre);
+  document.querySelectorAll('#pr-beats .pr-beat').forEach(b=>{
+    const t=+b.dataset.t;
+    b.classList.toggle('on', pPlaying && t===pBeat);
+    b.classList.toggle('first', t===1);
+  });
+  const active=practiceKeys(pCurrent.nombre);
+  document.querySelectorAll('#pr-piano .pr-key').forEach(k=> k.classList.toggle('on', active.has(+k.dataset.s)));
+  setPressed('pr-t-sharps',pSharps); setPressed('pr-t-minors',pMinors);
+  setPressed('pr-t-sevenths',pSevenths); setPressed('pr-t-inv',pInversions);
+  document.getElementById('pr-t-sharps').disabled=tonal;
+  document.getElementById('pr-t-minors').disabled=tonal;
+  document.getElementById('pr-not-cap').textContent=pLatin?'Do/Re':'C/D';
+  document.getElementById('pr-mode').value=pMode;
+  document.getElementById('pr-mode').disabled=!tonal;
+  document.getElementById('pr-perchord').value=String(pPerChord);
+  const pb=document.getElementById('pr-play');
+  pb.textContent=pPlaying?'DETENER':'INICIAR'; pb.classList.toggle('playing',pPlaying);
+  document.getElementById('pr-bpm').textContent=pBpm;
+}
+function prOptChanged(){
+  if(!pPlaying){ pCurrent=prGen(''); pNext=prGen(pCurrent.nombre); }
+  else pNext=prGen(pCurrent.nombre);
+  updatePractice();
+}
+function prField(v){ pField=v; prOptChanged(); }
+function prMode(v){ pMode=v; prOptChanged(); }
+function prPerChord(v){ pPerChord=Number(v); updatePractice(); }
+function prNotation(){ pLatin=!pLatin; prFieldOptions(); updatePractice(); }
+function prToggle(k){
+  if(k==='sharps') pSharps=!pSharps;
+  else if(k==='minors') pMinors=!pMinors;
+  else if(k==='sevenths') pSevenths=!pSevenths;
+  else if(k==='inversions') pInversions=!pInversions;
+  prOptChanged();
+}
+function prTick(first){
+  if(!prCtx) return;
+  const o=prCtx.createOscillator(), g=prCtx.createGain();
+  o.connect(g); g.connect(prCtx.destination);
+  o.frequency.value=first?1000:700; o.type='sine';
+  g.gain.setValueAtTime(1,prCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001,prCtx.currentTime+0.1);
+  o.start(prCtx.currentTime); o.stop(prCtx.currentTime+0.1);
+}
+function prAdvance(){
+  pBeat++;
+  if(pBeat>4){
+    pBeat=1; pMeasure++;
+    if(pMeasure>pPerChord){ pMeasure=1; pCurrent=pNext; pNext=prGen(pNext.nombre); }
+  }
+  prTick(pBeat===1);
+  updatePractice();
+}
+function prPlayToggle(){
+  if(!pPlaying){
+    if(!prCtx) prCtx=new (window.AudioContext||window.webkitAudioContext)();
+    if(prCtx.state==='suspended') prCtx.resume();
+    prTick(true);
+    pPlaying=true;
+    prTimer=setInterval(prAdvance, (60/pBpm)*1000);
+  } else { stopPractice(); }
+  updatePractice();
+}
+function stopPractice(){
+  if(!pPlaying && !prTimer) return;
+  pPlaying=false; pBeat=1; pMeasure=1;
+  clearInterval(prTimer); prTimer=null;
+}
+function prSetBpm(d){
+  pBpm=Math.max(30, Math.min(240, pBpm+d));
+  if(pPlaying){ clearInterval(prTimer); prTimer=setInterval(prAdvance,(60/pBpm)*1000); }
+  updatePractice();
+}
+function initPractice(){
+  prFieldOptions(); prBuildPiano();
+  pCurrent=prGen(''); pNext=prGen(pCurrent.nombre);
+  updatePractice();
+}
+
+/* init */
+renderRep(); renderSong(); dashDemo(); initPractice();
+</script>
