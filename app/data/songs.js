@@ -13,7 +13,6 @@
   SB.SONGS = [
     {
       id: 'a-primeira-vista', title: 'A primeira vista', artist: 'Chico César', key: 'C', loaded: true,
-      voicings: { 'G#dim': ['4x343x'], 'F#dim': ['2x121x'], 'Am/G#': ['4x2210'], 'Am/G': ['3x2210'] },
       parts: [
         { name: 'Intro', grid: [['C', 'G#dim', 'Am', 'F#dim', 'F', 'F#dim', 'G']], note: 'x1' },
         { name: 'Parte A', lines: [

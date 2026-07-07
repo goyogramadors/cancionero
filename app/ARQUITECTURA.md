@@ -67,6 +67,19 @@ Eso es todo: aparece sola en la barra y es ruteable por `#/mi-tool`.
 | `mount(view, rest, ctx)` | sí | Pinta la herramienta en `view`. `ctx.navigate(path)` para moverse. |
 | `onLeave()` | no | Se llama al salir de la herramienta (detener metrónomos, timers, audio). |
 
+## Acordes (piano y guitarra)
+
+Nada de diagramas escritos a mano: se **calculan**.
+- **Piano:** `SB.music.pitchClasses(nombre)` → las teclas, desde la fórmula del acorde.
+- **Guitarra:** `SB.music.guitarVoicings(nombre)` busca formas tocables sobre el diapasón (afinación
+  EADGBE, ventana de 4 trastes, fundamental o bajo en la cuerda grave) y las ordena por comodidad.
+  Cubre *cualquier* acorde. `SB.chords.getVoicings(nombre)` combina, en este orden: digitaciones
+  **propias del usuario** → **curadas** (formas abiertas conocidas) → **generadas**. Memoizado.
+- **Personalización** (`core/chords.js` + `tools/chords/`): el usuario agrega su propia digitación
+  (patrón `x32010`) o define una **alteración desconocida** dando sus intervalos; ambas quedan en
+  `localStorage` y se usan en todo el cancionero. `SB.music.registerFormulas` inyecta las fórmulas.
+- **Render** (`core/diagrams.js`): `SB.diagrams.guitar(patrón, etiqueta)` y `SB.diagrams.piano(pcs)`.
+
 ## Datos (canciones)
 
 Modelo canónico en `data/songs.js`. La clave: **cada acorde se ancla a la posición de un

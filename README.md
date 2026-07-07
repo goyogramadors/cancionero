@@ -32,6 +32,11 @@ para compartirlas entre dispositivos, usa **Ajustes → Sincronizar con GitHub**
   - **Editor (Fase 2):** modo *Editar acordes* (ladrillos arrastrables, imán a la sílaba, agregar/
     cambiar/eliminar) y *Editar letra* (filas con regla del guion, Enter/Retroceso). Crear canción,
     agregar/eliminar partes, editar metadatos. Todo persiste solo.
+  - **Acordes** (`app/tools/chords/`): biblioteca de acordes. El piano se genera por fórmula y la
+    guitarra por un **generador de digitaciones** (`app/core/music.js` → `guitarVoicings`) que cubre
+    *cualquier* acorde en afinación estándar (fundamental/bajo en la cuerda grave), con varias formas
+    entre las que elegir por canción. Formas abiertas conocidas están curadas (`app/core/chords.js`).
+    El usuario puede **agregar una digitación propia** o **definir una alteración desconocida**.
   - **Ajustes** (`app/tools/settings/`): tema claro/oscuro, respaldo local (descargar/importar),
     y **sync con GitHub** (`app/core/github.js`) — repo como base de datos (Fase 4).
   - **PWA + hosting (Fase 4):** service worker *stale-while-revalidate* (offline + se actualiza solo),

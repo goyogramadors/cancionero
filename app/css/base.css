@@ -222,6 +222,21 @@ pre.line.chords.dim{color:var(--faint);font-weight:700}
 .pop button.ok{background:var(--inv);color:var(--inv-ink);border-color:var(--inv)}
 .pop button.del{color:var(--mut)}
 
+/* ---------- herramienta acordes ---------- */
+.pr-scope.wide{max-width:720px}
+.ch-search{display:flex;flex-direction:column;gap:5px;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);margin:6px 0 4px}
+.ch-search input{font-family:ui-monospace,Consolas,monospace;font-size:20px;font-weight:700;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:2px;padding:8px 10px}
+.chord-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:14px 0 6px}
+.chord-canon{font-family:ui-monospace,Consolas,monospace;font-size:26px;font-weight:800}
+.chord-canon.lat{font-size:16px;color:var(--mut);font-weight:700}
+.chord-warn{font-size:11px;color:var(--mut);border:1px dashed var(--line);border-radius:2px;padding:2px 7px}
+.chord-cols{display:grid;grid-template-columns:auto 1fr;gap:26px;align-items:start;margin-top:6px}
+@media (max-width:620px){ .chord-cols{grid-template-columns:1fr} }
+.diag-list.wrap{flex-direction:row;flex-wrap:wrap;gap:16px}
+.mono{font-family:ui-monospace,Consolas,monospace}
+code{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:var(--chip);border-radius:2px;padding:1px 5px}
+#cvPreview svg{vertical-align:middle}
+
 /* ---------- ajustes ---------- */
 .set-block{border-top:1px solid var(--line);padding:18px 0}
 .set-block h2{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);font-weight:600;margin:0 0 12px}

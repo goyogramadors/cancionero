@@ -10,13 +10,6 @@
   const M = () => SB.music;
   const esc = (s) => SB.ui.esc(s);
 
-  const VOICINGS = {
-    'C': ['x32010'], 'Am': ['x02210'], 'F': ['133211', 'xx3211'], 'G': ['320033', '355433'],
-    'Em': ['022000'], 'Dm': ['xx0231'], 'E': ['022100'], 'A': ['x02220'], 'D': ['xx0232'],
-    'C7': ['x32310'], 'Fm': ['133111'], 'G#dim': ['4x343x'], 'F#dim': ['2x121x'],
-    'Am/G#': ['4x2210'], 'Am/G': ['3x2210'], 'D#': ['x65343'], 'B': ['x24442'], 'F#m': ['244222']
-  };
-
   const S = {
     ctx: null, view: null,
     cur: null, transp: 0, notation: 'am', profile: 'guitarra',
@@ -126,6 +119,7 @@
     S.view.querySelectorAll('#segEdit button').forEach((b) => b.addEventListener('click', () => { setEdit(b.dataset.e); }));
     S.view.querySelector('#ckDiag').addEventListener('change', renderSong);
     S.view.querySelector('#ckExpand').addEventListener('change', renderSong);
+    S.view.querySelector('#diagList').addEventListener('click', onDiagClick);
     attachEditListeners();
     renderSong();
   }
@@ -433,49 +427,30 @@
   }
 
   /* ---------------- diagramas ---------------- */
+  function amKey(chord) { return S.transp === 0 ? chord : M().displayChord(chord, S.transp, 'am'); }
   function diagGuitar(chord, name) {
-    const key = S.transp === 0 ? chord : M().displayChord(chord, S.transp, 'am');
-    const stored = VOICINGS[key] || (S.cur.voicings && S.cur.voicings[key]);
-    if (!stored) return `<div class="diag"><span class="nm">${esc(name)}</span><div class="nodata">voicing pendiente</div></div>`;
-    const v = stored[0];
-    const frets = v.split('').map((c) => (c === 'x' ? -1 : parseInt(c, 10)));
-    const maxF = Math.max(...frets);
-    const base = maxF > 4 ? Math.min(...frets.filter((f) => f > 0)) : 1;
-    const W = 78, H = 96, left = 10, top = 18, cw = (W - 2 * left) / 5, rh = (H - top - 6) / 4;
-    let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-label="${esc(name)}">`;
-    for (let i = 0; i < 6; i++) s += `<line x1="${left + i * cw}" y1="${top}" x2="${left + i * cw}" y2="${H - 6}" stroke="var(--ink)" stroke-width="1"/>`;
-    for (let j = 0; j < 5; j++) s += `<line x1="${left}" y1="${top + j * rh}" x2="${W - left}" y2="${top + j * rh}" stroke="var(--ink)" stroke-width="${j === 0 && base === 1 ? 3 : 1}"/>`;
-    frets.forEach((f, i) => {
-      const x = left + i * cw;
-      if (f === -1) s += `<text x="${x}" y="${top - 6}" font-size="9" text-anchor="middle" fill="var(--mut)">×</text>`;
-      else if (f === 0) s += `<circle cx="${x}" cy="${top - 9}" r="3" fill="none" stroke="var(--ink)"/>`;
-      else { const rel = f - base + 1; s += `<circle cx="${x}" cy="${top + (rel - 0.5) * rh}" r="5" fill="var(--ink)"/>`; }
-    });
-    if (base > 1) s += `<text x="${W - 2}" y="${top + rh * 0.6}" font-size="9" text-anchor="end" fill="var(--mut)">${base}f</text>`;
-    s += '</svg>';
-    const alts = stored.length > 1 ? `<span class="alt" title="Elegir digitación para esta canción">${stored.length} digitaciones ▾</span>` : '';
-    return `<div class="diag"><span class="nm">${esc(name)}</span>${s}${alts}</div>`;
+    const key = amKey(chord);
+    const list = SB.chords.getVoicings(key);
+    if (!list.length) return `<div class="diag"><span class="nm">${esc(name)}</span><div class="nodata">sin forma — agrégala en Acordes</div></div>`;
+    const chosen = (S.cur.voicings && S.cur.voicings[key]) || list[0];
+    const idx = Math.max(0, list.indexOf(chosen));
+    const sel = list.length > 1 ? `<span class="alt" data-cycle="${esc(key)}" title="Elegir digitación para esta canción">${idx + 1}/${list.length} ▾</span>` : '';
+    return `<div class="diag"><span class="nm">${esc(name)}</span>${SB.diagrams.guitar(list[idx], name)}${sel}</div>`;
   }
   function diagPiano(chord, name) {
-    const c = M().parseChord(chord); if (!c) return '';
-    const f = M().FORMULAS[c.suf] || M().FORMULAS[''];
-    const root = (M().NOTES.indexOf(c.root) + S.transp + 1200) % 12;
-    const pcs = new Set(f.map((iv) => (root + iv) % 12));
-    if (c.bass) pcs.add((M().NOTES.indexOf(c.bass) + S.transp + 1200) % 12);
-    const whites = [0, 2, 4, 5, 7, 9, 11], blacks = [[1, 0], [3, 1], [6, 3], [8, 4], [10, 5]];
-    const kw = 12, W = 7 * kw + 2, H = 52;
-    let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-label="${esc(name)}">`;
-    whites.forEach((pc, i) => {
-      s += `<rect x="${1 + i * kw}" y="1" width="${kw}" height="${H - 2}" fill="var(--bg)" stroke="var(--ink)"/>`;
-      if (pcs.has(pc)) s += `<circle cx="${1 + i * kw + kw / 2}" cy="${H - 10}" r="3.4" fill="var(--ink)"/>`;
-    });
-    blacks.forEach(([pc, after]) => {
-      const x = 1 + (after + 1) * kw - 4;
-      s += `<rect x="${x}" y="1" width="8" height="${H * 0.58}" fill="var(--ink)"/>`;
-      if (pcs.has(pc)) s += `<circle cx="${x + 4}" cy="${H * 0.58 - 7}" r="3" fill="var(--bg)"/>`;
-    });
-    s += '</svg>';
-    return `<div class="diag"><span class="nm">${esc(name)}</span>${s}</div>`;
+    const pcs = M().pitchClasses(amKey(chord));
+    return `<div class="diag"><span class="nm">${esc(name)}</span>${SB.diagrams.piano(pcs, name)}</div>`;
+  }
+  // ciclar la digitación elegida (se guarda por canción)
+  function onDiagClick(e) {
+    const alt = e.target.closest('[data-cycle]'); if (!alt) return;
+    const key = alt.dataset.cycle;
+    const list = SB.chords.getVoicings(key); if (list.length < 2) return;
+    const cur = (S.cur.voicings && S.cur.voicings[key]) || list[0];
+    const next = list[(Math.max(0, list.indexOf(cur)) + 1) % list.length];
+    S.cur.voicings = S.cur.voicings || {};
+    S.cur.voicings[key] = next;
+    persist(); renderSong();
   }
 
   SB.songbook = { openSong };
