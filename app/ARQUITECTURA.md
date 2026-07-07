@@ -87,3 +87,27 @@ cd app
 python -m http.server 8000
 # abrir http://localhost:8000
 ```
+
+## Despliegue (GitHub Pages)
+
+Publicada desde la rama `main` del repo `goyogramadors/cancionero`, **Pages source = rama `main`,
+carpeta `/` (raíz)**. El `index.html` de la raíz del repo redirige a `app/`, así que el sitio queda
+en `…/cancionero/` y la app en `…/cancionero/app/`. Todo usa rutas relativas, por eso funciona bajo
+ese subpath. Cada `git push` a `main` republica el sitio.
+
+> Nota: no se usó GitHub Actions porque el token de `gh` no tenía el scope `workflow`. Si más adelante
+> se agrega ese permiso, el despliegue por Actions (servir `app/` en la raíz del sitio) es una mejora
+> opcional; hay un workflow de ejemplo en el historial del chat.
+
+Al cambiar archivos del shell, sube `CACHE` en `sw.js` (o confía en el *stale-while-revalidate*, que
+refresca en la carga siguiente).
+
+## Persistencia y sincronización
+
+- **Local:** `core/store.js` guarda las ediciones del usuario en `localStorage` (funciona offline,
+  sin cuenta). La semilla de ejemplo vive en `data/songs.js`.
+- **Repo como base de datos:** `core/github.js` sube/baja todas las canciones del usuario a un único
+  JSON del repo (`data/user-songs.json`) vía la API de contenidos de GitHub. La UI está en
+  `tools/settings/`. Requiere un token fino con **Contents: Read and write**. Manual por ahora
+  (botones Traer/Subir); el `store` no cambia su forma, así que evolucionar a per-archivo o
+  auto-sync no toca las herramientas.

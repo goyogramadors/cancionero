@@ -3,6 +3,22 @@
 App web para un cancionero personal, usado para **cantar**, **acompañar con piano** o **tocar guitarra**.
 Referentes: CifraClub, LaCuerda, Guitar Tuna. Diseño **minimalista, blanco y negro**.
 
+## En vivo
+
+**App:** https://goyogramadors.github.io/cancionero/ · **Repo:** https://github.com/goyogramadors/cancionero
+
+Ábrela en el celular y **instálala** (menú del navegador → «Agregar a pantalla de inicio»):
+queda como app y funciona **offline**. Las canciones que agregues se guardan en ese dispositivo;
+para compartirlas entre dispositivos, usa **Ajustes → Sincronizar con GitHub** (ver abajo).
+
+### Sincronizar entre dispositivos (repo como base de datos)
+1. Crea un **token fino** en GitHub: Settings → Developer settings → Fine-grained tokens →
+   solo el repo `cancionero`, permiso **Contents: Read and write**.
+2. En la app: **Ajustes → Sincronizar con GitHub**, completa owner (`goyogramadors`),
+   repo (`cancionero`), pega el token, **Guardar**.
+3. **Subir al repo** guarda tus canciones en `data/user-songs.json` (un commit). En otro
+   dispositivo, **Traer del repo** las baja. El token vive solo en cada dispositivo.
+
 ## Estado actual (2026-07-07)
 
 - **Construcción iniciada (Fase 1 lista).** La app real vive en `app/` — arquitectura extensible,
@@ -13,17 +29,23 @@ Referentes: CifraClub, LaCuerda, Guitar Tuna. Diseño **minimalista, blanco y ne
     (Cantar/Piano/Guitarra/Solo acordes), transposición ±½ tono, notación A-B-C ↔ DO-RE-MI, diagramas.
   - **Sub-herramienta Práctica** (`app/tools/practice/`): generador con metrónomo, integrada por el
     registro (botón pequeño). Demuestra la extensibilidad pedida.
-  - **PWA** (`app/manifest.webmanifest`, `app/sw.js`): instalable y **offline** (shell cacheado).
-  - Verificado en navegador: arranque, ruteo/deep-linking, transposición, notación, perfiles,
-    diagramas, metrónomo con limpieza al salir, y caché offline (12 archivos).
-- El **mockup** previo se conserva en `mockup/cancionero-mockup.html` como referencia de UX
-  (incluye el editor de acordes/letra, aún por portar a la app real).
+  - **Editor (Fase 2):** modo *Editar acordes* (ladrillos arrastrables, imán a la sílaba, agregar/
+    cambiar/eliminar) y *Editar letra* (filas con regla del guion, Enter/Retroceso). Crear canción,
+    agregar/eliminar partes, editar metadatos. Todo persiste solo.
+  - **Ajustes** (`app/tools/settings/`): tema claro/oscuro, respaldo local (descargar/importar),
+    y **sync con GitHub** (`app/core/github.js`) — repo como base de datos (Fase 4).
+  - **PWA + hosting (Fase 4):** service worker *stale-while-revalidate* (offline + se actualiza solo),
+    desplegada en GitHub Pages desde la rama `main` (`index.html` raíz redirige a `app/`).
+  - Verificado: arranque, ruteo/deep-linking, transposición, notación, perfiles, diagramas,
+    metrónomo, editor completo (incl. arrastre), persistencia, caché offline, sitio en vivo, y el
+    round-trip de sync contra el repo real.
+- El **mockup** previo se conserva en `mockup/cancionero-mockup.html` como referencia de UX.
 
-### Pendiente (próximas fases)
-- **Fase 2 — Editor:** portar de `mockup` a la app el modo *Editar acordes* (ladrillos arrastrables)
-  y *Editar letra* (filas con regla del guion). Guardar al `store`.
-- **Fase 3 — Parser de pegado inteligente** + migrar todo `fuentes/Cancionero.txt` a `data/`.
-- **Fase 4 — Repo Git como base de datos + hosting** (GitHub Pages/Netlify) + edición desde el celular.
+### Pendiente / ideas futuras
+- **Parser de pegado inteligente** (la vieja Fase 3): pegar letra+acordes y que los reconozca
+  automáticamente. Se pospuso: el cancionero se poblará a mano con el editor cuando haga falta.
+- **Sync automático** (hoy es manual con botones Traer/Subir).
+- **Más sub-herramientas**: enchúfalas por el registro (ver `app/ARQUITECTURA.md`).
 
 ## Arquitectura acordada
 
