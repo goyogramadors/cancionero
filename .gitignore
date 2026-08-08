@@ -18,3 +18,6 @@ canta-prep/.venv/
 
 # Artefactos del navegador de pruebas
 .playwright-mcp/
+
+# Python
+__pycache__/

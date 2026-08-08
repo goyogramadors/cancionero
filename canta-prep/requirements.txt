@@ -1,0 +1,8 @@
+# Dependencias de canta-prep (torch llega como dependencia de demucs; build CPU en Windows/PyPI)
+yt-dlp
+demucs
+faster-whisper
+librosa
+soundfile
+numpy
+scipy
