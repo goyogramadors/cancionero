@@ -81,9 +81,13 @@
       '<div class="ka-scope">' +
       '<div class="rep-head"><h1>Canta</h1><span class="count" id="kaCount"></span></div>' +
       '<p class="ed-note">Karaoke con afinación en vivo: elige una canción preparada, canta con el micrófono ' +
-      'y mira si vas en el tono. Para preparar una canción desde YouTube o un archivo (mp4/mp3), usa el ' +
-      'preparador <code>canta-prep</code> del repo (ver su README); deja los paquetes en <code>app/canta-media/</code> ' +
-      'o impórtalos aquí con "Elegir carpeta".</p>' +
+      'y mira si vas en el tono.</p>' +
+
+      '<section class="prep" id="kaPrep">' +
+      '<h2 class="panel-title">Preparar una canción</h2>' +
+      '<div id="kaPrepBody"><p class="set-status">Buscando el motor…</p></div>' +
+      '</section>' +
+
       '<div class="set-row">' +
       '<button class="mini-app-btn" id="kaPick">Elegir carpeta…</button>' +
       '<button class="mini-app-btn" id="kaDemo">Probar la demo</button>' +
@@ -93,6 +97,7 @@
       '<p class="set-status" id="kaLibStatus"></p>' +
       '</div>';
     q('#kaDemo').addEventListener('click', function () { S.ctx.navigate('canta/song/demo-estrellita'); });
+    pintarPrep();
     q('#kaPick').addEventListener('click', pickFolder);
     q('#kaPickFallback').addEventListener('change', async function (e) {
       var found = await E().importFiles(Array.from(e.target.files));
@@ -100,6 +105,222 @@
       drawLibrary();
     });
     drawLibrary();
+  }
+
+  /* ================= PREPARAR UNA CANCIÓN (motor local) ================= */
+  var P = { job: null, timer: null, t0: 0, subiendo: false };
+
+  function prepBody() { return q('#kaPrepBody'); }
+
+  async function pintarPrep() {
+    var body = prepBody();
+    if (!body) return;
+    var est = await SB.cantaMotor.detectar();
+    if (S.screen !== 'lib' || !prepBody()) return; // se cambió de vista mientras sondeábamos
+    body = prepBody();
+    // ¿había una preparación en curso? (saliste de la pestaña y volviste, o
+    // recargaste la página mientras el motor seguía trabajando)
+    var enCurso = P.job || (est && est.ocupado && est.job_actual);
+    if (enCurso) {
+      P.job = enCurso;
+      if (!P.t0) P.t0 = Date.now();
+      pintarProgreso({ etapa: 'Retomando…', pct: 0 });
+      seguirProgreso();
+      return;
+    }
+    if (!est) {
+      body.innerHTML = ayudaSinMotor();
+      q('#pxRetry').addEventListener('click', async function () {
+        body.innerHTML = '<p class="set-status">Buscando el motor…</p>';
+        await SB.cantaMotor.detectar(true);
+        pintarPrep();
+      });
+      return;
+    }
+
+    var avisos = '';
+    if (!est.ffmpeg) avisos += '<p class="prep-warn">Falta <b>ffmpeg</b> en el PATH. Instálalo con <code>winget install Gyan.FFmpeg</code> y reinicia el motor.</p>';
+    if (!est.venv) avisos += '<p class="prep-warn">Falta el entorno de Python. Corre <code>canta-prep\\setup.bat</code> una vez y reinicia el motor.</p>';
+
+    body.innerHTML = avisos +
+      '<div class="prep-form">' +
+      '<label class="prep-field wide">Link de YouTube' +
+      '<input id="pxUrl" type="url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off"></label>' +
+      '<div class="prep-or">o</div>' +
+      '<label class="prep-field wide">Archivo del computador (mp4, mp3, m4a, wav)' +
+      '<input id="pxFile" type="file" accept="video/*,audio/*"></label>' +
+      '<label class="prep-field">Título <input id="pxTitle" placeholder="(opcional)"></label>' +
+      '<label class="prep-field">Intérprete <input id="pxArtist" placeholder="(opcional)"></label>' +
+      '<label class="prep-field">Calidad de la letra' +
+      '<select id="pxModel">' +
+      '<option value="tiny">Rápida</option>' +
+      '<option value="small" selected>Normal</option>' +
+      '<option value="medium">Mejor (más lenta)</option>' +
+      '</select></label>' +
+      '<label class="prep-field">Idioma' +
+      '<select id="pxLang"><option value="">Detectar solo</option><option value="es">Español</option>' +
+      '<option value="en">Inglés</option><option value="pt">Portugués</option></select></label>' +
+      '<label class="check wide"><input type="checkbox" id="pxSubir" checked> ' +
+      'Subir al cancionero al terminar (letra + canción, para tenerla en el celular)</label>' +
+      '<button class="pr-play prep-go" id="pxGo">PREPARAR CANCIÓN</button>' +
+      '</div>' +
+      '<p class="set-status" id="pxMsg"></p>';
+
+    q('#pxGo').addEventListener('click', lanzarPreparacion);
+    q('#pxUrl').addEventListener('keydown', function (e) { if (e.key === 'Enter') lanzarPreparacion(); });
+  }
+
+  function ayudaSinMotor() {
+    var publicado = /github\.io$/i.test(location.hostname);
+    return '<p class="ed-note">' +
+      (publicado
+        ? 'Estás en el sitio publicado, que no tiene servidor: separar la voz y transcribir la letra ' +
+          'necesitan tu computador. Aquí puedes <b>cantar</b> las canciones que ya subiste.'
+        : 'El motor no está corriendo.') +
+      '</p>' +
+      '<p class="ed-note">Para preparar una canción nueva, en tu computador haz doble clic a ' +
+      '<code>canta-prep\\motor.bat</code>: se abre el cancionero en ' +
+      '<code>http://localhost:' + SB.cantaMotor.PUERTO + '</code> con este cuadro activo. ' +
+      'Ahí pegas el link de YouTube (o eliges un MP4) y, al terminar, la canción y su letra ' +
+      'se suben al repositorio y aparecen acá.</p>' +
+      '<div class="set-row"><button class="mini-app-btn" id="pxRetry">Buscar el motor de nuevo</button></div>';
+  }
+
+  function prepMsg(txt) { var m = q('#pxMsg'); if (m) m.textContent = txt || ''; }
+
+  async function lanzarPreparacion() {
+    var url = (q('#pxUrl').value || '').trim();
+    var file = q('#pxFile').files[0] || null;
+    if (!url && !file) { prepMsg('Pega un link de YouTube o elige un archivo.'); return; }
+    if (url && file) { prepMsg('Elige una sola cosa: el link o el archivo.'); return; }
+    var datos = {
+      url: url,
+      title: (q('#pxTitle').value || '').trim(),
+      artist: (q('#pxArtist').value || '').trim(),
+      model: q('#pxModel').value,
+      language: q('#pxLang').value || null
+    };
+    S.prepSubir = q('#pxSubir').checked;
+    try {
+      pintarProgreso({ etapa: file ? 'Subiendo el archivo al motor…' : 'Pidiendo la canción…', pct: 0 });
+      var r = file
+        ? await SB.cantaMotor.prepararArchivo(file, datos, function (f) {
+            pintarProgreso({ etapa: 'Subiendo el archivo al motor…', pct: Math.round(f * 100), subida: true });
+          })
+        : await SB.cantaMotor.prepararUrl(datos);
+      P.job = r.job; P.t0 = Date.now();
+      seguirProgreso();
+    } catch (e) {
+      pintarPrep().then(function () { prepMsg('No pude empezar: ' + e.message); });
+    }
+  }
+
+  function pintarProgreso(p) {
+    var body = prepBody();
+    if (!body) return;
+    var pct = Math.max(0, Math.min(100, p.pct || 0));
+    var seg = P.t0 ? Math.round((Date.now() - P.t0) / 1000) : 0;
+    body.innerHTML =
+      '<div class="prep-run">' +
+      '<div class="prep-etapa">' + esc(p.etapa || 'Trabajando…') +
+      (p.paso ? ' <span class="prep-paso">' + p.paso + '/' + p.total + '</span>' : '') + '</div>' +
+      '<div class="prep-bar"><span style="width:' + pct + '%"></span></div>' +
+      '<div class="prep-sub">' + pct + '% · ' + fmtT(seg) +
+      (p.subida ? '' : ' · esto demora varios minutos, puedes dejarlo trabajando') + '</div>' +
+      (p.lineas && p.lineas.length ? '<pre class="prep-log">' + esc(p.lineas.slice(-6).join('\n')) + '</pre>' : '') +
+      '<button class="mini-x" id="pxCancel">Cancelar</button>' +
+      '</div>';
+    var c = q('#pxCancel');
+    if (c) c.addEventListener('click', async function () {
+      try { await SB.cantaMotor.cancelar(P.job); } catch (e) {}
+      P.job = null;
+      if (P.timer) clearTimeout(P.timer);
+      pintarPrep().then(function () { prepMsg('Preparación cancelada.'); });
+    });
+  }
+
+  function seguirProgreso() {
+    if (!P.job) return;
+    P.timer = setTimeout(async function () {
+      if (!P.job || S.screen !== 'lib') return;
+      try {
+        var p = await SB.cantaMotor.progreso(P.job);
+        if (!P.job) return;
+        if (p.estado === 'corriendo') { pintarProgreso(p); seguirProgreso(); return; }
+        P.job = null;
+        if (p.estado === 'error') {
+          pintarPrep().then(function () { prepMsg('Falló: ' + (p.error || 'error desconocido')); });
+          return;
+        }
+        await terminarPreparacion(p);
+      } catch (e) {
+        P.job = null;
+        pintarPrep().then(function () { prepMsg('Se perdió el contacto con el motor: ' + e.message); });
+      }
+    }, 1200);
+  }
+
+  // La canción quedó lista: refrescar la biblioteca, guardar la letra en el
+  // Cancionero y (si corresponde) publicar todo al repo.
+  async function terminarPreparacion(p) {
+    var body = prepBody();
+    if (body) body.innerHTML = '<p class="set-status">Guardando…</p>';
+    var resumen = [], letraId = null;
+    try {
+      await E().loadFromServer(p.id);
+      var pkg = E().current();
+      letraId = guardarLetra(pkg);
+      resumen.push(letraId.lineas
+        ? letraId.lineas + ' líneas de letra guardadas en el Cancionero'
+        : 'sin letra reconocida (¿es instrumental, o la voz quedó muy tapada?)');
+      if (!(pkg.notes || []).length) {
+        resumen.push('OJO: no se detectó melodía de voz, así que no hay barras que seguir');
+      }
+      if (S.prepSubir) {
+        if (body) body.innerHTML = '<p class="set-status">Subiendo la canción al repositorio…</p>';
+        var r = await SB.cantaMotor.publicar(p.id);
+        if (r && r.ok) resumen.push(r.empujado ? 'canción subida al repositorio' : 'la canción ya estaba subida');
+        else resumen.push('no se pudo subir la canción (' + ((r && r.error) || 'error') + ')');
+        if (SB.github && SB.github.configured()) {
+          try { await SB.github.push(SB.store.dump()); resumen.push('letra sincronizada'); }
+          catch (e) { resumen.push('la letra no se sincronizó (' + e.message + ')'); }
+        } else {
+          resumen.push('la letra quedó en este dispositivo — configura Ajustes → GitHub para sincronizarla');
+        }
+      }
+    } catch (e) {
+      resumen.push('problema al guardar: ' + e.message);
+    }
+    drawLibrary();
+    body = prepBody();
+    if (!body) return;
+    body.innerHTML =
+      '<div class="prep-done">' +
+      '<div class="prep-etapa">Lista: ' + esc(p.titulo || p.id) + '</div>' +
+      '<p class="set-status">' + esc(resumen.join(' · ')) + '</p>' +
+      '<div class="set-row">' +
+      '<button class="mini-app-btn" id="pxSing">Cantarla ahora</button>' +
+      (letraId ? '<button class="mini-app-btn" id="pxLyr">Ver la letra</button>' : '') +
+      '<button class="mini-app-btn" id="pxOtra">Preparar otra</button>' +
+      '</div></div>';
+    q('#pxSing').addEventListener('click', function () { S.ctx.navigate('canta/song/' + encodeURIComponent(p.id)); });
+    q('#pxOtra').addEventListener('click', function () { pintarPrep(); });
+    if (letraId) q('#pxLyr').addEventListener('click', function () { S.ctx.navigate('songbook/song/' + letraId.id); });
+  }
+
+  // Guarda la letra del paquete como canción del Cancionero (id estable: si
+  // vuelves a preparar la misma canción, se actualiza en vez de duplicarse).
+  function guardarLetra(pkg) {
+    var lines = (pkg.lines || []).filter(function (l) { return l.text && l.text.trim(); });
+    var id = 'canta-' + slug(pkg.title);
+    var prev = SB.store.get(id);
+    SB.store.save({
+      id: id, title: pkg.title, artist: pkg.artist || '', key: pkg.key || '—', loaded: true,
+      parts: [{ name: 'Letra', lines: lines.length
+        ? lines.map(function (l) { return { l: ' ' + l.text.trim(), a: [] }; })
+        : (prev && prev.parts && prev.parts[0].lines) || [{ l: '', a: [] }] }]
+    });
+    return { id: id, lineas: lines.length };
   }
 
   function libStatus(found) {
@@ -145,7 +366,7 @@
       return '<tr class="song" data-id="' + esc(r.p.id) + '"><td class="t-title">' + esc(r.p.title) +
         '</td><td>' + esc(r.p.artist || '') + '</td><td class="t-key">' + fmtT(r.p.duration || 0) +
         '</td><td><span class="badge">' + r.src + '</span>' + del + '</td></tr>';
-    }).join('') || '<tr class="stub"><td colspan="4">Sin canciones todavía — prepara una con canta-prep o prueba la demo.</td></tr>';
+    }).join('') || '<tr class="stub"><td colspan="4">Sin canciones todavía — prepara una arriba, o prueba la demo.</td></tr>';
     tb.querySelectorAll('tr.song').forEach(function (tr) {
       tr.addEventListener('click', function () { S.ctx.navigate('canta/song/' + encodeURIComponent(tr.dataset.id)); });
     });
@@ -273,6 +494,9 @@
 
     setMicMode(S.micMode === 'mic' ? 'mic' : (S.micMode || 'off'), true);
     updateSteppers(); updateHud(); updatePlayBtn();
+    if (!S.notes.length) {
+      status('Esta canción no trae melodía detectada: puedes cantarla y usar los volúmenes, pero no hay barras de afinación.');
+    }
     loop();
   }
 
@@ -674,6 +898,8 @@
     if (S.raf) cancelAnimationFrame(S.raf);
     S.raf = 0;
     if (S.applyTimer) { clearTimeout(S.applyTimer); S.applyTimer = null; }
+    // el trabajo del motor sigue en el computador; solo dejamos de sondearlo
+    if (P.timer) { clearTimeout(P.timer); P.timer = null; }
     S.screen = null;
     SB.cantaPitch.stop();
     if (SB.cantaEngine) SB.cantaEngine.pause();

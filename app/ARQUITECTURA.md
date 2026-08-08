@@ -99,12 +99,22 @@ La herramienta más grande; sirve de ejemplo de una sub-herramienta con audio pe
   AudioWorklet (decimación ×3). El estabilizador (compuerta de ruido adaptativa, mediana,
   anti-octava, retención) vive en `canta-pitch.js`; el modo Prueba genera el pitch desde la melodía.
 
+- **`canta-motor.js`** (`SB.cantaMotor`) — puente con el **motor local** (`canta-prep/motor.py`), que
+  hace lo que el navegador no puede: bajar de YouTube, separar la voz, transcribir. El motor **sirve
+  la app en su mismo puerto** (8765), así que la API se pide en relativo (`api/estado`) y no hay CORS
+  ni contenido mixto; si la app se abrió con otro servidor local se prueba `127.0.0.1:8765`. Sin
+  motor (sitio publicado) la herramienta lo detecta y explica qué hacer, sin romperse. El motor
+  también **publica el paquete al repo con git** (`POST api/publicar`), que es más simple y sin
+  límites de tamaño que subirlo por la API de GitHub desde el navegador.
+
 **Paquetes:** carpeta `canta-media/<id>/` con `vocals.m4a`, `music.m4a` y `canta.json`
 (`{version,id,title,artist,youtube,duration,key,lang,files,lines:[{s,e,text,words:[{s,e,w}]}],`
 `notes:[{s,e,m}],f0:{dt,v}}` — tiempos en segundos, `m` = nota MIDI). Los produce `canta-prep/`
-(Python: yt-dlp + Demucs + faster-whisper + pyin); la carpeta va **gitignoreada**. La app los carga
-del servidor local (`canta-media/index.json`), de una carpeta elegida por el usuario (quedan en
-IndexedDB, útil en la PWA publicada) o genera una **demo sintética**.
+(Python: yt-dlp + Demucs + faster-whisper + pyin). La carpeta está **gitignoreada** para que un
+`git add -A` no suba cientos de MB por accidente; los paquetes que el usuario decide publicar se
+agregan con `git add -f` desde el motor, y una vez trackeados se versionan normal. La app los carga
+del servidor/sitio (`canta-media/index.json`), de una carpeta elegida por el usuario (quedan en
+IndexedDB) o genera una **demo sintética**.
 
 ## Datos (canciones)
 

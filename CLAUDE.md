@@ -76,7 +76,12 @@ independientes, transposición ±12, velocidad 50–150 %, letra karaoke palabra
 afinación estilo Yousician (barras verde/rojo, puntaje/racha), micrófono con estabilización de pitch,
 modo Prueba sin mic, y guardado de la letra en el Cancionero. Las canciones se preparan con
 **`canta-prep/`** (Python: yt-dlp + Demucs + faster-whisper + pyin) desde URL de YouTube o archivo
-local → paquete en `app/canta-media/<id>/` (gitignoreada). Detalles en `app/ARQUITECTURA.md` y
+local → paquete en `app/canta-media/<id>/` (gitignoreada; se publica con `git add -f` desde el motor).
+
+**Motor local** (`canta-prep/motor.py` + `motor.bat`): sirve la app y una API en el puerto 8765, para
+poder preparar canciones **desde la interfaz** (cuadro "Preparar una canción" en Canta: link de
+YouTube o archivo) y publicarlas al repo con git. Sin motor —el sitio publicado— el cuadro explica
+qué hacer y la app sigue funcionando para cantar. Detalles en `app/ARQUITECTURA.md` y
 `canta-prep/README.md`.
 
 ### Pendiente / ideas

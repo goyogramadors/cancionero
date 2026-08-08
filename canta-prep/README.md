@@ -10,6 +10,37 @@ para la sub-herramienta de karaoke con afinación del Cancionero. Por cada canci
 5. Deja todo en `../app/canta-media/<id>/`: `vocals.m4a`, `music.m4a` y `canta.json`,
    y actualiza `../app/canta-media/index.json`.
 
+## Modo fácil: el motor
+
+Lo normal es no tocar la consola. Después de instalar (una vez, más abajo):
+
+1. **Doble clic a `motor.bat`.** Se abre solo el cancionero en
+   <http://localhost:8765> (si ese puerto está ocupado, el motor toma el
+   siguiente y te dice cuál).
+2. Anda a la pestaña **Canta**.
+3. Pega el **link de YouTube** o elige un **archivo** (mp4, mp3, m4a, wav…),
+   ponle título y artista si quieres, y aprieta **Preparar canción**.
+4. Mientras trabaja ves el avance etapa por etapa. Puedes cancelar cuando
+   quieras. Demora entre 5 y 15 minutos por canción (más si es la primera vez,
+   porque baja los modelos).
+5. Cuando termina, la canción ya está lista para cantar en tu computador. Si la
+   quieres en el sitio publicado, aprieta el botón de **publicar**: el motor
+   hace el `git commit` y el `git push` por ti, y GitHub Pages se actualiza en
+   1 o 2 minutos.
+
+El motor corre **solo en tu máquina**: sirve la app y hace el trabajo pesado en
+el mismo puerto, así que no hay que configurar nada. Para apagarlo, cierra la
+ventana negra o aprieta Ctrl+C.
+
+Opciones de la ventana (rara vez las vas a necesitar):
+
+```
+motor.bat --puerto 9000     REM usa otro puerto
+motor.bat --sin-navegador   REM no abre el navegador solo
+```
+
+Si te avisa que falta **ffmpeg** o el entorno **.venv**, mira la instalación.
+
 ## Instalación (una vez)
 
 Necesitas Python 3.10+ y ffmpeg en el PATH. Si te falta ffmpeg:
@@ -27,7 +58,10 @@ setup.bat
 Crea el entorno `.venv` e instala todo. La primera vez baja ~1.2 GB (torch CPU),
 así que dale tiempo.
 
-## Uso
+## Modo avanzado: línea de comandos
+
+Si prefieres la consola (o quieres preparar varias canciones seguidas con un
+script), `prep.py` hace exactamente lo mismo que el motor, sin interfaz.
 
 Con una URL de YouTube:
 
@@ -58,7 +92,10 @@ además baja los modelos (Demucs ~80 MB, Whisper small ~180 MB).
 
 ## Ojo
 
-- Los paquetes quedan en `app/canta-media/`, que está **gitignoreada**: el audio
-  **no se sube al repo**. Cada equipo prepara (o copia a mano) sus paquetes.
+- Los paquetes quedan en `app/canta-media/`, que está **gitignoreada** a
+  propósito, para que un `git add -A` distraído no te suba cientos de MB. Nada
+  se publica solo: el audio llega al repo **únicamente** cuando aprietas el
+  botón de publicar (o si haces `git add -f` a mano), y siempre canción por
+  canción.
 - Todo corre local en tu máquina; nada se envía a servicios externos (salvo la
   descarga desde YouTube y la bajada de modelos la primera vez).

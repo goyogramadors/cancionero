@@ -247,6 +247,29 @@ code{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:var
 .set-grid input{font:inherit;font-size:14px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:2px;padding:7px 8px}
 .set-status{display:inline-block;margin-top:10px;font-size:12.5px;color:var(--mut)}
 
+/* ---------- canta: preparar canción ---------- */
+.prep{border:1px solid var(--ink);border-radius:4px;padding:14px 16px 16px;margin:16px 0 18px}
+.prep .panel-title{margin-bottom:10px}
+.prep-warn{font-size:12.5px;color:var(--ink);border:1px dashed var(--ink);border-radius:2px;padding:8px 11px;margin:0 0 10px}
+.prep-form{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;align-items:end}
+.prep-field{display:flex;flex-direction:column;gap:4px;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
+.prep-field.wide{grid-column:1 / -1}
+.prep-field input,.prep-field select{font:inherit;font-size:14px;text-transform:none;letter-spacing:0;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:2px;padding:8px 9px}
+.prep-field input:focus,.prep-field select:focus{outline:none;border-color:var(--ink)}
+.prep-field input[type="file"]{padding:6px;font-size:12.5px}
+.prep-or{grid-column:1 / -1;text-align:center;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:-2px 0}
+.prep-form .check.wide{grid-column:1 / -1;font-size:12.5px}
+.prep-go{grid-column:1 / -1;padding:12px}
+@media (max-width:600px){ .prep-form{grid-template-columns:1fr} }
+.prep-run,.prep-done{display:flex;flex-direction:column;gap:9px}
+.prep-etapa{font-size:15px;font-weight:700}
+.prep-paso{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--mut);font-weight:400}
+.prep-bar{height:8px;background:var(--chip);border:1px solid var(--line);border-radius:999px;overflow:hidden}
+.prep-bar span{display:block;height:100%;background:var(--ink);transition:width .4s}
+.prep-sub{font-size:12px;color:var(--mut);font-variant-numeric:tabular-nums}
+.prep-log{margin:0;font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--faint);white-space:pre-wrap;max-height:96px;overflow:auto}
+.prep-run .mini-x{align-self:flex-start}
+
 /* ---------- canta ---------- */
 .ka-stage{position:relative;border:1px solid var(--ink);border-radius:4px;overflow:hidden;background:var(--bg);margin-top:14px}
 #kaCanvas{display:block;width:100%;height:330px}

@@ -28,13 +28,22 @@ Yousician muestra las **barras de la melodía de la voz**; con el **micrófono**
 afinación en vivo y las barras se pintan **verde/rojo** según si le achuntas (con puntaje, racha y
 mejor marca). Botón para **guardar la letra en el Cancionero**.
 
-Como el navegador no puede sacar el audio de YouTube ni correr los modelos de separación/transcripción,
-las canciones se **preparan una vez** en tu PC con `canta-prep/` (Python): le das la **URL de YouTube o
-un archivo** (mp4/mp3/wav que hayas bajado tú) y deja un paquete en `app/canta-media/<canción>/`
-(voz + música + `canta.json` con letra sincronizada y melodía). Esa carpeta **no se sube al repo**
-(gitignoreada); en la PWA publicada puedes importar los paquetes con «Elegir carpeta» (quedan guardados
-en el navegador). Detalle e instalación: `canta-prep/README.md`. Sin canciones preparadas, hay una
-**demo sintética** para probar el juego.
+### Preparar una canción (desde la misma app)
+
+En tu computador, doble clic a **`canta-prep/motor.bat`**: se abre el cancionero en
+`http://localhost:8765` y en la pestaña **Canta** aparece el cuadro «Preparar una canción». Pegas el
+**link de YouTube** o eliges un **archivo** (mp4/mp3/m4a/wav) que hayas bajado, aprietas *Preparar
+canción* y esperas (5–15 min: separar la voz y transcribir es pesado). Al terminar:
+
+- la **letra** queda guardada como canción del Cancionero (y se sincroniza si tienes el token puesto),
+- la **canción** (voz + música + melodía) se **sube al repositorio** con un commit,
+- así aparece sola en el sitio publicado y en el celular, sin volver a tocar el computador.
+
+El navegador no puede hacer esto solo (no puede bajar audio de YouTube ni correr los modelos de
+separación/transcripción), por eso el motor corre en tu PC. En el sitio publicado el cuadro explica
+esto en vez de romperse; ahí **cantas** lo que ya subiste. También puedes preparar por línea de
+comandos e importar carpetas a mano — todo en `canta-prep/README.md`. Sin canciones preparadas, hay
+una **demo sintética** para probar el juego.
 
 Estabilización del canto: compuerta de ruido adaptativa, exigencia de claridad del detector (YIN),
 filtro de mediana, corrección de saltos de octava y retención breve — el indicador no "se vuelve loco"

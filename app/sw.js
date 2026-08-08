@@ -6,7 +6,7 @@
    caché, así los cambios llegan en la siguiente carga sin quedar atascado
    en una versión vieja. Igual conviene subir CACHE en cada release.
    ============================================================ */
-const CACHE = 'cancionero-v4';
+const CACHE = 'cancionero-v5';
 const SHELL = [
   'index.html',
   'css/base.css',
@@ -23,6 +23,7 @@ const SHELL = [
   'tools/canta/canta.js',
   'tools/canta/canta-engine.js',
   'tools/canta/canta-pitch.js',
+  'tools/canta/canta-motor.js',
   'tools/canta/canta-dsp.js',
   'tools/canta/canta-pitch-worklet.js',
   'tools/chords/chords.js',
@@ -45,6 +46,21 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
   if (url.origin !== self.location.origin) return; // deja pasar lo externo
+  if (url.pathname.includes('/api/')) return;      // motor local: nunca cachear
+  // El índice de canciones cambia cuando subes una nueva: red primero, para que
+  // aparezca al tiro en el celular (el caché queda solo como respaldo offline).
+  if (url.pathname.endsWith('canta-media/index.json')) {
+    e.respondWith(
+      fetch(e.request).then((res) => {
+        if (res && res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
+        }
+        return res;
+      }).catch(() => caches.match(e.request))
+    );
+    return;
+  }
   e.respondWith(
     caches.match(e.request).then((hit) => {
       const network = fetch(e.request).then((res) => {

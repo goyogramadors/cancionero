@@ -37,6 +37,7 @@
         <h1>Repertorio</h1>
         <div style="display:flex;gap:14px;align-items:baseline">
           <span class="count">${list.length} canciones · ${list.filter((s) => s.loaded).length} listas</span>
+          <button class="mini-app-btn" id="prepSong">+ Desde YouTube o MP4</button>
           <button class="mini-app-btn" id="newSong">+ Nueva canción</button>
         </div>
       </div>
@@ -58,6 +59,8 @@
     draw('');
     S.view.querySelector('.search').addEventListener('input', (e) => draw(e.target.value));
     S.view.querySelector('#newSong').addEventListener('click', newSong);
+    // preparar una canción (letra + audio) se hace en Canta, con el motor local
+    S.view.querySelector('#prepSong').addEventListener('click', () => S.ctx.navigate('canta'));
   }
 
   function newSong() {
