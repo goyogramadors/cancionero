@@ -19,7 +19,29 @@ para compartirlas entre dispositivos, usa **Ajustes → Sincronizar con GitHub**
 3. **Subir al repo** guarda tus canciones en `data/user-songs.json` (un commit). En otro
    dispositivo, **Traer del repo** las baja. El token vive solo en cada dispositivo.
 
-## Estado actual (2026-07-07)
+## Canta — karaoke con afinación en vivo
+
+Nueva herramienta (pestaña **Canta**): eliges una canción preparada, se reproduce con la **voz y la
+música separadas** (volúmenes independientes), puedes **transponer** (±12 semitonos) y cambiar la
+**velocidad** (50–150 %), la **letra** avanza palabra a palabra tipo karaoke, y el carril estilo
+Yousician muestra las **barras de la melodía de la voz**; con el **micrófono** activo ves tu propia
+afinación en vivo y las barras se pintan **verde/rojo** según si le achuntas (con puntaje, racha y
+mejor marca). Botón para **guardar la letra en el Cancionero**.
+
+Como el navegador no puede sacar el audio de YouTube ni correr los modelos de separación/transcripción,
+las canciones se **preparan una vez** en tu PC con `canta-prep/` (Python): le das la **URL de YouTube o
+un archivo** (mp4/mp3/wav que hayas bajado tú) y deja un paquete en `app/canta-media/<canción>/`
+(voz + música + `canta.json` con letra sincronizada y melodía). Esa carpeta **no se sube al repo**
+(gitignoreada); en la PWA publicada puedes importar los paquetes con «Elegir carpeta» (quedan guardados
+en el navegador). Detalle e instalación: `canta-prep/README.md`. Sin canciones preparadas, hay una
+**demo sintética** para probar el juego.
+
+Estabilización del canto: compuerta de ruido adaptativa, exigencia de claridad del detector (YIN),
+filtro de mediana, corrección de saltos de octava y retención breve — el indicador no "se vuelve loco"
+con ruido ambiente. El modo **Prueba** canta solo (sin micrófono) para revisar que todo funcione, y
+**Octava libre** te deja cantar en tu octava cómoda.
+
+## Estado actual (2026-08-08)
 
 - **Construcción iniciada (Fase 1 lista).** La app real vive en `app/` — arquitectura extensible,
   sin build, JavaScript puro. Ver `app/ARQUITECTURA.md` para el detalle y cómo sumar sub-herramientas.
@@ -44,6 +66,10 @@ para compartirlas entre dispositivos, usa **Ajustes → Sincronizar con GitHub**
   - Verificado: arranque, ruteo/deep-linking, transposición, notación, perfiles, diagramas,
     metrónomo, editor completo (incl. arrastre), persistencia, caché offline, sitio en vivo, y el
     round-trip de sync contra el repo real.
+  - **Canta** (`app/tools/canta/` + `canta-prep/`): karaoke con voz/música separadas, tono, velocidad,
+    letra sincronizada y afinación en vivo (ver sección arriba). Verificado: DSP numéricamente
+    (duración y frecuencia exactas), transporte a velocidad alterada, demo jugable con puntaje,
+    y guardado de letra hacia el editor del Cancionero.
 - El **mockup** previo se conserva en `mockup/cancionero-mockup.html` como referencia de UX.
 
 ### Pendiente / ideas futuras
@@ -119,8 +145,11 @@ Songbook/
 │  ├─ core/               ← núcleo: music · registry · router(app) · store · ui
 │  ├─ data/songs.js       ← biblioteca semilla (2 canciones + pendientes)
 │  ├─ tools/songbook/     ← herramienta principal (cancionero)
+│  ├─ tools/canta/        ← karaoke con afinación en vivo (pestaña Canta)
 │  ├─ tools/practice/     ← sub-herramienta (práctica de acordes)
+│  ├─ canta-media/        ← paquetes de canciones preparadas (gitignoreada)
 │  └─ pwa/icon.svg
+├─ canta-prep/            ← preparador Python: YouTube/archivo → paquete Canta
 ├─ mockup/
 │  └─ cancionero-mockup.html   ← mockup de referencia (incluye editor por portar)
 └─ fuentes/               ← corpus original del usuario (texto extraído de los .docx)

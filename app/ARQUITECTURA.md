@@ -80,6 +80,32 @@ Nada de diagramas escritos a mano: se **calculan**.
   `localStorage` y se usan en todo el cancionero. `SB.music.registerFormulas` inyecta las fórmulas.
 - **Render** (`core/diagrams.js`): `SB.diagrams.guitar(patrón, etiqueta)` y `SB.diagrams.piano(pcs)`.
 
+## Canta (karaoke con afinación en vivo)
+
+La herramienta más grande; sirve de ejemplo de una sub-herramienta con audio pesado. Piezas
+(`tools/canta/`):
+
+- **`canta.js`** — la herramienta (se registra como primaria): biblioteca de paquetes y pantalla de
+  canto (canvas con carril de notas, letra palabra a palabra, puntaje). Todo el estado de partida
+  (segmentos verde/rojo, racha, traza de la voz) vive aquí.
+- **`canta-engine.js`** (`SB.cantaEngine`) — paquetes y transporte. Dos pistas (voz/música) con
+  ganancia independiente. **Tono y velocidad se pre-renderizan** (no en tiempo real): al cambiarlos
+  se procesa el audio completo y se retoma donde iba. Convención clave: **todas las posiciones son
+  segundos de la canción original**; el audio renderizado dura `D/tempo` y se convierte al dibujar.
+- **`canta-dsp.js`** — WSOLA (time-stretch) + remuestreo Hermite. Doble uso: Worker (camino normal)
+  o `<script>` clásico (respaldo file://). Estira por `ρ/τ` y remuestrea por `ρ = 2^(semitonos/12)`.
+- **`canta-pitch.js`** (`SB.cantaPitch`) + **`canta-pitch-worklet.js`** — captura del micrófono
+  (getUserMedia sin echoCancellation/noiseSuppression, que matan el canto) y detección YIN en un
+  AudioWorklet (decimación ×3). El estabilizador (compuerta de ruido adaptativa, mediana,
+  anti-octava, retención) vive en `canta-pitch.js`; el modo Prueba genera el pitch desde la melodía.
+
+**Paquetes:** carpeta `canta-media/<id>/` con `vocals.m4a`, `music.m4a` y `canta.json`
+(`{version,id,title,artist,youtube,duration,key,lang,files,lines:[{s,e,text,words:[{s,e,w}]}],`
+`notes:[{s,e,m}],f0:{dt,v}}` — tiempos en segundos, `m` = nota MIDI). Los produce `canta-prep/`
+(Python: yt-dlp + Demucs + faster-whisper + pyin); la carpeta va **gitignoreada**. La app los carga
+del servidor local (`canta-media/index.json`), de una carpeta elegida por el usuario (quedan en
+IndexedDB, útil en la PWA publicada) o genera una **demo sintética**.
+
 ## Datos (canciones)
 
 Modelo canónico en `data/songs.js`. La clave: **cada acorde se ancla a la posición de un

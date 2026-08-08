@@ -1,0 +1,698 @@
+/* ============================================================
+   Sub-herramienta: Canta — karaoke con afinación en vivo. Primaria.
+   Depende de SB.cantaEngine (audio/paquetes) y SB.cantaPitch (mic).
+
+   Pantallas:
+   - Biblioteca (#/canta): paquetes del servidor local + guardados
+     en el navegador + demo sintética + importar carpeta.
+   - Cantar (#/canta/song/<id>): carril de notas estilo karaoke
+     (las barras avanzan hacia la izquierda, cabezal fijo), letra
+     palabra a palabra, volúmenes voz/música, tono, velocidad,
+     micrófono con indicador de afinación, puntaje y racha.
+
+   Convenciones de tiempo: todo en segundos de la canción ORIGINAL.
+   El audio renderizado (tono/velocidad) dura D/tempo; para el
+   desplazamiento visual se divide por el tempo al dibujar.
+   ============================================================ */
+(function () {
+  window.SB = window.SB || {};
+  var E = function () { return SB.cantaEngine; };
+
+  var CFGKEY = 'sb.canta.cfg', BESTKEY = 'sb.canta.best';
+  var TOL = 0.6;          // tolerancia de afinación (semitonos)
+  var HITRATIO = 0.55;    // fracción acertada para nota verde
+  var PXPS = 120;         // píxeles por segundo (en tiempo reproducido)
+
+  var S = {
+    view: null, ctx: null, screen: null,
+    cfg: null, raf: 0, els: null, colors: null,
+    // partido en curso
+    notes: null, finPtr: 0, lineIdx: -1, trace: [],
+    score: 0, streak: 0, best: 0, wrapOff: 0,
+    micMode: 'off', lastSampleT: 0, applyTimer: null, rendering: false,
+    pendSemis: 0, pendTempo: 100,
+    mountSeq: 0, applySeq: 0, frame: 0
+  };
+
+  /* ---------------- configuración ---------------- */
+  function loadCfg() {
+    var d = { volV: 0.6, volM: 1.0, latency: 0.1, octaveFree: true, latin: true };
+    try { Object.assign(d, JSON.parse(localStorage.getItem(CFGKEY) || '{}')); } catch (e) {}
+    return d;
+  }
+  function saveCfg() { try { localStorage.setItem(CFGKEY, JSON.stringify(S.cfg)); } catch (e) {} }
+  function bestFor(id) {
+    try { return (JSON.parse(localStorage.getItem(BESTKEY) || '{}'))[id] || 0; } catch (e) { return 0; }
+  }
+  function saveBest(id, v) {
+    try {
+      var m = JSON.parse(localStorage.getItem(BESTKEY) || '{}');
+      if (v > (m[id] || 0)) { m[id] = v; localStorage.setItem(BESTKEY, JSON.stringify(m)); }
+    } catch (e) {}
+  }
+
+  /* ---------------- utilidades ---------------- */
+  function q(sel) { return S.view.querySelector(sel); }
+  function esc(s) { return SB.ui.esc(s); }
+  function fmtT(s) {
+    s = Math.max(0, Math.floor(s));
+    return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  }
+  function slug(s) {
+    return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'cancion';
+  }
+  function noteName(midi) {
+    var pc = ((Math.round(midi) % 12) + 12) % 12;
+    var n = SB.music.NOTES[pc];
+    return S.cfg.latin ? SB.music.LATIN_TI[n] : n;
+  }
+  function status(msg) { if (S.els && S.els.status) S.els.status.textContent = msg || ''; }
+
+  /* ================= BIBLIOTECA ================= */
+  async function mountLibrary() {
+    S.screen = 'lib';
+    // volver a la biblioteca dentro de Canta no pasa por onLeave: soltar todo aquí
+    if (S.raf) { cancelAnimationFrame(S.raf); S.raf = 0; }
+    if (S.applyTimer) { clearTimeout(S.applyTimer); S.applyTimer = null; }
+    SB.cantaPitch.stop();
+    E().pause();
+    S.view.innerHTML =
+      '<div class="ka-scope">' +
+      '<div class="rep-head"><h1>Canta</h1><span class="count" id="kaCount"></span></div>' +
+      '<p class="ed-note">Karaoke con afinación en vivo: elige una canción preparada, canta con el micrófono ' +
+      'y mira si vas en el tono. Para preparar una canción desde YouTube o un archivo (mp4/mp3), usa el ' +
+      'preparador <code>canta-prep</code> del repo (ver su README); deja los paquetes en <code>app/canta-media/</code> ' +
+      'o impórtalos aquí con "Elegir carpeta".</p>' +
+      '<div class="set-row">' +
+      '<button class="mini-app-btn" id="kaPick">Elegir carpeta…</button>' +
+      '<button class="mini-app-btn" id="kaDemo">Probar la demo</button>' +
+      '<input type="file" id="kaPickFallback" webkitdirectory multiple style="display:none">' +
+      '</div>' +
+      '<table class="rep" id="kaList"><thead><tr><th>Canción</th><th>Intérprete</th><th>Duración</th><th></th></tr></thead><tbody></tbody></table>' +
+      '<p class="set-status" id="kaLibStatus"></p>' +
+      '</div>';
+    q('#kaDemo').addEventListener('click', function () { S.ctx.navigate('canta/song/demo-estrellita'); });
+    q('#kaPick').addEventListener('click', pickFolder);
+    q('#kaPickFallback').addEventListener('change', async function (e) {
+      var found = await E().importFiles(Array.from(e.target.files));
+      libStatus(found);
+      drawLibrary();
+    });
+    drawLibrary();
+  }
+
+  function libStatus(found) {
+    var el = q('#kaLibStatus');
+    if (!el) return;
+    el.textContent = found.length
+      ? 'Importadas: ' + found.map(function (f) { return f.title; }).join(', ')
+      : 'En esa carpeta no encontré paquetes (busco canta.json + audios).';
+  }
+
+  async function pickFolder() {
+    try {
+      if (window.showDirectoryPicker) {
+        var h = await window.showDirectoryPicker();
+        var found = await E().importDirHandle(h);
+        libStatus(found);
+        drawLibrary();
+      } else {
+        q('#kaPickFallback').click();
+      }
+    } catch (e) {
+      // cancelar el diálogo es normal; cualquier otro error hay que contarlo
+      if (e && e.name !== 'AbortError') {
+        var el = q('#kaLibStatus');
+        if (el) el.textContent = 'No pude importar: ' + e.message;
+      }
+    }
+  }
+
+  async function drawLibrary() {
+    var saved = await E().savedList();
+    var server = await E().fetchServerList();
+    var seen = {}, rows = [];
+    (server || []).forEach(function (p) { seen[p.id] = true; rows.push({ p: p, src: 'servidor' }); });
+    saved.forEach(function (p) { if (!seen[p.id]) rows.push({ p: p, src: 'guardada' }); });
+    rows.sort(function (a, b) { return a.p.title.localeCompare(b.p.title); });
+    if (S.screen !== 'lib' || !q('#kaList')) return;
+    q('#kaCount').textContent = rows.length + ' canciones';
+    var tb = q('#kaList tbody');
+    tb.innerHTML = rows.map(function (r) {
+      var del = r.src === 'guardada'
+        ? ' <button class="mini-x" data-del="' + esc(r.p.id) + '" title="Borrar del navegador">×</button>' : '';
+      return '<tr class="song" data-id="' + esc(r.p.id) + '"><td class="t-title">' + esc(r.p.title) +
+        '</td><td>' + esc(r.p.artist || '') + '</td><td class="t-key">' + fmtT(r.p.duration || 0) +
+        '</td><td><span class="badge">' + r.src + '</span>' + del + '</td></tr>';
+    }).join('') || '<tr class="stub"><td colspan="4">Sin canciones todavía — prepara una con canta-prep o prueba la demo.</td></tr>';
+    tb.querySelectorAll('tr.song').forEach(function (tr) {
+      tr.addEventListener('click', function () { S.ctx.navigate('canta/song/' + encodeURIComponent(tr.dataset.id)); });
+    });
+    tb.querySelectorAll('button[data-del]').forEach(function (b) {
+      b.addEventListener('click', async function (ev) {
+        ev.stopPropagation();
+        await E().deleteSaved(b.dataset.del);
+        drawLibrary();
+      });
+    });
+  }
+
+  /* ================= CARGA DE UNA CANCIÓN ================= */
+  async function openSong(id) {
+    var mySeq = S.mountSeq; // si el usuario cambia de vista durante la carga, no pintar encima
+    S.view.innerHTML = '<div class="ka-scope"><p class="set-status">Cargando "' + esc(id) + '"…</p></div>';
+    try {
+      var cur = E().current();
+      if (!cur || cur.id !== id) {
+        if (id === 'demo-estrellita') E().buildDemo();
+        else {
+          try { await E().loadSaved(id); }
+          catch (e) { await E().loadFromServer(id); }
+        }
+      }
+      if (mySeq !== S.mountSeq) return;
+      mountPlayer();
+    } catch (e) {
+      if (mySeq !== S.mountSeq) return;
+      S.view.innerHTML = '<div class="ka-scope"><button class="back" id="kaBack">← Canta</button>' +
+        '<p class="set-status">No pude cargar la canción: ' + esc(e.message) + '</p></div>';
+      q('#kaBack').addEventListener('click', function () { S.ctx.navigate('canta'); });
+    }
+  }
+
+  /* ================= PANTALLA CANTAR ================= */
+  function mountPlayer() {
+    var pkg = E().current();
+    S.screen = 'play';
+    S.best = bestFor(pkg.id);
+    S.score = 0; S.streak = 0; S.trace = []; S.lineIdx = -1; S.wrapOff = 0;
+    S.pendSemis = 0; S.pendTempo = 100;
+    S.notes = (pkg.notes || []).map(function (n) {
+      return { s: n.s, e: n.e, m: n.m, segs: [], hitT: 0, totT: 0, done: false, green: false, scored: false, pts: 0 };
+    }).sort(function (a, b) { return a.s - b.s; });
+    S.finPtr = 0;
+
+    S.view.innerHTML =
+      '<div class="ka-scope">' +
+      '<button class="back" id="kaBack">← Canta</button>' +
+      '<div class="rep-head"><div><h1>' + esc(pkg.title) + '</h1>' +
+      '<p class="artist">' + esc(pkg.artist || '') + (pkg.key ? ' · tono ' + esc(pkg.key) : '') + '</p></div>' +
+      '<button class="mini-app-btn" id="kaSaveLyr">Guardar letra en el Cancionero</button></div>' +
+
+      '<div class="ka-stage">' +
+      '<canvas id="kaCanvas"></canvas>' +
+      '<div class="ka-hud"><span id="kaScore">0</span><span class="ka-hud-sub" id="kaStreak"></span>' +
+      '<span class="ka-hud-sub" id="kaBest"></span></div>' +
+      '<div class="ka-lyric"><div class="ka-now" id="kaNow"></div><div class="ka-next" id="kaNext"></div></div>' +
+      '</div>' +
+
+      '<div class="controls">' +
+      '<button class="pr-play ka-play" id="kaPlay">CANTAR</button>' +
+      '<span class="t-key" id="kaTime">0:00 / ' + fmtT(E().duration()) + '</span>' +
+      '<input type="range" class="ka-prog" id="kaProg" min="0" max="1000" value="0" aria-label="Posición">' +
+      '</div>' +
+
+      '<div class="controls ka-ctl">' +
+      '<div class="ctl"><span class="ctl-label">Voz</span><input type="range" id="kaVolV" min="0" max="130" aria-label="Volumen voz"></div>' +
+      '<div class="ctl"><span class="ctl-label">Música</span><input type="range" id="kaVolM" min="0" max="130" aria-label="Volumen música"></div>' +
+      '<div class="ctl"><span class="ctl-label" title="Cada clic sube o baja medio tono (un semitono); se muestra en tonos">Tono</span><div class="stepper">' +
+      '<button id="kaSemD" aria-label="Bajar medio tono">−</button><span class="val" id="kaSem">0</span><button id="kaSemU" aria-label="Subir medio tono">+</button></div></div>' +
+      '<div class="ctl"><span class="ctl-label">Velocidad</span><div class="stepper">' +
+      '<button id="kaTemD" aria-label="Más lento">−</button><span class="val" id="kaTem">100%</span><button id="kaTemU" aria-label="Más rápido">+</button></div></div>' +
+      '<div class="ctl"><span class="ctl-label">Escucha</span><div class="seg" id="kaMicSeg">' +
+      '<button data-m="off">Off</button><button data-m="mic">Mic</button><button data-m="test">Prueba</button></div></div>' +
+      '<label class="check" title="Acepta tu canto en la octava que te acomode (hombre cantando una canción de mujer, etc.). Desmarcado: exige la octava exacta"><input type="checkbox" id="kaOct"> Octava libre</label>' +
+      '<div class="ctl"><span class="ctl-label" title="Compensación del retardo parlante→micrófono→proceso. Si cantas bien pero te marca corrido, ajústala de a 10 ms">Latencia</span><div class="stepper">' +
+      '<button id="kaLatD" aria-label="Menos latencia">−</button><span class="val" id="kaLat"></span><button id="kaLatU" aria-label="Más latencia">+</button></div></div>' +
+      '</div>' +
+      '<p class="set-status" id="kaStatus"></p>' +
+      '</div>';
+
+    S.els = {
+      canvas: q('#kaCanvas'), now: q('#kaNow'), next: q('#kaNext'),
+      score: q('#kaScore'), streak: q('#kaStreak'), best: q('#kaBest'),
+      play: q('#kaPlay'), time: q('#kaTime'), prog: q('#kaProg'), status: q('#kaStatus')
+    };
+    readColors();
+
+    // eventos
+    q('#kaBack').addEventListener('click', function () { S.ctx.navigate('canta'); });
+    q('#kaSaveLyr').addEventListener('click', saveLyrics);
+    S.els.play.addEventListener('click', togglePlay);
+    S.els.prog.addEventListener('input', function () {
+      var t = (+this.value / 1000) * E().duration();
+      E().seek(t); resetRunFrom(t);
+    });
+    var volV = q('#kaVolV'), volM = q('#kaVolM');
+    volV.value = Math.round(S.cfg.volV * 100); volM.value = Math.round(S.cfg.volM * 100);
+    E().setVol('vocals', S.cfg.volV); E().setVol('music', S.cfg.volM);
+    volV.addEventListener('input', function () { S.cfg.volV = +this.value / 100; E().setVol('vocals', S.cfg.volV); saveCfg(); });
+    volM.addEventListener('input', function () { S.cfg.volM = +this.value / 100; E().setVol('music', S.cfg.volM); saveCfg(); });
+    q('#kaSemD').addEventListener('click', function () { bumpSemis(-1); });
+    q('#kaSemU').addEventListener('click', function () { bumpSemis(1); });
+    q('#kaTemD').addEventListener('click', function () { bumpTempo(-5); });
+    q('#kaTemU').addEventListener('click', function () { bumpTempo(5); });
+    q('#kaMicSeg').querySelectorAll('button').forEach(function (b) {
+      b.addEventListener('click', function () { setMicMode(b.dataset.m); });
+    });
+    var oct = q('#kaOct');
+    oct.checked = S.cfg.octaveFree;
+    oct.addEventListener('change', function () { S.cfg.octaveFree = oct.checked; saveCfg(); });
+    q('#kaLatD').addEventListener('click', function () { bumpLat(-0.01); });
+    q('#kaLatU').addEventListener('click', function () { bumpLat(0.01); });
+
+    E().setOnEnded(function () {
+      finalizeAll();
+      saveBest(pkg.id, S.score);
+      S.best = bestFor(pkg.id);
+      updateHud();
+      status('Fin. Puntaje: ' + S.score + (S.score >= S.best ? ' — ¡tu mejor marca!' : ''));
+      updatePlayBtn();
+    });
+
+    setMicMode(S.micMode === 'mic' ? 'mic' : (S.micMode || 'off'), true);
+    updateSteppers(); updateHud(); updatePlayBtn();
+    loop();
+  }
+
+  function readColors() {
+    var cs = getComputedStyle(document.documentElement);
+    var v = function (name, fb) { return (cs.getPropertyValue(name) || fb).trim() || fb; };
+    S.colors = {
+      ink: v('--ink', '#141414'), mut: v('--mut', '#767676'), faint: v('--faint', '#a8a8a8'),
+      line: v('--line', '#e3e3e3'), panel: v('--panel', '#fafafa'), bg: v('--bg', '#ffffff'),
+      good: '#2f9e44', bad: '#d33131'
+    };
+  }
+
+  /* ---------------- transporte y parámetros ---------------- */
+  function togglePlay() {
+    if (S.rendering) return;
+    if (E().playing()) { E().pause(); }
+    else {
+      E().ctx(); // gesto del usuario: despierta el AudioContext
+      if (E().position() >= E().duration() - 0.05) { E().seek(0); resetRunFrom(0); }
+      if (S.score === 0 && E().position() < 0.05) resetRunFrom(0);
+      E().play();
+      status('');
+    }
+    updatePlayBtn();
+  }
+  function updatePlayBtn() {
+    S.els.play.textContent = E().playing() ? 'PAUSA' : 'CANTAR';
+    S.els.play.classList.toggle('playing', E().playing());
+  }
+
+  function bumpSemis(d) {
+    S.pendSemis = Math.max(-12, Math.min(12, S.pendSemis + d));
+    updateSteppers(); scheduleApply();
+  }
+  function bumpTempo(d) {
+    S.pendTempo = Math.max(50, Math.min(150, S.pendTempo + d));
+    updateSteppers(); scheduleApply();
+  }
+  function bumpLat(d) {
+    S.cfg.latency = Math.max(0, Math.min(0.3, Math.round((S.cfg.latency + d) * 100) / 100));
+    saveCfg(); updateSteppers();
+  }
+  // el paso interno es el semitono; se muestra en tonos: +½, +1, +1½…
+  function fmtSemis(s) {
+    if (!s) return '0';
+    var sign = s > 0 ? '+' : '−', a = Math.abs(s);
+    var whole = Math.floor(a / 2), half = a % 2;
+    return sign + (whole ? whole : '') + (half ? '½' : '');
+  }
+  function updateSteppers() {
+    q('#kaSem').textContent = fmtSemis(S.pendSemis);
+    q('#kaTem').textContent = S.pendTempo + '%';
+    q('#kaLat').textContent = Math.round(S.cfg.latency * 1000) + ' ms';
+  }
+  function scheduleApply() {
+    if (S.applyTimer) clearTimeout(S.applyTimer);
+    S.applyTimer = setTimeout(applyParams, 450);
+  }
+  async function applyParams() {
+    S.applyTimer = null;
+    var semis = S.pendSemis, tempo = S.pendTempo / 100;
+    if (semis === E().semis() && tempo === E().tempo()) return;
+    var mySeq = ++S.applySeq; // solo el intento más nuevo toca la UI
+    S.rendering = true;
+    status('Procesando tono/velocidad…');
+    try {
+      await E().setPlaybackParams(tempo, semis, function (p) {
+        if (mySeq === S.applySeq) status('Procesando tono/velocidad… ' + Math.round(p * 100) + '%');
+      });
+      if (mySeq === S.applySeq) status('');
+    } catch (e) {
+      if (mySeq === S.applySeq && e.message !== 'render cancelado') {
+        status('Falló el proceso: ' + e.message);
+        // reflejar el rollback del motor en los steppers
+        S.pendSemis = E().semis();
+        S.pendTempo = Math.round(E().tempo() * 100);
+        updateSteppers();
+      }
+    }
+    if (mySeq === S.applySeq) { S.rendering = false; updatePlayBtn(); }
+  }
+
+  function setMicMode(mode, silent) {
+    S.micMode = mode;
+    q('#kaMicSeg').querySelectorAll('button').forEach(function (b) {
+      b.setAttribute('aria-pressed', b.dataset.m === mode ? 'true' : 'false');
+    });
+    SB.cantaPitch.stop();
+    if (mode === 'off') return;
+    if (mode === 'test') {
+      SB.cantaPitch.setTestMelody(function () {
+        if (!E().playing()) return null;
+        var ta = E().position() - S.cfg.latency;
+        var n = noteAt(ta);
+        if (!n) return null;
+        return n.m + E().semis() + 0.12 * Math.sin(ta * 7);
+      });
+    }
+    SB.cantaPitch.start(E().ctx(), mode, onPitchSample).catch(function (e) {
+      S.micMode = 'off'; setMicMode('off');
+      status('No pude usar el micrófono: ' + e.message);
+    });
+    if (!silent) status(mode === 'mic' ? 'Micrófono activo. Con parlantes fuertes conviene usar audífonos.' : 'Modo prueba: canto automático.');
+  }
+
+  /* ---------------- lógica de partido ---------------- */
+  function noteAt(t) {
+    var ns = S.notes, lo = 0, hi = ns.length - 1;
+    while (lo <= hi) {
+      var mid = (lo + hi) >> 1;
+      if (ns[mid].e < t) lo = mid + 1;
+      else if (ns[mid].s > t) hi = mid - 1;
+      else return ns[mid];
+    }
+    return null;
+  }
+
+  function resetRunFrom(t) {
+    S.trace = [];
+    S.lineIdx = -1;
+    for (var i = 0; i < S.notes.length; i++) {
+      var n = S.notes[i];
+      if (n.e >= t - 0.05) {
+        S.score -= n.pts || 0; // devolver lo ganado: retroceder no infla el puntaje
+        n.pts = 0; n.scored = false;
+        n.segs = []; n.hitT = 0; n.totT = 0; n.done = false; n.green = false;
+      }
+    }
+    S.finPtr = 0;
+    while (S.finPtr < S.notes.length && S.notes[S.finPtr].done) S.finPtr++;
+    // reconstruir la racha vigente: verdes consecutivas entre las notas que quedaron cerradas
+    var st = 0;
+    for (i = 0; i < S.finPtr; i++) {
+      var d = S.notes[i];
+      if (d.scored) st = d.green ? st + 1 : 0;
+    }
+    S.streak = st;
+    if (S.score < 0) S.score = 0;
+    updateHud();
+  }
+
+  // llega ~50 veces/s desde el estabilizador (mic o prueba)
+  function onPitchSample(sample) {
+    if (S.screen !== 'play' || !E().playing()) return;
+    var dt = S.lastSampleT ? Math.min(0.05, Math.max(0.005, sample.t - S.lastSampleT)) : 0.02;
+    S.lastSampleT = sample.t;
+    var tAdj = E().position() - S.cfg.latency;
+    if (tAdj < 0) return;
+    var target = noteAt(tAdj);
+    var semis = E().semis();
+    var shown = null, state = 0; // 0 sin voz/objetivo · 1 acierto · 2 error
+    if (sample.midi != null) {
+      shown = sample.midi;
+      if (target) {
+        var goal = target.m + semis;
+        if (S.cfg.octaveFree) {
+          S.wrapOff = 12 * Math.round((goal - sample.midi) / 12);
+          shown = sample.midi + S.wrapOff;
+        }
+        var hit = Math.abs(shown - goal) <= TOL;
+        state = hit ? 1 : 2;
+        target.totT += dt;
+        if (hit) target.hitT += dt;
+        var segs = target.segs, last = segs[segs.length - 1];
+        if (last && last.hit === hit && tAdj - last.t1 < 0.08) last.t1 = tAdj;
+        else segs.push({ t0: tAdj, t1: tAdj + 0.001, hit: hit });
+      } else if (S.cfg.octaveFree) {
+        shown = sample.midi + S.wrapOff; // mantener la octava mostrada entre notas
+      }
+    } else if (target) {
+      target.totT += dt; // había que cantar y no se detectó voz
+    }
+    if (shown != null) {
+      S.trace.push({ t: tAdj, m: shown, st: state });
+      if (S.trace.length > 400) S.trace.splice(0, S.trace.length - 400);
+    }
+  }
+
+  function finalizeUpTo(tAdj) {
+    var changed = false;
+    while (S.finPtr < S.notes.length && S.notes[S.finPtr].e + 0.15 < tAdj) {
+      var n = S.notes[S.finPtr];
+      if (!n.done) {
+        n.done = true;
+        n.scored = S.micMode !== 'off' && n.totT > 0.02;
+        var ratio = n.scored ? n.hitT / n.totT : 0;
+        n.green = n.scored && ratio >= HITRATIO;
+        if (n.scored) {
+          var mult = 1 + 0.1 * Math.min(S.streak, 10);
+          n.pts = Math.round((n.e - n.s) * 100 * ratio * mult);
+          S.score += n.pts;
+          S.streak = n.green ? S.streak + 1 : 0;
+          changed = true;
+        }
+      }
+      S.finPtr++;
+    }
+    if (changed) updateHud();
+  }
+  function finalizeAll() { finalizeUpTo(Infinity); }
+
+  function updateHud() {
+    S.els.score.textContent = S.score;
+    S.els.streak.textContent = S.streak > 1 ? 'racha ' + S.streak + '×' : '';
+    S.els.best.textContent = S.best > 0 ? 'mejor ' + Math.max(S.best, S.score) : '';
+  }
+
+  /* ---------------- letra ---------------- */
+  function updateLyrics(t) {
+    var lines = (E().current().lines || []);
+    if (!lines.length) {
+      if (S.lineIdx !== -2) { S.lineIdx = -2; S.els.now.textContent = ''; S.els.next.textContent = '(sin letra transcrita)'; }
+      return;
+    }
+    // línea vigente: la que contiene t, o la próxima
+    var idx = -1;
+    for (var i = 0; i < lines.length; i++) {
+      if (t <= lines[i].e + 0.3) { idx = i; break; }
+    }
+    if (idx < 0) idx = lines.length - 1;
+    if (idx !== S.lineIdx) {
+      S.lineIdx = idx;
+      var L = lines[idx];
+      S.els.now.innerHTML = (L.words && L.words.length)
+        ? L.words.map(function (w, wi) { return '<span data-wi="' + wi + '">' + esc(w.w) + '</span>'; }).join(' ')
+        : esc(L.text);
+      S.els.next.textContent = idx + 1 < lines.length ? lines[idx + 1].text : '';
+    }
+    var L2 = lines[idx];
+    if (L2.words) {
+      var spans = S.els.now.children;
+      for (i = 0; i < spans.length; i++) {
+        spans[i].classList.toggle('on', t >= (L2.words[i] ? L2.words[i].s : 1e9));
+      }
+    }
+  }
+
+  /* ---------------- dibujo ---------------- */
+  function loop() {
+    if (S.screen !== 'play') return;
+    // releer los colores del tema de vez en cuando (tema auto puede cambiar solo)
+    if ((S.frame = (S.frame || 0) + 1) % 90 === 0) readColors();
+    draw();
+    S.raf = requestAnimationFrame(loop);
+  }
+
+  function draw() {
+    var cv = S.els.canvas, dpr = window.devicePixelRatio || 1;
+    var W = cv.clientWidth, H = cv.clientHeight;
+    if (!W) return;
+    if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) {
+      cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    }
+    var g = cv.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, W, H);
+
+    var C = S.colors, tempo = E().tempo(), semis = E().semis();
+    var now = E().position();
+    var tAdj = now - S.cfg.latency;
+    finalizeUpTo(tAdj);
+    updateLyrics(now);
+
+    // rango vertical según la melodía transpuesta
+    var ns = S.notes, loM = 55, hiM = 79;
+    if (ns.length) {
+      loM = Infinity; hiM = -Infinity;
+      for (var i = 0; i < ns.length; i++) { if (ns[i].m < loM) loM = ns[i].m; if (ns[i].m > hiM) hiM = ns[i].m; }
+      loM = Math.floor(loM + semis) - 3; hiM = Math.ceil(hiM + semis) + 3;
+      while (hiM - loM < 14) { loM--; hiM++; }
+    }
+    var span = hiM - loM;
+    var yOf = function (m) { return H - ((m - loM) / span) * H; };
+    var phX = W * 0.40; // 40% de pasado, 60% de futuro
+    var xOf = function (t) { return phX + ((t - now) / tempo) * PXPS; };
+    var barH = Math.max(5, Math.min(20, (H / span) * 0.85));
+
+    // rejilla: una línea por semitono, más notoria en cada Do
+    g.lineWidth = 1;
+    for (var m = loM; m <= hiM; m++) {
+      var y = yOf(m);
+      var isC = ((m % 12) + 12) % 12 === 0;
+      g.strokeStyle = isC ? C.line : C.panel;
+      if (!isC && span > 26) continue;
+      g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke();
+      if (isC) {
+        g.fillStyle = C.faint; g.font = '10px ui-monospace,Consolas,monospace';
+        g.fillText(noteName(m) + (Math.floor(m / 12) - 1), 4, y - 3);
+      }
+    }
+
+    // barras de notas
+    var t0Vis = now - (phX / PXPS) * tempo - 1, t1Vis = now + ((W - phX) / PXPS) * tempo + 1;
+    g.font = '600 11px ui-monospace,Consolas,monospace';
+    for (i = 0; i < ns.length; i++) {
+      var n = ns[i];
+      if (n.e < t0Vis) continue;
+      if (n.s > t1Vis) break;
+      var x1 = xOf(n.s), x2 = xOf(n.e);
+      var ym = yOf(n.m + semis) - barH / 2;
+      // nota cerrada: verde/rojo solo si de verdad se evaluó; saltada queda neutra
+      g.fillStyle = n.done && n.scored ? (n.green ? C.good : C.bad) : C.line;
+      g.globalAlpha = n.done ? 0.5 : 1;
+      rounded(g, x1, ym, Math.max(3, x2 - x1), barH, barH / 2);
+      g.fill();
+      g.globalAlpha = 1;
+      // tramo ya recorrido, pintado según acierto
+      for (var si = 0; si < n.segs.length; si++) {
+        var sg = n.segs[si];
+        var sx1 = xOf(Math.max(sg.t0, n.s)), sx2 = xOf(Math.min(sg.t1, n.e));
+        if (sx2 <= sx1) continue;
+        g.fillStyle = sg.hit ? C.good : C.bad;
+        rounded(g, sx1, ym, sx2 - sx1, barH, barH / 2);
+        g.fill();
+      }
+      if (x2 - x1 > 30) {
+        g.fillStyle = C.mut;
+        g.fillText(noteName(n.m + semis), x1 + 6, ym - 3 < 10 ? ym + barH + 11 : ym - 3);
+      }
+    }
+
+    // traza de la voz del usuario
+    if (S.trace.length) {
+      g.lineWidth = 2;
+      var prev = null;
+      for (i = 0; i < S.trace.length; i++) {
+        var p = S.trace[i];
+        if (p.t < t0Vis) continue;
+        if (p.t > tAdj + 0.02) break;
+        var px = xOf(p.t), py = yOf(Math.max(loM, Math.min(hiM, p.m)));
+        var col = p.st === 1 ? C.good : (p.st === 2 ? C.bad : C.mut);
+        // solo conectar puntos cercanos en tiempo Y en altura (línea armónica,
+        // sin espigas verticales cuando el detector salta)
+        if (prev && p.t - prev.t < 0.1 && Math.abs(p.m - prev.m) < 3) {
+          g.strokeStyle = col;
+          g.beginPath(); g.moveTo(prev.x, prev.y); g.lineTo(px, py); g.stroke();
+        }
+        prev = { t: p.t, x: px, y: py, m: p.m };
+      }
+      // cometa en el punto actual
+      if (prev && tAdj - prev.t < 0.25) {
+        g.fillStyle = C.ink;
+        g.beginPath(); g.arc(prev.x, prev.y, 5, 0, Math.PI * 2); g.fill();
+        g.strokeStyle = C.bg; g.lineWidth = 1.5;
+        g.beginPath(); g.arc(prev.x, prev.y, 5, 0, Math.PI * 2); g.stroke();
+      }
+    }
+
+    // cabezal
+    g.strokeStyle = C.mut; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(phX, 0); g.lineTo(phX, H); g.stroke();
+
+    // transporte
+    var dur = E().duration() || 1;
+    S.els.time.textContent = fmtT(now) + ' / ' + fmtT(dur);
+    if (document.activeElement !== S.els.prog) S.els.prog.value = Math.round((now / dur) * 1000);
+    if (E().playing() !== S.els.play.classList.contains('playing')) updatePlayBtn();
+  }
+
+  function rounded(g, x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    g.beginPath();
+    g.moveTo(x + r, y);
+    g.arcTo(x + w, y, x + w, y + h, r);
+    g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r);
+    g.arcTo(x, y, x + w, y, r);
+    g.closePath();
+  }
+
+  /* ---------------- guardar letra en el cancionero ---------------- */
+  function saveLyrics() {
+    var pkg = E().current();
+    var lines = (pkg.lines || []).filter(function (l) { return l.text && l.text.trim(); });
+    if (!lines.length) { status('Esta canción no tiene letra transcrita.'); return; }
+    var base = 'canta-' + slug(pkg.title), id = base, k = 2;
+    while (SB.store.get(id)) id = base + '-' + (k++);
+    SB.store.save({
+      id: id, title: pkg.title, artist: pkg.artist || '', key: pkg.key || '—', loaded: true,
+      parts: [{ name: 'Letra', lines: lines.map(function (l) { return { l: ' ' + l.text.trim(), a: [] }; }) }]
+    });
+    status('Letra guardada en el Cancionero.');
+    S.ctx.navigate('songbook/song/' + id);
+  }
+
+  /* ---------------- montaje ---------------- */
+  function mount(view, rest, ctx) {
+    S.view = view; S.ctx = ctx;
+    S.mountSeq = (S.mountSeq || 0) + 1;
+    if (!S.cfg) S.cfg = loadCfg();
+    var m = /^song\/(.+)$/.exec(rest || '');
+    if (m) openSong(decodeURIComponent(m[1]));
+    else mountLibrary();
+  }
+
+  function leave() {
+    S.mountSeq = (S.mountSeq || 0) + 1; // invalida cargas en curso
+    if (S.raf) cancelAnimationFrame(S.raf);
+    S.raf = 0;
+    if (S.applyTimer) { clearTimeout(S.applyTimer); S.applyTimer = null; }
+    S.screen = null;
+    SB.cantaPitch.stop();
+    if (SB.cantaEngine) SB.cantaEngine.pause();
+  }
+
+  // gancho mínimo de inspección (depurar sin exponer el estado entero)
+  SB.canta = {
+    debug: function () {
+      return {
+        screen: S.screen, score: S.score, streak: S.streak,
+        trace: S.trace.length, micMode: S.micMode,
+        notesDone: S.notes ? S.notes.filter(function (n) { return n.done; }).length : 0,
+        notesGreen: S.notes ? S.notes.filter(function (n) { return n.green; }).length : 0,
+        segs: S.notes ? S.notes.reduce(function (a, n) { return a + n.segs.length; }, 0) : 0,
+        lineIdx: S.lineIdx, rendering: S.rendering
+      };
+    }
+  };
+
+  var ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line></svg>';
+  SB.registry.register({ id: 'canta', name: 'Canta', kind: 'primary', icon: ICON, mount: mount, onLeave: leave });
+})();

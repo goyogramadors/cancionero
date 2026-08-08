@@ -9,3 +9,12 @@ Desktop.ini
 # Temporales
 *.tmp
 *.log
+
+# Canta: paquetes de audio (pesados y con derechos; se generan con canta-prep)
+app/canta-media/
+
+# Canta: entorno Python del preparador
+canta-prep/.venv/
+
+# Artefactos del navegador de pruebas
+.playwright-mcp/

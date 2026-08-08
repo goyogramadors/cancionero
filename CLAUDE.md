@@ -65,11 +65,19 @@ python -m http.server 8000   # abrir http://localhost:8000
   `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`
 - Pushear requiere estar autenticado en GitHub como **goyogramadors** (gh auth o un PAT).
 
-## Estado actual (2026-07-27)
+## Estado actual (2026-08-08)
 Listo y en vivo: arquitectura extensible, cancionero (visor + **editor** de acordes-ladrillo y
 letra-por-filas, crear/editar/borrar canciones), **biblioteca de acordes** (generador de guitarra
 para cualquier acorde + herramienta "Acordes" para agregar formas/alteraciones propias), práctica de
 acordes con metrónomo, ajustes (tema, respaldo, sync GitHub), y PWA desplegada.
+
+Nuevo: **Canta** (`app/tools/canta/`, pestaña primaria) — karaoke con voz/música separadas y volúmenes
+independientes, transposición ±12, velocidad 50–150 %, letra karaoke palabra a palabra, carril de
+afinación estilo Yousician (barras verde/rojo, puntaje/racha), micrófono con estabilización de pitch,
+modo Prueba sin mic, y guardado de la letra en el Cancionero. Las canciones se preparan con
+**`canta-prep/`** (Python: yt-dlp + Demucs + faster-whisper + pyin) desde URL de YouTube o archivo
+local → paquete en `app/canta-media/<id>/` (gitignoreada). Detalles en `app/ARQUITECTURA.md` y
+`canta-prep/README.md`.
 
 ### Pendiente / ideas
 - **Parser de pegado inteligente**: pegar letra+acordes y reconocerlos solos (se pospuso; el usuario
