@@ -30,7 +30,8 @@ mejor marca). Botón para **guardar la letra en el Cancionero**.
 
 ### Preparar una canción (desde la misma app)
 
-En tu computador, doble clic a **`canta-prep/motor.bat`**: se abre el cancionero en
+En tu computador, doble clic al acceso directo **Cancionero** del escritorio (o a
+`canta-prep/motor.bat`): se abre el cancionero en
 `http://localhost:8765` y en la pestaña **Canta** aparece el cuadro «Preparar una canción». Pegas el
 **link de YouTube** o eliges un **archivo** (mp4/mp3/m4a/wav) que hayas bajado, aprietas *Preparar
 canción* y esperas (5–15 min: separar la voz y transcribir es pesado). Al terminar:
@@ -38,6 +39,9 @@ canción* y esperas (5–15 min: separar la voz y transcribir es pesado). Al ter
 - la **letra** queda guardada como canción del Cancionero (y se sincroniza si tienes el token puesto),
 - la **canción** (voz + música + melodía) se **sube al repositorio** con un commit,
 - así aparece sola en el sitio publicado y en el celular, sin volver a tocar el computador.
+
+> En un computador nuevo, después de clonar el repo: `canta-prep/setup.bat` (una vez) y
+> `canta-prep/crear-acceso-directo.bat` para dejar el ícono en el escritorio.
 
 El navegador no puede hacer esto solo (no puede bajar audio de YouTube ni correr los modelos de
 separación/transcripción), por eso el motor corre en tu PC. En el sitio publicado el cuadro explica

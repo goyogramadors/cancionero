@@ -756,6 +756,18 @@ def abrir_puerto(preferido):
     sys.exit(1)
 
 
+def motor_ya_corriendo(puerto):
+    """?Hay otro motor nuestro en ese puerto? (el acceso directo del escritorio
+    se puede apretar dos veces; en vez de levantar un segundo motor en otro
+    puerto, conviene reusar el que ya esta)."""
+    try:
+        import urllib.request
+        with urllib.request.urlopen('http://127.0.0.1:%d/api/estado' % puerto, timeout=1.5) as r:
+            return json.loads(r.read().decode('utf-8')).get('motor') == 'canta-motor'
+    except Exception:
+        return False
+
+
 def avisos_de_entorno():
     if shutil.which('ffmpeg') is None:
         print('AVISO: no se encontro ffmpeg en el PATH. Instalalo con:')
@@ -781,6 +793,15 @@ def main():
     p.add_argument('--sin-navegador', dest='sin_navegador', action='store_true',
                    help='no abrir el navegador al partir')
     args = p.parse_args()
+
+    # si ya hay un motor en el puerto pedido, no levantamos otro: abrimos el que hay
+    if motor_ya_corriendo(args.puerto):
+        url = 'http://localhost:%d' % args.puerto
+        print('== Motor del Cancionero ==')
+        print('Ya habia un motor corriendo en %s; abro ese.' % url)
+        if not args.sin_navegador:
+            webbrowser.open(url)
+        return
 
     servidor, puerto = abrir_puerto(args.puerto)
     url = 'http://localhost:%d' % puerto
