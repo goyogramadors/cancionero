@@ -799,23 +799,70 @@
     };
   }
 
+  // Normaliza para comparar textos (sin tildes, sin puntuación, minúsculas)
+  function norm(s) {
+    return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function parecido(a, b) {
+    var A = norm(a).split(' '), B = norm(b).split(' ');
+    if (!A.length || !B.length) return 0;
+    var usados = B.slice(), comunes = 0;
+    A.forEach(function (w) {
+      var i = usados.indexOf(w);
+      if (i >= 0) { usados.splice(i, 1); comunes++; }
+    });
+    return comunes / Math.max(A.length, B.length);
+  }
+
+  // Le presta tiempos del paquete a las líneas que no tienen marca propia
+  // (letras guardadas antes de que existieran las marcas, o escritas a mano).
+  // Empareja por orden si la cantidad calza, si no por parecido de texto.
+  function prestarTiempos(lineas, pkgLines) {
+    var faltan = lineas.filter(function (l) { return !l.t; });
+    if (!faltan.length || !pkgLines.length) return;
+    if (lineas.length === pkgLines.length) {
+      lineas.forEach(function (l, i) { if (!l.t) l.t = [pkgLines[i].s, pkgLines[i].e]; });
+      return;
+    }
+    var libres = pkgLines.slice();
+    faltan.forEach(function (l) {
+      var best = -1, bestP = 0.34; // bajo este parecido, mejor no inventar
+      libres.forEach(function (p, i) {
+        var s = parecido(l.l, p.text);
+        if (s > bestP) { bestP = s; best = i; }
+      });
+      if (best >= 0) { l.t = [libres[best].s, libres[best].e]; libres.splice(best, 1); }
+    });
+  }
+
   function letraEfectiva(pkg) {
     var song = cancionVinculada(pkg);
+    var pkgLines = pkg.lines || [];
     if (song) {
-      var out = [];
+      var crudas = [];
       (song.parts || []).forEach(function (p) {
         (p.lines || []).forEach(function (ln) {
-          if (!ln.t || !ln.l || !ln.l.trim()) return; // sin marca no se puede sincronizar
+          if (ln.l && ln.l.trim()) crudas.push(ln);
+        });
+      });
+      if (crudas.length) {
+        // trabajamos sobre copias: prestar tiempos no debe tocar lo guardado
+        var copias = crudas.map(function (l) { return { l: l.l, t: l.t && l.t.slice(), w: l.w }; });
+        prestarTiempos(copias, pkgLines);
+        var out = [];
+        copias.forEach(function (ln) {
+          if (!ln.t) return;
           var L = lineaConTiempos(ln);
           if (L) out.push(L);
         });
-      });
-      if (out.length) {
-        out.sort(function (a, b) { return a.s - b.s; });
-        return out;
+        if (out.length) {
+          out.sort(function (a, b) { return a.s - b.s; });
+          return out;
+        }
       }
     }
-    return pkg.lines || [];
+    return pkgLines;
   }
 
   function updateLyrics(t) {
