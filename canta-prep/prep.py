@@ -11,6 +11,7 @@ y actualiza <out>/index.json.
 Uso:
   prep.py <url-de-youtube> [opciones]
   prep.py --file cancion.mp4 [opciones]
+  prep.py --remelodia <carpeta-del-paquete>   (recalcula solo notes/f0)
 
 La salida de consola es ASCII puro a proposito (consolas Windows cp1252).
 """
@@ -28,17 +29,59 @@ import unicodedata
 import warnings
 
 # ---- Parametros del analisis de melodia (contrato con la app web) ----
+# Todos calibrados midiendo cobertura sobre voz real (bolero, voz masculina con
+# vibrato y portamento) y sobre un canto sintetico de control. Ver README.
 SR_MELODIA = 22050          # sr de trabajo para pyin / chroma
-HOP = 256                   # hop de pyin y RMS
-FRAME = 2048                # frame_length de pyin y RMS
+HOP = 256                   # hop de pyin y RMS: 11.6 ms de resolucion temporal
+FRAME = 4096                # ventana de pyin (186 ms): con 2048 pyin declaraba
+                            # "sin voz" 1 de cada 3 frames cantados; al doblarla
+                            # entran ~7 periodos de una voz grave y la deteccion
+                            # de voz sube de 62% a 82% del tiempo cantado
 SUBMUESTREO = 4             # f0.v lleva 1 de cada 4 frames de pyin
 DT_F0 = round(HOP * SUBMUESTREO / SR_MELODIA, 5)   # ~0.04644 s
-RMS_MIN = 0.006             # frames con RMS menor se descartan
-PROB_MIN = 0.5              # prob. de voz minima de pyin
-HUECO_CORTE = 0.06          # s sin voz que cortan una nota
-SALTO_CORTE = 0.8           # semitonos vs. mediana del segmento en curso
-DUR_MIN_NOTA = 0.09         # s: notas mas cortas se descartan
-HUECO_FUSION = 0.05         # s: notas iguales mas cercanas que esto se funden
+
+NOTA_MIN = 'E2'             # 82 Hz: piso de un baritono/bajo. Mas abajo pyin
+NOTA_MAX = 'C6'             # inventa saltos de octava hacia abajo
+NO_TROUGH_PROB = 0.30       # pyin, prob. a priori de "no hay tono aqui". El 0.01
+                            # por defecto es muy pesimista con voz procesada
+                            # (comprimida y con reverb); 0.30 recupera ~7 puntos
+
+# Nota: NO se usa la "voiced_probability" de pyin como umbral. En voz real su
+# mediana es ~0.11 y el viejo PROB_MIN=0.5 descartaba el 80% de los frames
+# cantados. La decision de voz la toma voiced_flag (Viterbi) + energia.
+RMS_MIN_ABS = 0.004         # piso absoluto de energia (silencio digital)
+RMS_MIN_REL = 0.03          # ...y 3% del percentil 90 del track, para adaptarse
+                            # a mezclas mas o menos calientes
+DOMINANCIA_MIN = 0.30       # voz/(voz+musica) minima. En los solos instrumentales
+                            # Demucs filtra el instrumento lider a la pista de voz
+                            # (ratio 0.06-0.27) mientras que cantando es ~0.43;
+                            # este filtro baja los falsos positivos ~40%
+DOM_VENTANA = 0.5           # s: se promedia y se dilata la dominancia para que un
+                            # bajon puntual no parta una frase por la mitad
+
+MED_F0 = 5                  # frames (58 ms) de mediana para la pista f0: limpia
+                            # el jitter pero deja vivo el vibrato
+MED_CONTORNO = 7            # frames (81 ms) de mediana para segmentar notas
+OCT_VENTANA = 87            # frames (~1 s) de referencia para corregir octavas
+OCT_MEJORA = 3.0            # semitonos: solo se mueve +-12 si acerca mucho al
+                            # contorno local (evita "corregir" saltos reales)
+
+TOL_NOTA = 1.3              # semitonos: mientras el contorno no se aleje mas que
+                            # esto de la mediana de la nota, sigue siendo la misma
+                            # nota (el vibrato de +-0.7 y el ataque caben dentro)
+FRAMES_SALIDA = 9           # frames (105 ms) seguidos fuera de tolerancia para
+                            # considerar que hubo cambio de nota y no vibrato:
+                            # un vibrato de 5.5 Hz vuelve al centro en ~90 ms
+SALTO_NOTA = 1.5            # semitonos: ademas, la mediana del tramo nuevo tiene
+                            # que estar a mas de esto del centro anterior
+FRAMES_ATAQUE = 4           # frames (46 ms) iniciales que no cuentan para el tono
+                            # de la nota: ahi vive el portamento de entrada
+HUECO_CORTE = 0.15          # s sin voz que cortan una nota. Con 0.06 cualquier
+                            # consonante sorda ("t", "s") partia la silaba en dos
+DUR_MIN_NOTA = 0.07         # s: una corchea rapida dura ~0.12 s, pero hay notas
+                            # reales de 0.08 s; por debajo de 0.07 es basura
+HUECO_FUSION = 0.12         # s: notas casi iguales mas cercanas que esto se funden
+TOL_FUSION = 0.6            # semitonos de diferencia maxima para fundirlas
 
 # Perfiles de Krumhansl-Schmuckler para estimar tonalidad
 PERFIL_MAYOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88]
@@ -226,87 +269,226 @@ def _tramos_contiguos(indices):
     return np.split(indices, cortes)
 
 
-def extraer_melodia(vocals):
+def _mediana_por_tramo(valores, indices, ancho):
+    """Mediana movil aplicada por separado a cada tramo continuo de voz."""
+    import numpy as np
+    from scipy.ndimage import median_filter
+    out = np.zeros(len(valores))
+    for tramo in _tramos_contiguos(indices):
+        w = min(ancho, max(1, len(tramo)))
+        out[tramo] = median_filter(valores[tramo], size=w, mode='nearest')
+    return out
+
+
+def _corregir_octavas(m):
+    """Pega los saltos de +-12 semitonos al contorno local (error clasico de pyin
+    en voces graves ricas en armonicos). m son solo los frames validos, en orden."""
+    import numpy as np
+    from scipy.ndimage import median_filter
+    out = m.copy()
+    for _ in range(2):   # dos pasadas: la referencia mejora con la primera
+        ref = median_filter(out, size=min(OCT_VENTANA, max(1, len(out))), mode='nearest')
+        d = ref - out
+        k = np.round(d / 12.0)
+        mejora = np.abs(d) - np.abs(d - 12 * k)
+        out = np.where((k != 0) & (mejora > OCT_MEJORA), out + 12 * k, out)
+    return out
+
+
+def _segmentar_notas(contorno, indices):
+    """Agrupa frames en notas siguiendo el contorno con histeresis.
+
+    Una nota "se mantiene" mientras el contorno no se aleje de su mediana mas de
+    TOL_NOTA. Si se aleja, los frames quedan en espera: si vuelven (vibrato,
+    portamento, un golpe de glotis) se absorben en la misma nota; si la excursion
+    dura FRAMES_SALIDA frames y ademas su mediana esta a mas de SALTO_NOTA del
+    centro, recien ahi se corta y empieza una nota nueva.
+    """
+    import numpy as np
+    dtf = HOP / SR_MELODIA
+    segs, cur, espera, prev = [], None, [], None
+
+    def cerrar():
+        """Vuelca los frames en espera en la nota en curso y la cierra."""
+        if espera:
+            cur['vals'].extend(v for _, v in espera)
+            cur['i1'] = espera[-1][0]
+        segs.append(cur)
+
+    for i in indices:
+        v = float(contorno[i])
+        if cur is not None and (i - prev) * dtf > HUECO_CORTE:
+            cerrar()
+            cur, espera = None, []
+        prev = i
+        if cur is None:
+            cur, espera = {'i0': i, 'i1': i, 'vals': [v]}, []
+            continue
+        centro = float(np.median(cur['vals']))
+        if abs(v - centro) <= TOL_NOTA:
+            if espera:                       # la excursion volvio: era vibrato
+                cur['vals'].extend(x for _, x in espera)
+                espera = []
+            cur['vals'].append(v)
+            cur['i1'] = i
+            continue
+        espera.append((i, v))
+        if len(espera) < FRAMES_SALIDA:
+            continue
+        if abs(float(np.median([x for _, x in espera])) - centro) > SALTO_NOTA:
+            segs.append(cur)                 # la nota anterior cierra donde se fue
+            cur = {'i0': espera[0][0], 'i1': espera[-1][0],
+                   'vals': [x for _, x in espera]}
+        else:
+            cur['vals'].extend(x for _, x in espera)
+            cur['i1'] = espera[-1][0]
+        espera = []
+    if cur is not None:
+        cerrar()
+
+    # Duracion minima y tono de cada nota (mediana, robusta al vibrato)
+    notas = []
+    for s in segs:
+        ini, fin = s['i0'] * dtf, (s['i1'] + 1) * dtf
+        if fin - ini < DUR_MIN_NOTA:
+            continue
+        vals = np.asarray(s['vals'], dtype=float)
+        tono = vals[FRAMES_ATAQUE:] if len(vals) > 3 * FRAMES_ATAQUE else vals
+        notas.append({'s': ini, 'e': fin, 'm': float(np.median(tono)), 'vals': vals})
+
+    # Fusiona notas contiguas practicamente iguales separadas por un hueco corto
+    fundidas = []
+    for nt in notas:
+        if fundidas:
+            p = fundidas[-1]
+            if abs(p['m'] - nt['m']) <= TOL_FUSION and nt['s'] - p['e'] < HUECO_FUSION:
+                p['vals'] = np.concatenate([p['vals'], nt['vals']])
+                p['e'] = nt['e']
+                p['m'] = float(np.median(p['vals']))
+                continue
+        fundidas.append(dict(nt))
+    return fundidas
+
+
+def _dominancia_voz(vocals, music, n):
+    """Fraccion de la energia local que se llevo la pista de voz, por frame.
+
+    Sirve para no confundir el instrumento lider que Demucs filtra a la pista de
+    voz durante los solos con canto de verdad. Si no hay instrumental, devuelve
+    None y el filtro no se aplica.
+    """
+    import numpy as np
+    import librosa
+    from scipy.ndimage import maximum_filter1d, uniform_filter1d
+    if not music or not os.path.exists(music):
+        return None
+    try:
+        yv, sr = librosa.load(vocals, sr=SR_MELODIA, mono=True)
+        ym, _ = librosa.load(music, sr=SR_MELODIA, mono=True)
+    except Exception as e:
+        print('      AVISO: no se pudo medir la dominancia de la voz (%s).' % e)
+        return None
+    rv = librosa.feature.rms(y=yv, frame_length=FRAME, hop_length=HOP)[0]
+    rm = librosa.feature.rms(y=ym, frame_length=FRAME, hop_length=HOP)[0]
+    k = min(len(rv), len(rm))
+    dom = rv[:k] / (rv[:k] + rm[:k] + 1e-9)
+    w = max(1, int(round(DOM_VENTANA * SR_MELODIA / HOP)))
+    dom = maximum_filter1d(uniform_filter1d(dom, size=w), size=w)
+    out = np.zeros(n)
+    out[:min(n, k)] = dom[:min(n, k)]
+    return out
+
+
+def extraer_melodia(vocals, music=None):
     """pyin sobre la voz. Devuelve (notes, f0) segun el contrato de canta.json."""
     import numpy as np
     import librosa
-    from scipy.ndimage import median_filter
 
     y, sr = librosa.load(vocals, sr=SR_MELODIA, mono=True)
     if len(y) == 0:
         return [], {'dt': DT_F0, 'v': []}
 
     f0, vflag, vprob = librosa.pyin(
-        y, fmin=librosa.note_to_hz('C2'), fmax=librosa.note_to_hz('C6'),
-        sr=sr, frame_length=FRAME, hop_length=HOP)
+        y, fmin=librosa.note_to_hz(NOTA_MIN), fmax=librosa.note_to_hz(NOTA_MAX),
+        sr=sr, frame_length=FRAME, hop_length=HOP,
+        no_trough_prob=NO_TROUGH_PROB)
     with np.errstate(invalid='ignore', divide='ignore'):
         midi = librosa.hz_to_midi(f0)
     rms = librosa.feature.rms(y=y, frame_length=FRAME, hop_length=HOP)[0]
 
     n = min(len(midi), len(rms))
-    midi, vflag, vprob, rms = midi[:n], vflag[:n], vprob[:n], rms[:n]
+    midi, vflag, rms = midi[:n], vflag[:n], rms[:n]
 
-    # Estabilizacion: solo frames con voz, probables, con energia y f0 finito
-    valido = vflag & (vprob >= PROB_MIN) & (rms >= RMS_MIN) & np.isfinite(midi)
+    # Hay voz donde pyin encontro tono y la energia supera el piso del track
+    umbral = max(RMS_MIN_ABS, RMS_MIN_REL * float(np.percentile(rms, 90)))
+    valido = vflag & np.isfinite(midi) & (rms >= umbral)
+    dom = _dominancia_voz(vocals, music, n)
+    if dom is not None:
+        valido &= dom >= DOMINANCIA_MIN
 
-    # Filtro de mediana (ancho 5) por tramo voiced contiguo
-    mstab = np.zeros(n)
     indices = np.where(valido)[0]
-    for tramo in _tramos_contiguos(indices):
-        mstab[tramo] = median_filter(midi[tramo], size=5, mode='nearest')
+    if len(indices) == 0:
+        return [], {'dt': DT_F0, 'v': [0] * len(range(0, n, SUBMUESTREO))}
 
-    dtf = HOP / SR_MELODIA
+    m = np.zeros(n)
+    m[indices] = _corregir_octavas(midi[indices])
 
-    # Segmentacion en notas
-    crudas = []   # {'t_ini','t_fin','vals':[...]}
-    cur = None
-    for i in indices:
-        t = i * dtf
-        v = float(mstab[i])
-        if cur is not None:
-            hueco = t - cur['t_fin']
-            if hueco > HUECO_CORTE or abs(v - float(np.median(cur['vals']))) > SALTO_CORTE:
-                crudas.append(cur)
-                cur = None
-        if cur is None:
-            cur = {'t_ini': t, 't_fin': t, 'vals': [v]}
-        else:
-            cur['t_fin'] = t
-            cur['vals'].append(v)
-    if cur is not None:
-        crudas.append(cur)
+    # Dos suavizados: uno fino para la pista f0 (deja el vibrato a la vista) y
+    # uno mas ancho para decidir donde empieza y termina cada nota.
+    m_f0 = _mediana_por_tramo(m, indices, MED_F0)
+    m_seg = _mediana_por_tramo(m, indices, MED_CONTORNO)
 
-    # Descarta notas muy cortas
-    notas = []
-    for c in crudas:
-        s, e = c['t_ini'], c['t_fin'] + dtf
-        if e - s < DUR_MIN_NOTA:
-            continue
-        notas.append({'s': s, 'e': e, 'vals': c['vals']})
-
-    # Fusiona notas consecutivas del mismo semitono redondeado con hueco chico
-    fundidas = []
-    for nt in notas:
-        if fundidas:
-            prev = fundidas[-1]
-            if (int(round(float(np.median(prev['vals'])))) ==
-                    int(round(float(np.median(nt['vals']))))
-                    and nt['s'] - prev['e'] < HUECO_FUSION):
-                prev['e'] = nt['e']
-                prev['vals'].extend(nt['vals'])
-                continue
-        fundidas.append(nt)
-
-    notes = [{'s': round(nt['s'], 3),
-              'e': round(nt['e'], 3),
-              'm': round(float(np.median(nt['vals'])), 1)} for nt in fundidas]
+    fundidas = _segmentar_notas(m_seg, indices)
+    notes = [{'s': round(nt['s'], 3), 'e': round(nt['e'], 3),
+              'm': round(nt['m'], 1)} for nt in fundidas]
 
     # Pista f0 continua submuestreada x4 (0 = sin voz)
-    v = []
-    for i in range(0, n, SUBMUESTREO):
-        v.append(round(float(mstab[i]), 1) if valido[i] else 0)
+    v = [round(float(m_f0[i]), 1) if valido[i] else 0
+         for i in range(0, n, SUBMUESTREO)]
 
     return notes, {'dt': DT_F0, 'v': v}
+
+
+# ------------------------------------------------------- metricas de melodia ----
+
+def _union(intervalos):
+    out = []
+    for s, e in sorted((s, e) for s, e in intervalos if e > s):
+        if out and s <= out[-1][1]:
+            out[-1][1] = max(out[-1][1], e)
+        else:
+            out.append([s, e])
+    return out
+
+
+def _interseccion(a, b):
+    out, i, j = [], 0, 0
+    while i < len(a) and j < len(b):
+        s, e = max(a[i][0], b[j][0]), min(a[i][1], b[j][1])
+        if e > s:
+            out.append([s, e])
+        if a[i][1] < b[j][1]:
+            i += 1
+        else:
+            j += 1
+    return out
+
+
+def resumen_melodia(notes, lines, duracion):
+    """Imprime cuanto del canto quedo cubierto por notas (la metrica que importa)."""
+    suma = lambda iv: sum(e - s for s, e in iv)
+    nv = _union([(x['s'], x['e']) for x in notes])
+    lv = _union([(l['s'], l['e']) for l in (lines or [])])
+    cob, canto = suma(nv), suma(lv)
+    dentro = suma(_interseccion(nv, lv))
+    durs = sorted(x['e'] - x['s'] for x in notes) if notes else [0.0]
+    print('      notas: %d   dur. media %.2f s / mediana %.2f s'
+          % (len(notes), sum(durs) / len(durs), durs[len(durs) // 2]))
+    print('      cobertura: %.1f s (%.1f%% de la cancion)'
+          % (cob, 100 * cob / duracion if duracion else 0))
+    if canto > 0:
+        print('      dentro del canto: %.1f%% de %.1f s   fuera de la letra: %.1f%%'
+              % (100 * dentro / canto, canto, 100 * (cob - dentro) / cob if cob else 0))
 
 
 # -------------------------------------------------------------- tonalidad ----
@@ -383,6 +565,9 @@ def parsear_args():
     p.add_argument('url', nargs='?', default=None, help='URL de YouTube')
     p.add_argument('--file', dest='archivo', default=None,
                    help='archivo local (mp4/mp3/m4a/wav/webm; de un mp4 se extrae el audio)')
+    p.add_argument('--remelodia', dest='remelodia', default=None,
+                   help='carpeta de un paquete ya hecho: recalcula solo notes y f0 '
+                        '(no descarga, no corre Demucs ni Whisper)')
     p.add_argument('--title', default=None, help='titulo de la cancion')
     p.add_argument('--artist', default=None, help='artista')
     p.add_argument('--model', default='small', choices=['tiny', 'base', 'small', 'medium'],
@@ -394,9 +579,50 @@ def parsear_args():
     p.add_argument('--keep-work', action='store_true',
                    help='no borrar la carpeta temporal de trabajo')
     args = p.parse_args()
-    if bool(args.url) == bool(args.archivo):
-        p.error('entrega exactamente una entrada: una URL de YouTube o --file <ruta>.')
+    if args.remelodia:
+        if args.url or args.archivo:
+            p.error('--remelodia trabaja sobre un paquete ya hecho: no lleva URL ni --file.')
+    elif bool(args.url) == bool(args.archivo):
+        p.error('entrega exactamente una entrada: una URL de YouTube, --file <ruta> '
+                'o --remelodia <carpeta>.')
     return args
+
+
+def rehacer_melodia(carpeta):
+    """Recalcula notes y f0 de un paquete existente y reescribe su canta.json."""
+    carpeta = os.path.abspath(carpeta)
+    ruta_json = os.path.join(carpeta, 'canta.json')
+    if not os.path.exists(ruta_json):
+        morir('no hay canta.json en %s' % carpeta)
+    with open(ruta_json, 'r', encoding='utf-8') as f:
+        paquete = json.load(f)
+
+    archivos = paquete.get('files') or {}
+    vocals = os.path.join(carpeta, archivos.get('vocals') or 'vocals.m4a')
+    music = os.path.join(carpeta, archivos.get('music') or 'music.m4a')
+    if not os.path.exists(vocals):
+        morir('no se encontro la pista de voz: %s' % vocals)
+    if not os.path.exists(music):
+        print('AVISO: no hay pista instrumental; se omite el filtro de dominancia.')
+        music = None
+
+    t0 = time.time()
+    print('== Canta prep: rehacer melodia ==')
+    print('Paquete: %s  (%s)' % (paquete.get('title') or paquete.get('id'), carpeta))
+    print('[1/2] Extrayendo melodia de la voz (pyin)...', flush=True)
+    notes, f0 = extraer_melodia(vocals, music)
+    print('      listo en %.1f s' % (time.time() - t0), flush=True)
+    resumen_melodia(notes, paquete.get('lines'), paquete.get('duration') or 0)
+
+    print('[2/2] Reescribiendo canta.json (se conserva todo lo demas)...', flush=True)
+    paquete['notes'] = notes
+    paquete['f0'] = f0
+    tmp = ruta_json + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(paquete, f, ensure_ascii=False)
+    os.replace(tmp, ruta_json)
+    print('')
+    print('Listo en %.1f s: %s' % (time.time() - t0, ruta_json))
 
 
 def main():
@@ -407,8 +633,13 @@ def main():
         except Exception:
             pass
     args = parsear_args()
-    revisar_ffmpeg()
     warnings.filterwarnings('ignore')  # librosa/numba son ruidosos en consola
+
+    if args.remelodia:
+        rehacer_melodia(args.remelodia)
+        return
+
+    revisar_ffmpeg()
 
     out_dir = args.out or os.path.normpath(
         os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'app', 'canta-media'))
@@ -444,8 +675,8 @@ def main():
                 print('      AVISO: no se detecto letra; el paquete queda sin lines.')
 
         with Etapa(4, 6, 'Extrayendo melodia de la voz (pyin)'):
-            notes, f0 = extraer_melodia(vocals_wav)
-            print('      notas detectadas: %d' % len(notes))
+            notes, f0 = extraer_melodia(vocals_wav, music_wav)
+            resumen_melodia(notes, lines, duracion)
 
         with Etapa(5, 6, 'Estimando tonalidad'):
             tonalidad = estimar_tonalidad(music_wav)

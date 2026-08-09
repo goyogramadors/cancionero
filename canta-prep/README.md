@@ -84,6 +84,20 @@ archivo). Otras opciones:
 - `--out <carpeta>` — dónde dejar el paquete (default `../app/canta-media`).
 - `--keep-work` — conserva la carpeta temporal de trabajo (para depurar).
 
+### Rehacer solo la melodía
+
+Si una canción ya preparada quedó con pocas notas (o mejoramos el detector),
+no hace falta rehacerla entera: esto recalcula **solo** las notas y la curva de
+tono desde la voz ya separada, y deja la letra y todo lo demás intacto.
+
+```
+prep.bat --remelodia "..\app\canta-media\<id-de-la-cancion>"
+```
+
+Tarda ~1 minuto en vez de 10, porque no baja nada ni vuelve a correr Demucs ni
+Whisper. Al terminar imprime la cobertura lograda. Ojo: si esa canción ya
+estaba subida al repo, acuérdate de subir el `canta.json` nuevo.
+
 ## Tiempos esperados (CPU)
 
 Para una canción de 3–4 minutos: Demucs ~3–8 min, Whisper `small` ~2–4 min,

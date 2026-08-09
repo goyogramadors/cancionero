@@ -1071,6 +1071,9 @@
         trace: S.trace.length, micMode: S.micMode,
         notesDone: S.notes ? S.notes.filter(function (n) { return n.done; }).length : 0,
         notesGreen: S.notes ? S.notes.filter(function (n) { return n.green; }).length : 0,
+        notesScored: S.notes ? S.notes.filter(function (n) { return n.scored; }).length : 0,
+        sinEvaluar: S.notes ? S.notes.filter(function (n) { return n.done && !n.scored; })
+          .map(function (n) { return { dur: +(n.e - n.s).toFixed(2), tot: +n.totT.toFixed(3) }; }).slice(0, 12) : [],
         segs: S.notes ? S.notes.reduce(function (a, n) { return a + n.segs.length; }, 0) : 0,
         lineIdx: S.lineIdx, rendering: S.rendering,
         letraEditada: !!S.letraEditada,
