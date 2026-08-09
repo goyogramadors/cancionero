@@ -135,8 +135,17 @@
   }
 
   /* ---------------- persistencia ---------------- */
-  function persist() { SB.store.save(S.cur); }
+  function persist() { SB.store.save(S.cur); S.dirty = false; markSaved(); }
+  // Estado visible del guardado: aunque se guarda solo, el botón deja claro
+  // qué pasó y permite forzarlo (pedido del usuario).
+  function markSaved() {
+    const b = S.view && S.view.querySelector('#saveNow');
+    const s = S.view && S.view.querySelector('.tb-saved');
+    if (b) { b.disabled = !S.dirty; b.textContent = S.dirty ? 'Guardar' : 'Guardado'; }
+    if (s) s.textContent = S.dirty ? 'Cambios sin guardar' : 'Todo guardado';
+  }
   function scheduleSave() {
+    S.dirty = true; markSaved();
     if (S.saveTimer) clearTimeout(S.saveTimer);
     S.saveTimer = setTimeout(persist, 300);
   }
@@ -255,8 +264,15 @@
         <button class="mini-x add" id="addGridPart">+ Parte de acordes</button>
         <span class="tb-sep"></span>
         <button class="mini-x danger" id="delSong">${isSeed(S.cur.id) ? 'Revertir a original' : 'Eliminar canción'}</button>
-        <span class="tb-saved">Guardado automáticamente</span>
+        <span class="tb-sep"></span>
+        <button class="mini-x save" id="saveNow">Guardado</button>
+        <span class="tb-saved">Todo guardado</span>
       </div>`;
+    tb.querySelector('#saveNow').addEventListener('click', () => {
+      if (S.saveTimer) { clearTimeout(S.saveTimer); S.saveTimer = null; }
+      persist();
+    });
+    markSaved();
     tb.querySelector('#mTitle').addEventListener('input', (e) => { S.cur.title = e.target.value; S.view.querySelector('#sTitle').textContent = e.target.value; scheduleSave(); });
     tb.querySelector('#mArtist').addEventListener('input', (e) => { S.cur.artist = e.target.value; scheduleSave(); });
     tb.querySelector('#mKey').addEventListener('input', (e) => { S.cur.key = e.target.value; scheduleSave(); });
@@ -310,13 +326,48 @@
     else range.setStart(el, 0);
     range.collapse(true); sel.removeAllRanges(); sel.addRange(range);
   }
+  /* --- marcas de tiempo del karaoke (ver app/ARQUITECTURA.md) ---
+     Una línea puede traer `t: [inicio, fin]` y `w: [[inicio, fin, posCarácter], …]`,
+     las marcas que Canta usa para seguir la letra. Se anclan a la POSICIÓN DEL
+     CARÁCTER, igual que los acordes, así que se mueven con el mismo mecanismo
+     al partir, unir o escribir: editar la letra no desincroniza el karaoke. */
+
+  // Corre los anclajes de `arr` (posición en el índice `pi`) tras cambiar el texto.
+  // Compara prefijo y sufijo comunes: sirve para escribir, borrar y pegar.
+  function remapAnchors(oldT, newT, arr, pi) {
+    if (!arr || !arr.length || oldT === newT) return;
+    const max = Math.min(oldT.length, newT.length);
+    let a = 0;
+    while (a < max && oldT[a] === newT[a]) a++;
+    let b = 0;
+    while (b < max - a && oldT[oldT.length - 1 - b] === newT[newT.length - 1 - b]) b++;
+    const delta = newT.length - oldT.length, finViejo = oldT.length - b;
+    for (const it of arr) {
+      const p = it[pi];
+      if (p <= a) continue;
+      it[pi] = Math.max(0, Math.min(newT.length, p >= finViejo ? p + delta : a));
+    }
+  }
+  // Recalcula el tramo [inicio, fin] de una línea a partir de sus palabras.
+  function recalcT(ln) {
+    if (!ln.w || !ln.w.length) { delete ln.t; return; }
+    ln.w.sort((x, y) => x[2] - y[2]);
+    ln.t = [ln.w[0][0], ln.w[ln.w.length - 1][1]];
+  }
+
   function splitLine(part, li, cut) {
     const ln = part.lines[li];
     const before = ln.l.slice(0, cut), after = ln.l.slice(cut);
     const stay = [], move = [];
     for (const c of ln.a) { if (c[0] <= before.length) stay.push(c); else move.push([c[0] - before.length, c[1]]); }
+    const stayW = [], moveW = [];
+    for (const w of ln.w || []) { if (w[2] < before.length) stayW.push(w); else moveW.push([w[0], w[1], w[2] - before.length]); }
     ln.l = before; ln.a = stay;
-    part.lines.splice(li + 1, 0, { l: after, a: move });
+    const nueva = { l: after, a: move };
+    if (stayW.length) ln.w = stayW; else delete ln.w;
+    if (moveW.length) nueva.w = moveW;
+    recalcT(ln); recalcT(nueva);
+    part.lines.splice(li + 1, 0, nueva);
   }
 
   /* ---------------- popover cambiar/eliminar/agregar ---------------- */
@@ -409,19 +460,40 @@
       const el = e.target.closest('.lyric-edit'); if (!el || S.editMode !== 'letra') return;
       const pi = +el.dataset.pi, li = +el.dataset.li, part = S.cur.parts[pi], ln = part.lines[li];
       const text = el.textContent, d = text.indexOf('-');
-      if (d >= 0) { ln.l = text.slice(0, d) + text.slice(d + 1); splitLine(part, li, d); persist(); renderSong(); focusLyric(pi, li + 1, 0); }
-      else { ln.l = text; scheduleSave(); }
+      if (d >= 0) {
+        const sinGuion = text.slice(0, d) + text.slice(d + 1);
+        remapAnchors(ln.l, sinGuion, ln.a, 0); remapAnchors(ln.l, sinGuion, ln.w, 2);
+        ln.l = sinGuion; splitLine(part, li, d);
+        persist(); renderSong(); focusLyric(pi, li + 1, 0);
+      } else {
+        // el texto cambió: correr acordes y marcas de tiempo con él
+        remapAnchors(ln.l, text, ln.a, 0); remapAnchors(ln.l, text, ln.w, 2);
+        ln.l = text; recalcT(ln); scheduleSave();
+      }
     });
     body.addEventListener('keydown', (e) => {
       if (S.editMode !== 'letra') return;
       const el = e.target.closest('.lyric-edit'); if (!el) return;
       const pi = +el.dataset.pi, li = +el.dataset.li, part = S.cur.parts[pi];
       const caret = window.getSelection().anchorOffset;
-      if (e.key === 'Enter') { e.preventDefault(); part.lines[li].l = el.textContent; splitLine(part, li, caret); persist(); renderSong(); focusLyric(pi, li + 1, 0); }
-      else if (e.key === 'Backspace' && caret === 0 && li > 0) {
-        e.preventDefault(); part.lines[li].l = el.textContent;
-        const prev = part.lines[li - 1], ln = part.lines[li], joinAt = prev.l.length;
-        prev.l += ln.l; for (const c of ln.a) prev.a.push([c[0] + joinAt, c[1]]); prev.a.sort((a, b) => a[0] - b[0]);
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const ln = part.lines[li];
+        remapAnchors(ln.l, el.textContent, ln.a, 0); remapAnchors(ln.l, el.textContent, ln.w, 2);
+        ln.l = el.textContent;
+        splitLine(part, li, caret); persist(); renderSong(); focusLyric(pi, li + 1, 0);
+      } else if (e.key === 'Backspace' && caret === 0 && li > 0) {
+        e.preventDefault();
+        const ln = part.lines[li];
+        remapAnchors(ln.l, el.textContent, ln.a, 0); remapAnchors(ln.l, el.textContent, ln.w, 2);
+        ln.l = el.textContent;
+        const prev = part.lines[li - 1], joinAt = prev.l.length;
+        prev.l += ln.l;
+        for (const c of ln.a) prev.a.push([c[0] + joinAt, c[1]]); prev.a.sort((a, b) => a[0] - b[0]);
+        if (ln.w && ln.w.length) {
+          prev.w = (prev.w || []).concat(ln.w.map((w) => [w[0], w[1], w[2] + joinAt]));
+        }
+        recalcT(prev);
         part.lines.splice(li, 1); persist(); renderSong(); focusLyric(pi, li - 1, joinAt);
       }
     });

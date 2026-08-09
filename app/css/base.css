@@ -197,6 +197,8 @@ aside.chordpanel{ border-left:1px solid var(--line);padding-left:22px;position:s
 .mini-x{background:var(--bg);border:1px solid var(--line);border-radius:2px;color:var(--mut);cursor:pointer;font:inherit;font-size:12px;padding:4px 9px}
 .mini-x:hover{color:var(--ink);border-color:var(--ink)}
 .mini-x.add{border-style:dashed;margin-top:8px}
+.mini-x.save{background:var(--inv);color:var(--inv-ink);border-color:var(--inv);font-weight:700}
+.mini-x.save:disabled{background:var(--bg);color:var(--faint);border-color:var(--line);cursor:default;font-weight:400}
 .mini-x.danger:hover{color:var(--bg);background:var(--ink);border-color:var(--ink)}
 .part-head .mini-x{padding:1px 7px;font-size:11px}
 .part-name[contenteditable]{outline:none;border-bottom:1px dashed var(--faint);min-width:40px}

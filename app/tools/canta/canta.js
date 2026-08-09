@@ -19,8 +19,12 @@
   var E = function () { return SB.cantaEngine; };
 
   var CFGKEY = 'sb.canta.cfg', BESTKEY = 'sb.canta.best';
-  var TOL = 0.6;          // tolerancia de afinación (semitonos)
-  var HITRATIO = 0.55;    // fracción acertada para nota verde
+  var TOL = 0.7;          // tolerancia de afinación: ±70 cents alrededor de la nota
+  var HITRATIO = 0.72;    // fracción del tiempo evaluado que hay que acertar para que la barra quede verde
+  // Cantar no es saltar de plataforma en plataforma: para llegar a una nota se
+  // pasa por las del medio (portamento) y el ataque siempre viene con un
+  // deslizamiento. Ese tramo inicial no se evalúa — ni suma ni castiga.
+  var TRANS = 0.15;       // segundos de gracia al entrar a cada nota
   var PXPS = 120;         // píxeles por segundo (en tiempo reproducido)
 
   var S = {
@@ -270,9 +274,11 @@
       await E().loadFromServer(p.id);
       var pkg = E().current();
       letraId = guardarLetra(pkg);
-      resumen.push(letraId.lineas
-        ? letraId.lineas + ' líneas de letra guardadas en el Cancionero'
-        : 'sin letra reconocida (¿es instrumental, o la voz quedó muy tapada?)');
+      resumen.push(letraId.conservada
+        ? 'ya tenías esta letra en el Cancionero: la dejé tal cual (no piso tus correcciones)'
+        : letraId.lineas
+          ? letraId.lineas + ' líneas de letra guardadas en el Cancionero'
+          : 'sin letra reconocida (¿es instrumental, o la voz quedó muy tapada?)');
       if (!(pkg.notes || []).length) {
         resumen.push('OJO: no se detectó melodía de voz, así que no hay barras que seguir');
       }
@@ -308,17 +314,37 @@
     if (letraId) q('#pxLyr').addEventListener('click', function () { S.ctx.navigate('songbook/song/' + letraId.id); });
   }
 
-  // Guarda la letra del paquete como canción del Cancionero (id estable: si
-  // vuelves a preparar la misma canción, se actualiza en vez de duplicarse).
+  // Guarda la letra del paquete como canción del Cancionero, CON las marcas de
+  // tiempo (línea y palabra) ancladas a la posición del carácter, para que el
+  // karaoke siga sincronizado después de que la edites.
+  function r3(x) { return Math.round(x * 1000) / 1000; }
+  function lineaGuardada(L) {
+    var texto = ' ' + String(L.text || '').trim();  // el espacio inicial es la convención del modelo
+    var ln = { l: texto, a: [] }, marcas = [], cursor = 1;
+    (L.words || []).forEach(function (w) {
+      var p = texto.indexOf(w.w, cursor);
+      if (p < 0) return;                            // la palabra no calza exacto: se interpolará
+      cursor = p + w.w.length;
+      marcas.push([r3(w.s), r3(w.e), p]);
+    });
+    if (typeof L.s === 'number') ln.t = [r3(L.s), r3(L.e)];
+    if (marcas.length) ln.w = marcas;
+    return ln;
+  }
   function guardarLetra(pkg) {
-    var lines = (pkg.lines || []).filter(function (l) { return l.text && l.text.trim(); });
     var id = 'canta-' + slug(pkg.title);
-    var prev = SB.store.get(id);
+    var existente = cancionVinculada(pkg);
+    if (existente) {
+      // ya la tenías (quizá corregida a mano): no la pisamos
+      var n = 0;
+      (existente.parts || []).forEach(function (p) { n += (p.lines || []).length; });
+      return { id: existente.id, lineas: n, conservada: true };
+    }
+    var lines = (pkg.lines || []).filter(function (l) { return l.text && l.text.trim(); });
     SB.store.save({
-      id: id, title: pkg.title, artist: pkg.artist || '', key: pkg.key || '—', loaded: true,
-      parts: [{ name: 'Letra', lines: lines.length
-        ? lines.map(function (l) { return { l: ' ' + l.text.trim(), a: [] }; })
-        : (prev && prev.parts && prev.parts[0].lines) || [{ l: '', a: [] }] }]
+      id: id, cantaId: pkg.id, title: pkg.title, artist: pkg.artist || '',
+      key: pkg.key || '—', loaded: true,
+      parts: [{ name: 'Letra', lines: lines.length ? lines.map(lineaGuardada) : [{ l: '', a: [] }] }]
     });
     return { id: id, lineas: lines.length };
   }
@@ -412,6 +438,8 @@
     S.notes = (pkg.notes || []).map(function (n) {
       return { s: n.s, e: n.e, m: n.m, segs: [], hitT: 0, totT: 0, done: false, green: false, scored: false, pts: 0 };
     }).sort(function (a, b) { return a.s - b.s; });
+    S.lines = letraEfectiva(pkg);
+    S.letraEditada = S.lines !== pkg.lines && S.lines.length > 0;
     S.finPtr = 0;
 
     S.view.innerHTML =
@@ -648,7 +676,9 @@
     if (tAdj < 0) return;
     var target = noteAt(tAdj);
     var semis = E().semis();
-    var shown = null, state = 0; // 0 sin voz/objetivo · 1 acierto · 2 error
+    var shown = null, state = 0; // 0 sin voz/objetivo · 1 acierto · 2 error · 3 transición
+    var gracia = target ? Math.min(TRANS, (target.e - target.s) * 0.35) : 0;
+    var enTransicion = target ? (tAdj - target.s) < gracia : false;
     if (sample.midi != null) {
       shown = sample.midi;
       if (target) {
@@ -658,16 +688,18 @@
           shown = sample.midi + S.wrapOff;
         }
         var hit = Math.abs(shown - goal) <= TOL;
-        state = hit ? 1 : 2;
-        target.totT += dt;
-        if (hit) target.hitT += dt;
+        state = enTransicion ? 3 : (hit ? 1 : 2);
+        if (!enTransicion) {          // el ataque no se evalúa
+          target.totT += dt;
+          if (hit) target.hitT += dt;
+        }
         var segs = target.segs, last = segs[segs.length - 1];
-        if (last && last.hit === hit && tAdj - last.t1 < 0.08) last.t1 = tAdj;
-        else segs.push({ t0: tAdj, t1: tAdj + 0.001, hit: hit });
+        if (last && last.hit === hit && last.trans === enTransicion && tAdj - last.t1 < 0.08) last.t1 = tAdj;
+        else segs.push({ t0: tAdj, t1: tAdj + 0.001, hit: hit, trans: enTransicion });
       } else if (S.cfg.octaveFree) {
         shown = sample.midi + S.wrapOff; // mantener la octava mostrada entre notas
       }
-    } else if (target) {
+    } else if (target && !enTransicion) {
       target.totT += dt; // había que cantar y no se detectó voz
     }
     if (shown != null) {
@@ -705,9 +737,89 @@
     S.els.best.textContent = S.best > 0 ? 'mejor ' + Math.max(S.best, S.score) : '';
   }
 
-  /* ---------------- letra ---------------- */
+  /* ---------------- letra ----------------
+     El karaoke muestra la letra EDITADA por el usuario si existe: la canción
+     del Cancionero guarda las marcas de tiempo ancladas a la posición del
+     carácter (`t` por línea, `w` por palabra) y el editor las mueve al partir,
+     unir o escribir. Si no hay canción vinculada, se usa la del paquete. */
+
+  // Busca la canción del Cancionero que corresponde a este paquete.
+  function cancionVinculada(pkg) {
+    var ov = SB.store.dump();
+    for (var id in ov) if (ov[id] && ov[id].cantaId === pkg.id) return ov[id];
+    return ov['canta-' + slug(pkg.title)] || null;
+  }
+
+  // Convierte una línea del Cancionero {l, t, w} al formato del karaoke.
+  // Construye un mapa monótono posición-de-carácter → tiempo con las marcas
+  // que haya, y con él le pone tiempo a TODAS las palabras (las que el usuario
+  // agregó al editar quedan interpoladas entre sus vecinas).
+  function lineaConTiempos(ln) {
+    var texto = String(ln.l || ''), t0 = ln.t[0], t1 = ln.t[1];
+    var pals = [], re = /\S+/g, m;
+    while ((m = re.exec(texto))) pals.push({ w: m[0], pos: m.index });
+    if (!pals.length) return null;
+    var marcas = (ln.w || []).slice().sort(function (a, b) { return a[2] - b[2]; });
+    // emparejar cada marca con la palabra más cercana (el texto pudo cambiar)
+    var anclas = new Array(pals.length).fill(null);
+    marcas.forEach(function (mk) {
+      var best = -1, bestD = 1e9;
+      for (var i = 0; i < pals.length; i++) {
+        if (anclas[i]) continue;
+        var d = Math.abs(pals[i].pos - mk[2]);
+        if (d < bestD) { bestD = d; best = i; }
+      }
+      if (best >= 0 && bestD <= Math.max(4, pals[best].w.length)) anclas[best] = { s: mk[0], e: mk[1] };
+    });
+    // mapa carácter → tiempo (extremos de la línea + extremos de cada ancla)
+    var xs = [0], ys = [t0];
+    for (var i = 0; i < pals.length; i++) {
+      if (!anclas[i]) continue;
+      xs.push(pals[i].pos); ys.push(anclas[i].s);
+      xs.push(pals[i].pos + pals[i].w.length); ys.push(anclas[i].e);
+    }
+    xs.push(Math.max(texto.length, 1)); ys.push(t1);
+    for (i = 1; i < ys.length; i++) { // forzar monotonía
+      if (xs[i] < xs[i - 1]) xs[i] = xs[i - 1];
+      if (ys[i] < ys[i - 1]) ys[i] = ys[i - 1];
+    }
+    var mapa = function (x) {
+      for (var k = 1; k < xs.length; k++) {
+        if (x <= xs[k]) {
+          var span = xs[k] - xs[k - 1];
+          var f = span > 0 ? (x - xs[k - 1]) / span : 0;
+          return ys[k - 1] + (ys[k] - ys[k - 1]) * f;
+        }
+      }
+      return ys[ys.length - 1];
+    };
+    return {
+      s: t0, e: t1, text: texto.trim(),
+      words: pals.map(function (p) { return { s: mapa(p.pos), e: mapa(p.pos + p.w.length), w: p.w }; })
+    };
+  }
+
+  function letraEfectiva(pkg) {
+    var song = cancionVinculada(pkg);
+    if (song) {
+      var out = [];
+      (song.parts || []).forEach(function (p) {
+        (p.lines || []).forEach(function (ln) {
+          if (!ln.t || !ln.l || !ln.l.trim()) return; // sin marca no se puede sincronizar
+          var L = lineaConTiempos(ln);
+          if (L) out.push(L);
+        });
+      });
+      if (out.length) {
+        out.sort(function (a, b) { return a.s - b.s; });
+        return out;
+      }
+    }
+    return pkg.lines || [];
+  }
+
   function updateLyrics(t) {
-    var lines = (E().current().lines || []);
+    var lines = S.lines || [];
     if (!lines.length) {
       if (S.lineIdx !== -2) { S.lineIdx = -2; S.els.now.textContent = ''; S.els.next.textContent = '(sin letra transcrita)'; }
       return;
@@ -809,7 +921,8 @@
         var sg = n.segs[si];
         var sx1 = xOf(Math.max(sg.t0, n.s)), sx2 = xOf(Math.min(sg.t1, n.e));
         if (sx2 <= sx1) continue;
-        g.fillStyle = sg.hit ? C.good : C.bad;
+        // el tramo de entrada (portamento) va neutro: no es error
+        g.fillStyle = sg.trans ? C.faint : (sg.hit ? C.good : C.bad);
         rounded(g, sx1, ym, sx2 - sx1, barH, barH / 2);
         g.fill();
       }
@@ -828,7 +941,7 @@
         if (p.t < t0Vis) continue;
         if (p.t > tAdj + 0.02) break;
         var px = xOf(p.t), py = yOf(Math.max(loM, Math.min(hiM, p.m)));
-        var col = p.st === 1 ? C.good : (p.st === 2 ? C.bad : C.mut);
+        var col = p.st === 1 ? C.good : (p.st === 2 ? C.bad : (p.st === 3 ? C.faint : C.mut));
         // solo conectar puntos cercanos en tiempo Y en altura (línea armónica,
         // sin espigas verticales cuando el detector salta)
         if (prev && p.t - prev.t < 0.1 && Math.abs(p.m - prev.m) < 3) {
@@ -868,19 +981,17 @@
     g.closePath();
   }
 
-  /* ---------------- guardar letra en el cancionero ---------------- */
+  /* ---------------- guardar / editar la letra ---------------- */
+  // Si ya existe la canción en el Cancionero (lo normal: se crea al preparar),
+  // vamos a editarla; nunca la pisamos, para no borrar las correcciones.
   function saveLyrics() {
     var pkg = E().current();
-    var lines = (pkg.lines || []).filter(function (l) { return l.text && l.text.trim(); });
-    if (!lines.length) { status('Esta canción no tiene letra transcrita.'); return; }
-    var base = 'canta-' + slug(pkg.title), id = base, k = 2;
-    while (SB.store.get(id)) id = base + '-' + (k++);
-    SB.store.save({
-      id: id, title: pkg.title, artist: pkg.artist || '', key: pkg.key || '—', loaded: true,
-      parts: [{ name: 'Letra', lines: lines.map(function (l) { return { l: ' ' + l.text.trim(), a: [] }; }) }]
-    });
+    var song = cancionVinculada(pkg);
+    if (song) { S.ctx.navigate('songbook/song/' + song.id); return; }
+    if (!(pkg.lines || []).length) { status('Esta canción no tiene letra transcrita.'); return; }
+    var r = guardarLetra(pkg);
     status('Letra guardada en el Cancionero.');
-    S.ctx.navigate('songbook/song/' + id);
+    S.ctx.navigate('songbook/song/' + r.id);
   }
 
   /* ---------------- montaje ---------------- */
@@ -914,7 +1025,11 @@
         notesDone: S.notes ? S.notes.filter(function (n) { return n.done; }).length : 0,
         notesGreen: S.notes ? S.notes.filter(function (n) { return n.green; }).length : 0,
         segs: S.notes ? S.notes.reduce(function (a, n) { return a + n.segs.length; }, 0) : 0,
-        lineIdx: S.lineIdx, rendering: S.rendering
+        lineIdx: S.lineIdx, rendering: S.rendering,
+        letraEditada: !!S.letraEditada,
+        lineas: (S.lines || []).map(function (l) {
+          return { s: +l.s.toFixed(2), e: +l.e.toFixed(2), n: l.text.length, p: (l.words || []).length };
+        })
       };
     }
   };

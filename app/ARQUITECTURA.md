@@ -88,6 +88,11 @@ La herramienta más grande; sirve de ejemplo de una sub-herramienta con audio pe
 - **`canta.js`** — la herramienta (se registra como primaria): biblioteca de paquetes y pantalla de
   canto (canvas con carril de notas, letra palabra a palabra, puntaje). Todo el estado de partida
   (segmentos verde/rojo, racha, traza de la voz) vive aquí.
+  **Cómo se puntúa:** una barra queda verde si acertaste (±`TOL` = 0.7 semitonos) durante al menos
+  el `HITRATIO` (72 %) del tiempo *evaluado* de la nota. El tiempo evaluado excluye los primeros
+  `TRANS` (150 ms, o el 35 % de la nota si es corta): cantar no es saltar entre plataformas, para
+  llegar a una nota se pasa por las del medio, así que el ataque no suma ni castiga y se dibuja en
+  gris en vez de rojo.
 - **`canta-engine.js`** (`SB.cantaEngine`) — paquetes y transporte. Dos pistas (voz/música) con
   ganancia independiente. **Tono y velocidad se pre-renderizan** (no en tiempo real): al cambiarlos
   se procesa el audio completo y se retoma donde iba. Convención clave: **todas las posiciones son
@@ -121,6 +126,16 @@ IndexedDB) o genera una **demo sintética**.
 Modelo canónico en `data/songs.js`. La clave: **cada acorde se ancla a la posición de un
 carácter** de la letra (`[pos, "acorde"]`), no "encima". Acordes en notación americana interna;
 latino es solo presentación. Partes repetidas → `ref`. Partes de solo acordes → `grid`.
+
+**Marcas de tiempo del karaoke.** Una línea preparada con Canta lleva además `t: [inicio, fin]`
+(segundos) y `w: [[inicio, fin, posCarácter], …]` con el tiempo de cada palabra. Se anclan **a la
+posición del carácter, igual que los acordes**, y por eso el editor las mueve con el mismo
+mecanismo: partir con Enter reparte las marcas entre las dos líneas, unir con Retroceso las
+concatena corridas, y al escribir se recalculan comparando prefijo y sufijo comunes
+(`remapAnchors` en `tools/songbook/songbook.js`). Resultado: **editar la letra no desincroniza el
+karaoke**. La canción guarda `cantaId` para saber a qué paquete corresponde; Canta prefiere
+siempre la letra del Cancionero (la corregida) sobre la del paquete, y le pone tiempo a las
+palabras nuevas interpolando entre las marcas vecinas.
 
 `store.js` sirve la semilla del repo y guarda las ediciones del usuario en `localStorage`.
 En la Fase 4 (repo Git como base de datos) se cambia por `fetch` de JSON + commit vía API de
