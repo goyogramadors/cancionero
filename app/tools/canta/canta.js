@@ -128,6 +128,10 @@
     if (enCurso) {
       P.job = enCurso;
       if (!P.t0) P.t0 = Date.now();
+      // recuperar si el usuario había pedido subir al terminar (recarga a medias)
+      if (S.prepSubir === undefined) {
+        try { S.prepSubir = localStorage.getItem('sb.canta.subir') !== '0'; } catch (e) { S.prepSubir = true; }
+      }
       pintarProgreso({ etapa: 'Retomando…', pct: 0 });
       seguirProgreso();
       return;
@@ -205,6 +209,7 @@
       language: q('#pxLang').value || null
     };
     S.prepSubir = q('#pxSubir').checked;
+    try { localStorage.setItem('sb.canta.subir', S.prepSubir ? '1' : '0'); } catch (e) {}
     try {
       pintarProgreso({ etapa: file ? 'Subiendo el archivo al motor…' : 'Pidiendo la canción…', pct: 0 });
       var r = file
@@ -524,6 +529,10 @@
     updateSteppers(); updateHud(); updatePlayBtn();
     if (!S.notes.length) {
       status('Esta canción no trae melodía detectada: puedes cantarla y usar los volúmenes, pero no hay barras de afinación.');
+    } else if (S.letraDescartada) {
+      status('No pude sincronizar tu letra editada con los tiempos; muestro la letra original. Revisa que las líneas se parezcan a lo cantado.');
+    } else if (S.letraOmitidas > 0) {
+      status(S.letraOmitidas + (S.letraOmitidas === 1 ? ' línea de tu letra quedó sin tiempo y no aparecerá' : ' líneas de tu letra quedaron sin tiempo y no aparecerán') + ' en el karaoke.');
     }
     loop();
   }
@@ -817,7 +826,9 @@
 
   // Le presta tiempos del paquete a las líneas que no tienen marca propia
   // (letras guardadas antes de que existieran las marcas, o escritas a mano).
-  // Empareja por orden si la cantidad calza, si no por parecido de texto.
+  // Empareja por orden si la cantidad calza; si no, alinea SIN CRUCES (una línea
+  // nunca toma el tiempo de otra que va después), evitando los tramos que ya
+  // reclamaron las líneas con marca propia.
   function prestarTiempos(lineas, pkgLines) {
     var faltan = lineas.filter(function (l) { return !l.t; });
     if (!faltan.length || !pkgLines.length) return;
@@ -825,18 +836,41 @@
       lineas.forEach(function (l, i) { if (!l.t) l.t = [pkgLines[i].s, pkgLines[i].e]; });
       return;
     }
-    var libres = pkgLines.slice();
-    faltan.forEach(function (l) {
-      var best = -1, bestP = 0.34; // bajo este parecido, mejor no inventar
-      libres.forEach(function (p, i) {
-        var s = parecido(l.l, p.text);
-        if (s > bestP) { bestP = s; best = i; }
-      });
-      if (best >= 0) { l.t = [libres[best].s, libres[best].e]; libres.splice(best, 1); }
+    // tramos del paquete que ya usa una línea con t propio: no re-prestarlos
+    var conT = lineas.filter(function (l) { return l.t; });
+    var libres = pkgLines.filter(function (p) {
+      return !conT.some(function (l) { return p.s < l.t[1] && p.e > l.t[0]; });
     });
+    if (!libres.length) return;
+    // alineación monótona (DP) que maximiza el parecido sin cruzar el orden
+    var n = faltan.length, m = libres.length;
+    var dp = [], bt = [];
+    for (var i = 0; i <= n; i++) { dp.push(new Array(m + 1).fill(0)); bt.push(new Array(m + 1).fill(0)); }
+    for (i = 1; i <= n; i++) {
+      for (var j = 1; j <= m; j++) {
+        var match = dp[i - 1][j - 1] + parecido(faltan[i - 1].l, libres[j - 1].text);
+        var saltaLibre = dp[i][j - 1];
+        var saltaFalta = dp[i - 1][j] - 0.001; // leve costo por dejar una sin tiempo
+        var best = match, b = 2;
+        if (saltaLibre > best) { best = saltaLibre; b = 0; }
+        if (saltaFalta > best) { best = saltaFalta; b = 1; }
+        dp[i][j] = best; bt[i][j] = b;
+      }
+    }
+    i = n; j = m;
+    while (i > 0 && j > 0) {
+      var d = bt[i][j];
+      if (d === 2) {
+        if (parecido(faltan[i - 1].l, libres[j - 1].text) >= 0.34) {
+          faltan[i - 1].t = [libres[j - 1].s, libres[j - 1].e];
+        }
+        i--; j--;
+      } else if (d === 0) { j--; } else { i--; }
+    }
   }
 
   function letraEfectiva(pkg) {
+    S.letraOmitidas = 0; S.letraDescartada = false;
     var song = cancionVinculada(pkg);
     var pkgLines = pkg.lines || [];
     if (song) {
@@ -858,8 +892,12 @@
         });
         if (out.length) {
           out.sort(function (a, b) { return a.s - b.s; });
+          S.letraOmitidas = crudas.length - out.length; // líneas del usuario sin tiempo
           return out;
         }
+        // ninguna línea consiguió tiempo: usamos la del paquete pero avisamos,
+        // porque la letra corregida por el usuario no se está mostrando
+        S.letraDescartada = true;
       }
     }
     return pkgLines;

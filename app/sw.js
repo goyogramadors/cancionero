@@ -6,7 +6,7 @@
    caché, así los cambios llegan en la siguiente carga sin quedar atascado
    en una versión vieja. Igual conviene subir CACHE en cada release.
    ============================================================ */
-const CACHE = 'cancionero-v5';
+const CACHE = 'cancionero-v6';
 const SHELL = [
   'index.html',
   'css/base.css',
@@ -47,9 +47,10 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (url.origin !== self.location.origin) return; // deja pasar lo externo
   if (url.pathname.includes('/api/')) return;      // motor local: nunca cachear
-  // El índice de canciones cambia cuando subes una nueva: red primero, para que
-  // aparezca al tiro en el celular (el caché queda solo como respaldo offline).
-  if (url.pathname.endsWith('canta-media/index.json')) {
+  // Los paquetes de Canta (índice + canta.json + audios) cambian cuando preparas
+  // o re-preparas una canción: red primero, para que no quede uno viejo pegado
+  // (el caché queda solo como respaldo offline).
+  if (url.pathname.includes('canta-media/')) {
     e.respondWith(
       fetch(e.request).then((res) => {
         if (res && res.ok) {

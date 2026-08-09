@@ -594,8 +594,13 @@ def rehacer_melodia(carpeta):
     ruta_json = os.path.join(carpeta, 'canta.json')
     if not os.path.exists(ruta_json):
         morir('no hay canta.json en %s' % carpeta)
-    with open(ruta_json, 'r', encoding='utf-8') as f:
-        paquete = json.load(f)
+    try:
+        with open(ruta_json, 'r', encoding='utf-8') as f:
+            paquete = json.load(f)
+    except Exception as e:
+        morir('canta.json ilegible en %s: %s' % (carpeta, e))
+    if not isinstance(paquete, dict):
+        morir('canta.json no tiene la forma esperada (deberia ser un objeto).')
 
     archivos = paquete.get('files') or {}
     vocals = os.path.join(carpeta, archivos.get('vocals') or 'vocals.m4a')

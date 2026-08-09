@@ -334,7 +334,10 @@
 
   // Corre los anclajes de `arr` (posición en el índice `pi`) tras cambiar el texto.
   // Compara prefijo y sufijo comunes: sirve para escribir, borrar y pegar.
-  function remapAnchors(oldT, newT, arr, pi) {
+  // `soltar` (solo para las marcas w): si el carácter donde estaba anclada una
+  // marca fue BORRADO, la marca se descarta (it[pi]=-1) en vez de colapsar sobre
+  // la palabra vecina y robarle el tiempo. recalcT las limpia después.
+  function remapAnchors(oldT, newT, arr, pi, soltar) {
     if (!arr || !arr.length || oldT === newT) return;
     const max = Math.min(oldT.length, newT.length);
     let a = 0;
@@ -345,13 +348,17 @@
     for (const it of arr) {
       const p = it[pi];
       if (p <= a) continue;
+      if (soltar && p < finViejo) { it[pi] = -1; continue; } // su ancla se borró
       it[pi] = Math.max(0, Math.min(newT.length, p >= finViejo ? p + delta : a));
     }
   }
   // Recalcula el tramo [inicio, fin] de una línea a partir de sus palabras.
+  // Descarta marcas soltadas (-1) y deduplica por posición (deja la última).
   function recalcT(ln) {
-    if (!ln.w || !ln.w.length) { delete ln.t; return; }
+    if (ln.w) ln.w = ln.w.filter((w) => w[2] >= 0);
+    if (!ln.w || !ln.w.length) { delete ln.w; delete ln.t; return; }
     ln.w.sort((x, y) => x[2] - y[2]);
+    ln.w = ln.w.filter((w, i) => i === ln.w.length - 1 || w[2] !== ln.w[i + 1][2]);
     ln.t = [ln.w[0][0], ln.w[ln.w.length - 1][1]];
   }
 
@@ -383,7 +390,9 @@
     pop.style.top = (rect.bottom + window.scrollY + 6) + 'px';
     const inp = pop.querySelector('input');
     inp.focus(); inp.select();
-    const commit = () => { const v = M().normalizeInput(inp.value.trim(), S.transp); if (v) onCommit(v); closePop(); persist(); renderSong(); };
+    // Si el acorde no es válido, cerrar sin tocar nada: guardar aquí forkearía
+    // una canción semilla sin que el usuario editara de verdad.
+    const commit = () => { const v = M().normalizeInput(inp.value.trim(), S.transp); closePop(); if (v) { onCommit(v); persist(); renderSong(); } };
     pop.querySelector('.ok').addEventListener('click', commit);
     inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') closePop(); });
     if (onDelete) pop.querySelector('.del').addEventListener('click', () => { onDelete(); closePop(); persist(); renderSong(); });
@@ -459,15 +468,23 @@
       if (pn) { S.cur.parts[+pn.dataset.partname].name = pn.textContent; scheduleSave(); return; }
       const el = e.target.closest('.lyric-edit'); if (!el || S.editMode !== 'letra') return;
       const pi = +el.dataset.pi, li = +el.dataset.li, part = S.cur.parts[pi], ln = part.lines[li];
-      const text = el.textContent, d = text.indexOf('-');
-      if (d >= 0) {
-        const sinGuion = text.slice(0, d) + text.slice(d + 1);
-        remapAnchors(ln.l, sinGuion, ln.a, 0); remapAnchors(ln.l, sinGuion, ln.w, 2);
-        ln.l = sinGuion; splitLine(part, li, d);
+      const text = el.textContent, old = ln.l;
+      // El guion divide la línea SOLO si se acaba de tipear (inserción de un '-').
+      // Un guion que ya venía en la transcripción no debe partir la línea al
+      // primer toque ni revolver las marcas.
+      let gp = -1;
+      if (text.length === old.length + 1) {
+        let i = 0; while (i < old.length && old[i] === text[i]) i++;
+        if (text[i] === '-') gp = i;
+      }
+      if (gp >= 0) {
+        const sinGuion = text.slice(0, gp) + text.slice(gp + 1);
+        remapAnchors(old, sinGuion, ln.a, 0); remapAnchors(old, sinGuion, ln.w, 2, true);
+        ln.l = sinGuion; splitLine(part, li, gp);
         persist(); renderSong(); focusLyric(pi, li + 1, 0);
       } else {
         // el texto cambió: correr acordes y marcas de tiempo con él
-        remapAnchors(ln.l, text, ln.a, 0); remapAnchors(ln.l, text, ln.w, 2);
+        remapAnchors(old, text, ln.a, 0); remapAnchors(old, text, ln.w, 2, true);
         ln.l = text; recalcT(ln); scheduleSave();
       }
     });
@@ -479,13 +496,13 @@
       if (e.key === 'Enter') {
         e.preventDefault();
         const ln = part.lines[li];
-        remapAnchors(ln.l, el.textContent, ln.a, 0); remapAnchors(ln.l, el.textContent, ln.w, 2);
+        remapAnchors(ln.l, el.textContent, ln.a, 0); remapAnchors(ln.l, el.textContent, ln.w, 2, true);
         ln.l = el.textContent;
         splitLine(part, li, caret); persist(); renderSong(); focusLyric(pi, li + 1, 0);
       } else if (e.key === 'Backspace' && caret === 0 && li > 0) {
         e.preventDefault();
         const ln = part.lines[li];
-        remapAnchors(ln.l, el.textContent, ln.a, 0); remapAnchors(ln.l, el.textContent, ln.w, 2);
+        remapAnchors(ln.l, el.textContent, ln.a, 0); remapAnchors(ln.l, el.textContent, ln.w, 2, true);
         ln.l = el.textContent;
         const prev = part.lines[li - 1], joinAt = prev.l.length;
         prev.l += ln.l;

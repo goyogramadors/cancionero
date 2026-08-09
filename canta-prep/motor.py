@@ -222,21 +222,32 @@ def leer_salida(t):
 
 
 def matar_trabajo(t):
-    """Mata el proceso y todo su arbol (Demucs corre como hijo)."""
+    """Mata el proceso y todo su arbol (Demucs corre como hijo).
+
+    El estado del Trabajo se cierra AQUI mismo, sin esperar al hilo lector: si
+    un hijo (Demucs) sobrevive al taskkill, stdout no llega a EOF y el lector se
+    queda bloqueado para siempre; sin este cierre el motor quedaria "ocupado"
+    eternamente y cancelar seria un no-op silencioso.
+    """
     t.cancelado = True
     proc = t.proc
-    if proc is None or proc.poll() is not None:
-        return
-    try:
-        subprocess.run(['taskkill', '/F', '/T', '/PID', str(proc.pid)],
-                       capture_output=True, timeout=20)
-    except Exception:
-        pass
-    if proc.poll() is None:
+    if proc is not None and proc.poll() is None:
         try:
-            proc.kill()
+            subprocess.run(['taskkill', '/F', '/T', '/PID', str(proc.pid)],
+                           capture_output=True, timeout=20)
         except Exception:
             pass
+        if proc.poll() is None:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+    # Liberar el slot pase lo que pase con el proceso o el hilo lector.
+    if t.estado == 'corriendo':
+        t.estado = 'error'
+        t.error = t.error or 'cancelado por ti'
+        t.t_fin = time.time()
+    borrar_temporal(t)
 
 
 # ------------------------------------------------------------------- git ----
@@ -277,6 +288,45 @@ def _rebase_a_medias():
     return False
 
 
+def _ids_trackeados():
+    """Ids de paquetes que YA estan versionados en git (tienen su canta.json)."""
+    ids = set()
+    codigo, salida = correr_git(['ls-files', '--', 'app/canta-media'])
+    if codigo == 0:
+        for linea in salida.splitlines():
+            partes = linea.strip().split('/')
+            if len(partes) >= 4 and partes[-1] == 'canta.json':
+                ids.add(partes[2])
+    return ids
+
+
+def _escribir_json(ruta, datos):
+    """Escritura atomica: escribe a un .tmp y renombra (no deja el archivo a medias)."""
+    tmp = ruta + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(datos, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, ruta)
+
+
+# ------------------------------------------------------------- seguridad ----
+# El motor vive en 127.0.0.1, pero eso solo lo protege de OTRAS maquinas: otra
+# pestana del mismo navegador SI puede hablarle. Como el motor corre git y baja
+# URLs, tratamos toda peticion de un origen que no sea local como hostil.
+LOOPBACK = {'127.0.0.1', 'localhost', '::1'}
+
+
+def _hostname(valor):
+    """hostname (sin puerto ni corchetes, en minusculas) de un 'host:puerto' o URL."""
+    if not valor:
+        return ''
+    v = valor.strip()
+    if '://' in v:
+        v = urlparse(v).netloc
+    if v.startswith('['):                    # IPv6: [::1]:8765
+        return v[1:v.index(']')].lower() if ']' in v else v.lower()
+    return v.split(':')[0].lower()
+
+
 def publicar(ident, mensaje=None):
     """add -f + commit + push (y pull --rebase solo si hace falta).
 
@@ -297,93 +347,137 @@ def publicar(ident, mensaje=None):
     if not os.path.isdir(os.path.join(RAIZ, '.git')):
         return fallo('esta carpeta no es un repositorio git: %s' % RAIZ)
 
+    if _rebase_a_medias():
+        return fallo('hay un rebase de git a medias en %s. Terminalo primero '
+                     '("git rebase --continue" si resolviste los conflictos, o '
+                     '"git rebase --abort") y vuelve a intentar.' % RAIZ)
+
     if not os.path.isdir(os.path.join(OUT_DIR, ident)):
         return fallo('no existe el paquete "%s" en %s' % (ident, OUT_DIR))
 
     rel_paq = 'app/canta-media/%s' % ident
     rel_idx = 'app/canta-media/index.json'
 
-    # -f porque app/canta-media/ esta en .gitignore a proposito (para que un
-    # "git add -A" distraido no suba 500 MB). Una vez trackeados, los archivos
-    # se siguen versionando normal.
-    codigo, salida = correr_git(['add', '-f', '-A', '--', rel_paq, rel_idx])
-    anotar('add -f -A', codigo, salida)
-    if codigo == 127:
-        return fallo('no se encontro git en el PATH. Instala Git para Windows y '
-                     'abre una consola nueva.')
-    if codigo != 0:
-        return fallo('fallo "git add": %s' % (salida or 'sin detalle'))
+    # El index.json local lista TODOS los paquetes (publicados o no). Al repo solo
+    # debe ir la version con los ya trackeados + este, si no el sitio en vivo
+    # anunciaria paquetes que no existen (404 al abrirlos). Guardamos la version
+    # completa para restaurarla despues y que la biblioteca local no pierda nada.
+    ruta_idx = os.path.join(OUT_DIR, 'index.json')
+    idx_full = None
+    try:
+        with open(ruta_idx, encoding='utf-8') as f:
+            cargado = json.load(f)
+        if isinstance(cargado, list):
+            idx_full = cargado
+    except Exception:
+        idx_full = None
+    if idx_full is not None:
+        publicables = _ids_trackeados()
+        publicables.add(ident)
+        filtrado = [e for e in idx_full
+                    if isinstance(e, dict) and e.get('id') in publicables]
+        try:
+            _escribir_json(ruta_idx, filtrado)
+        except Exception:
+            idx_full = None    # no pudimos filtrar: seguimos con lo que haya
 
-    # Si no quedo nada preparado, es que ya estaba publicado
-    codigo, salida = correr_git(['diff', '--cached', '--name-only'])
-    anotar('diff --cached --name-only', codigo, salida)
-    hay_que_commitear = bool(salida.strip()) if codigo == 0 else True
+    def restaurar_indice():
+        if idx_full is not None:
+            try:
+                _escribir_json(ruta_idx, idx_full)
+            except Exception:
+                pass
 
-    if hay_que_commitear:
-        texto = (mensaje or '').strip() or 'canta: agrega %s' % ident
-        codigo, salida = correr_git(['commit', '-m', texto])
-        anotar('commit', codigo, salida)
+    # Todo git corre con el index.json FILTRADO en el arbol de trabajo (asi el
+    # pull --rebase no ve "cambios sin guardar"); recien al final restauramos la
+    # vista local completa. Por eso va en try/finally.
+    def flujo_git():
+        # -f porque app/canta-media/ esta en .gitignore a proposito (para que un
+        # "git add -A" distraido no suba 500 MB). Una vez trackeados, se versionan.
+        codigo, salida = correr_git(['add', '-f', '-A', '--', rel_paq, rel_idx])
+        anotar('add -f -A', codigo, salida)
+        if codigo == 127:
+            return fallo('no se encontro git en el PATH. Instala Git para Windows y '
+                         'abre una consola nueva.')
         if codigo != 0:
-            if 'nothing to commit' in salida or 'nada que confirmar' in salida:
-                hay_que_commitear = False
-            elif 'Please tell me who you are' in salida or 'user.email' in salida:
-                return fallo('git no sabe quien eres. Configura tu identidad:\n'
-                             '  git config --global user.name "Tu Nombre"\n'
-                             '  git config --global user.email "tu@correo.com"')
-            else:
-                return fallo('fallo "git commit": %s' % (salida or 'sin detalle'))
+            return fallo('fallo "git add": %s' % (salida or 'sin detalle'))
 
-    # Push. Ojo: no hacemos pull --rebase a ciegas, porque el arbol de trabajo
-    # puede tener cambios sin commitear y el rebase se caeria.
-    codigo, salida = correr_git(['push'])
-    anotar('push', codigo, salida)
-    if codigo == 0:
-        if not hay_que_commitear:
-            return logrado(True, 'El paquete "%s" ya estaba commiteado; se empujo lo '
-                                 'que faltaba a GitHub.' % ident)
-        return logrado(True, 'Publicado: "%s" ya esta en GitHub (el sitio se '
-                             'actualiza en 1-2 minutos).' % ident)
+        # Solo miramos las rutas del paquete: si hay otra cosa staged (trabajo del
+        # usuario), no debe contar como "hay que commitear" ni colarse en el commit.
+        codigo, salida = correr_git(['diff', '--cached', '--name-only', '--', rel_paq, rel_idx])
+        anotar('diff --cached --name-only', codigo, salida)
+        hay_que_commitear = bool(salida.strip()) if codigo == 0 else True
 
-    tipo, msg = _error_de_push(salida)
-    if tipo == 'auth':
-        base = ('el commit quedo hecho, pero ' if hay_que_commitear else '')
-        return fallo(base + msg + ' Detalle: %s' % (salida or 'sin detalle'))
-    if tipo != 'atrasado':
-        if 'everything up-to-date' in salida.lower():
-            return logrado(False, 'Nada nuevo que publicar: "%s" ya estaba en el '
-                                  'repo y en GitHub.' % ident)
-        base = ('el commit quedo hecho, pero ' if hay_que_commitear else '')
-        return fallo(base + 'fallo "git push": %s' % (salida or 'sin detalle'))
+        if hay_que_commitear:
+            texto = (mensaje or '').strip() or 'canta: agrega %s' % ident
+            # pathspec explicito: el commit lleva SOLO el paquete y el indice, aunque
+            # el usuario tenga otras cosas en el stage.
+            codigo, salida = correr_git(['commit', '-m', texto, '--', rel_paq, rel_idx])
+            anotar('commit', codigo, salida)
+            if codigo != 0:
+                if 'nothing to commit' in salida or 'nada que confirmar' in salida:
+                    hay_que_commitear = False
+                elif 'Please tell me who you are' in salida or 'user.email' in salida:
+                    return fallo('git no sabe quien eres. Configura tu identidad:\n'
+                                 '  git config --global user.name "Tu Nombre"\n'
+                                 '  git config --global user.email "tu@correo.com"')
+                else:
+                    return fallo('fallo "git commit": %s' % (salida or 'sin detalle'))
 
-    # El remoto se adelanto: recien ahora vale la pena reintegrar.
-    codigo, salida = correr_git(['pull', '--rebase'])
-    anotar('pull --rebase', codigo, salida)
-    if codigo != 0:
-        bajo = salida.lower()
-        if _rebase_a_medias():
-            cod2, sal2 = correr_git(['rebase', '--abort'])
-            anotar('rebase --abort', cod2, sal2)
-        if ('unstaged changes' in bajo or 'commit your changes' in bajo
-                or 'cannot pull with rebase' in bajo or 'stash' in bajo):
-            return fallo('hay cambios sin guardar en el repo; haz commit (o guardalos '
-                         'con git stash) y vuelve a intentar. El commit del paquete '
-                         'ya quedo hecho, solo falta empujarlo.')
-        return fallo('el commit quedo hecho, pero fallo "git pull --rebase": %s\n'
-                     'Resuelvelo a mano y despues corre "git push".'
-                     % (salida or 'sin detalle'))
+        codigo, salida = correr_git(['push'])
+        anotar('push', codigo, salida)
+        if codigo == 0:
+            if not hay_que_commitear:
+                return logrado(True, 'El paquete "%s" ya estaba commiteado; se empujo lo '
+                                     'que faltaba a GitHub.' % ident)
+            return logrado(True, 'Publicado: "%s" ya esta en GitHub (el sitio se '
+                                 'actualiza en 1-2 minutos).' % ident)
 
-    codigo, salida = correr_git(['push'])
-    anotar('push (2)', codigo, salida)
-    if codigo != 0:
         tipo, msg = _error_de_push(salida)
         if tipo == 'auth':
-            return fallo('el commit quedo hecho, pero ' + msg +
-                         ' Detalle: %s' % (salida or 'sin detalle'))
-        return fallo('el commit quedo hecho, pero fallo "git push": %s'
-                     % (salida or 'sin detalle'))
+            base = ('el commit quedo hecho, pero ' if hay_que_commitear else '')
+            return fallo(base + msg + ' Detalle: %s' % (salida or 'sin detalle'))
+        if tipo != 'atrasado':
+            if 'everything up-to-date' in salida.lower():
+                return logrado(False, 'Nada nuevo que publicar: "%s" ya estaba en el '
+                                      'repo y en GitHub.' % ident)
+            base = ('el commit quedo hecho, pero ' if hay_que_commitear else '')
+            return fallo(base + 'fallo "git push": %s' % (salida or 'sin detalle'))
 
-    return logrado(True, 'Publicado: "%s" ya esta en GitHub (el sitio se actualiza '
-                         'en 1-2 minutos).' % ident)
+        # El remoto se adelanto: recien ahora vale la pena reintegrar.
+        codigo, salida = correr_git(['pull', '--rebase'])
+        anotar('pull --rebase', codigo, salida)
+        if codigo != 0:
+            bajo = salida.lower()
+            if _rebase_a_medias():
+                cod2, sal2 = correr_git(['rebase', '--abort'])
+                anotar('rebase --abort', cod2, sal2)
+            if ('unstaged changes' in bajo or 'commit your changes' in bajo
+                    or 'cannot pull with rebase' in bajo or 'stash' in bajo):
+                return fallo('hay cambios sin guardar en el repo; haz commit (o guardalos '
+                             'con git stash) y vuelve a intentar. El commit del paquete '
+                             'ya quedo hecho, solo falta empujarlo.')
+            return fallo('el commit quedo hecho, pero fallo "git pull --rebase": %s\n'
+                         'Resuelvelo a mano y despues corre "git push".'
+                         % (salida or 'sin detalle'))
+
+        codigo, salida = correr_git(['push'])
+        anotar('push (2)', codigo, salida)
+        if codigo != 0:
+            tipo2, msg2 = _error_de_push(salida)
+            if tipo2 == 'auth':
+                return fallo('el commit quedo hecho, pero ' + msg2 +
+                             ' Detalle: %s' % (salida or 'sin detalle'))
+            return fallo('el commit quedo hecho, pero fallo "git push": %s'
+                         % (salida or 'sin detalle'))
+
+        return logrado(True, 'Publicado: "%s" ya esta en GitHub (el sitio se actualiza '
+                             'en 1-2 minutos).' % ident)
+
+    try:
+        return flujo_git()
+    finally:
+        restaurar_indice()
 
 
 # --------------------------------------------------------------- servidor ----
@@ -431,10 +525,26 @@ class Manejador(SimpleHTTPRequestHandler):
         SimpleHTTPRequestHandler.end_headers(self)
 
     def cabeceras_cors(self):
-        self.send_header('Access-Control-Allow-Origin', '*')
+        # Solo reflejamos el Origin si es local (caso dev: app en :8000 hablando
+        # al motor en :8765). Ya NO mandamos "*" ni Allow-Private-Network: una
+        # pagina publica no tiene por que poder llamar a este motor.
+        origen = self.headers.get('Origin')
+        if origen and _hostname(origen) in LOOPBACK:
+            self.send_header('Access-Control-Allow-Origin', origen)
+            self.send_header('Vary', 'Origin')
         self.send_header('Access-Control-Allow-Headers', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Private-Network', 'true')
+
+    def _host_local(self):
+        """El Host tiene que ser loopback: corta el DNS rebinding."""
+        host = self.headers.get('Host')
+        return (not host) or _hostname(host) in LOOPBACK
+
+    def _origen_local(self):
+        """Si el navegador manda Origin/Referer, tiene que ser loopback: corta CSRF.
+        Sin Origin (curl, navegacion directa) se permite: no hay pagina hostil."""
+        oref = self.headers.get('Origin') or self.headers.get('Referer')
+        return (not oref) or _hostname(oref) in LOOPBACK
 
     def responder_json(self, datos, codigo=200):
         cuerpo = json.dumps(datos, ensure_ascii=False).encode('utf-8')
@@ -461,12 +571,19 @@ class Manejador(SimpleHTTPRequestHandler):
         v = v.strip()
         return v if v else defecto
 
+    def largo_cuerpo(self):
+        """Content-Length como entero; -1 si viene ausente o no numerico."""
+        try:
+            return int(self.headers.get('Content-Length'))
+        except (TypeError, ValueError):
+            return -1
+
     def cuerpo_json(self):
         """Lee el cuerpo como JSON. Devuelve dict o None si viene mal."""
-        largo = int(self.headers.get('Content-Length') or 0)
-        if largo <= 0:
+        largo = self.largo_cuerpo()
+        if largo == 0:
             return {}
-        if largo > 4 * 1024 * 1024:
+        if largo < 0 or largo > 4 * 1024 * 1024:
             return None
         try:
             crudo = self.rfile.read(largo).decode('utf-8', errors='replace')
@@ -477,8 +594,7 @@ class Manejador(SimpleHTTPRequestHandler):
 
     def descartar_cuerpo(self):
         """Vacia el cuerpo pendiente para no dejar la conexion trabada."""
-        largo = int(self.headers.get('Content-Length') or 0)
-        restante = largo
+        restante = self.largo_cuerpo()
         while restante > 0:
             trozo = self.rfile.read(min(1 << 20, restante))
             if not trozo:
@@ -487,27 +603,41 @@ class Manejador(SimpleHTTPRequestHandler):
 
     # -- verbos -----------------------------------------------------------
     def do_OPTIONS(self):
+        if not self._host_local():
+            return self.error_json('host no permitido', 403)
         self.send_response(204)
         self.cabeceras_cors()
         self.send_header('Content-Length', '0')
         self.end_headers()
 
     def do_GET(self):
+        if not self._host_local():
+            return self.error_json('host no permitido', 403)
         ruta = urlparse(self.path).path
         if ruta.startswith('/api/'):
+            if not self._origen_local():
+                return self.error_json('origen no permitido', 403)
             return self.api_get(ruta)
         if self.headers.get('Range') and self.servir_rango():
             return
         return SimpleHTTPRequestHandler.do_GET(self)
 
     def do_HEAD(self):
+        if not self._host_local():
+            return self.error_json('host no permitido', 403)
         ruta = urlparse(self.path).path
         if ruta.startswith('/api/'):
             return self.responder_json({'ok': True})
         return SimpleHTTPRequestHandler.do_HEAD(self)
 
     def do_POST(self):
+        if not self._host_local():
+            return self.error_json('host no permitido', 403)
         ruta = urlparse(self.path).path
+        # Los POST cambian estado (corren git, bajan URLs): exigimos origen local.
+        if not self._origen_local():
+            self.descartar_cuerpo()
+            return self.error_json('origen no permitido', 403)
         if not ruta.startswith('/api/'):
             self.descartar_cuerpo()
             return self.error_json('no existe %s' % ruta, 404)
@@ -656,10 +786,10 @@ class Manejador(SimpleHTTPRequestHandler):
             self.descartar_cuerpo()
             return self.error_json('falta el parametro "nombre" con el nombre del '
                                    'archivo.', 400)
-        largo = int(self.headers.get('Content-Length') or 0)
-        if largo <= 0:
-            return self.error_json('el cuerpo viene vacio: manda los bytes del '
-                                   'archivo tal cual.', 400)
+        largo = self.largo_cuerpo()
+        if largo == 0 or largo < 0:
+            return self.error_json('el cuerpo viene vacio o con un Content-Length '
+                                   'invalido: manda los bytes del archivo tal cual.', 400)
         if largo > MAX_SUBIDA:
             self.descartar_cuerpo()
             return self.error_json('el archivo pesa mas de 500 MB.', 413)
@@ -684,8 +814,8 @@ class Manejador(SimpleHTTPRequestHandler):
 
         temporal = tempfile.mkdtemp(prefix='canta-motor-')
         destino = os.path.join(temporal, 'entrada' + ext)
+        restante = largo
         try:
-            restante = largo
             with open(destino, 'wb') as f:
                 while restante > 0:
                     trozo = self.rfile.read(min(1 << 20, restante))
@@ -697,6 +827,13 @@ class Manejador(SimpleHTTPRequestHandler):
                 raise IOError('la subida se corto antes de tiempo')
         except Exception as e:
             shutil.rmtree(temporal, ignore_errors=True)
+            # drenar lo que el cliente siga mandando, para que reciba la respuesta
+            # (con disco lleno seguiria subiendo bytes y solo veria un reset)
+            while restante > 0:
+                trozo = self.rfile.read(min(1 << 20, restante))
+                if not trozo:
+                    break
+                restante -= len(trozo)
             return self.error_json('no se pudo recibir el archivo: %s' % e, 400)
 
         # Si el usuario no puso titulo, usamos el nombre original del archivo
