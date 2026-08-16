@@ -445,6 +445,7 @@
     }).sort(function (a, b) { return a.s - b.s; });
     S.lines = letraEfectiva(pkg);
     S.letraEditada = S.lines !== pkg.lines && S.lines.length > 0;
+    S.f0 = pkg.f0 && pkg.f0.v && pkg.f0.v.length ? pkg.f0 : null; // curva de tono real
     S.finPtr = 0;
 
     S.view.innerHTML =
@@ -1015,6 +1016,24 @@
         g.fillStyle = C.mut;
         g.fillText(noteName(n.m + semis), x1 + 6, ym - 3 < 10 ? ym + barH + 11 : ym - 3);
       }
+    }
+
+    // curva de tono real de la grabación (guía: el canto no son plataformas,
+    // se desliza entre notas y vibra). Línea fina sobre las barras.
+    if (S.f0) {
+      var dt0 = S.f0.dt, v = S.f0.v;
+      var iA = Math.max(0, Math.floor(t0Vis / dt0)), iB = Math.min(v.length - 1, Math.ceil(t1Vis / dt0));
+      g.strokeStyle = C.mut; g.lineWidth = 1.5; g.globalAlpha = 0.55;
+      g.beginPath();
+      var trazando = false;
+      for (i = iA; i <= iB; i++) {
+        var mv = v[i];
+        if (mv <= 0) { trazando = false; continue; } // sin voz: corta la línea
+        var fx = xOf(i * dt0), fy = yOf(Math.max(loM, Math.min(hiM, mv + semis)));
+        if (trazando) g.lineTo(fx, fy); else { g.moveTo(fx, fy); trazando = true; }
+      }
+      g.stroke();
+      g.globalAlpha = 1;
     }
 
     // traza de la voz del usuario
