@@ -21,3 +21,6 @@ canta-prep/.venv/
 
 # Python
 __pycache__/
+
+# referencia local para comparar tandas del detector de melodia
+canta-prep/referencia-melodia/
