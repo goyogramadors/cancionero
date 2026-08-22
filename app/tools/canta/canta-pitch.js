@@ -277,6 +277,10 @@
 
     active() { return !!(St.timer || St.node); },
 
+    // el MediaStream vivo del micrófono, para poder grabarlo (null en modo
+    // prueba o con el micrófono apagado)
+    stream() { return St.stream; },
+
     // solo para medir el estabilizador con cuadros sintéticos (ver README).
     // No lo usan las herramientas.
     _probar(cuadros) {

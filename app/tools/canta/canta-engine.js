@@ -25,7 +25,9 @@
     buffers: null,        // {vocals, music} AudioBuffer originales
     rendered: null,       // {key, vocals, music} render vigente
     tempo: 1, semis: 0,
-    vols: { vocals: 0.6, music: 1.0 },
+    vols: { vocals: 0.6, music: 1.0, mine: 1.0 },
+    mine: null,           // AudioBuffer de la toma cargada (o null)
+    mineOff: 0,           // s: corrimiento por la latencia de captura
     gains: null, srcs: null,
     playing: false, t0: 0, posPaused: 0,
     onEnded: null,
@@ -41,8 +43,16 @@
   /* ================= IndexedDB ================= */
   function idb() {
     return new Promise(function (res, rej) {
-      var rq = indexedDB.open('canta-db', 1);
-      rq.onupgradeneeded = function () { rq.result.createObjectStore('packages', { keyPath: 'id' }); };
+      var rq = indexedDB.open('canta-db', 2);
+      rq.onupgradeneeded = function (e) {
+        var db = rq.result;
+        if (!db.objectStoreNames.contains('packages')) db.createObjectStore('packages', { keyPath: 'id' });
+        // tomas: cada vez que cantas queda una grabación con su curva de tono
+        if (!db.objectStoreNames.contains('takes')) {
+          var st = db.createObjectStore('takes', { keyPath: 'id' });
+          st.createIndex('porCancion', 'songId', { unique: false });
+        }
+      };
       rq.onsuccess = function () { res(rq.result); };
       rq.onerror = function () { rej(rq.error); };
     });
@@ -79,6 +89,56 @@
       return new Promise(function (res) {
         var tx = db.transaction('packages', 'readwrite');
         tx.objectStore('packages').delete(id);
+        tx.oncomplete = res; tx.onerror = res;
+      });
+    });
+  }
+
+  /* ============ tomas (lo que cantó el usuario) ============ */
+  // Una toma guarda el audio del micrófono MAS la curva de tono y los
+  // parametros con que se grabo. El tempo/tono importan: la voz se grabo
+  // encima del render vigente, asi que solo calza con esos mismos valores.
+  function takePut(rec) {
+    return idb().then(function (db) {
+      return new Promise(function (res, rej) {
+        var tx = db.transaction('takes', 'readwrite');
+        tx.objectStore('takes').put(rec);
+        tx.oncomplete = function () { res(rec); };
+        tx.onerror = function () { rej(tx.error); };
+      });
+    });
+  }
+  function takeList(songId) {
+    return idb().then(function (db) {
+      return new Promise(function (res, rej) {
+        var rq = db.transaction('takes').objectStore('takes').getAll();
+        rq.onsuccess = function () {
+          var all = rq.result || [];
+          if (songId) all = all.filter(function (r) { return r.songId === songId; });
+          all.sort(function (a, b) { return b.fecha - a.fecha; });
+          res(all.map(function (r) {
+            return { id: r.id, songId: r.songId, fecha: r.fecha, dur: r.dur,
+                     tempo: r.tempo, semis: r.semis, puntaje: r.puntaje, nombre: r.nombre };
+          }));
+        };
+        rq.onerror = function () { rej(rq.error); };
+      });
+    }).catch(function () { return []; });
+  }
+  function takeGet(id) {
+    return idb().then(function (db) {
+      return new Promise(function (res, rej) {
+        var rq = db.transaction('takes').objectStore('takes').get(id);
+        rq.onsuccess = function () { res(rq.result || null); };
+        rq.onerror = function () { rej(rq.error); };
+      });
+    });
+  }
+  function takeDelete(id) {
+    return idb().then(function (db) {
+      return new Promise(function (res) {
+        var tx = db.transaction('takes', 'readwrite');
+        tx.objectStore('takes').delete(id);
         tx.oncomplete = res; tx.onerror = res;
       });
     });
@@ -370,15 +430,54 @@
     play(pos);
   }
 
+  /* ================= grabación de la voz ================= */
+  // Safari solo sabe audio/mp4; Chrome y Firefox, webm. Se pide el primero
+  // que el navegador declare soportar y se deja que él elija si no hay ninguno.
+  var TIPOS = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg'];
+  var Rec = { mr: null, trozos: null, tipo: '' };
+
+  function recSoportado() {
+    return typeof MediaRecorder !== 'undefined';
+  }
+  function recStart(stream) {
+    if (!recSoportado() || !stream) return false;
+    var tipo = '';
+    for (var i = 0; i < TIPOS.length; i++) {
+      if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(TIPOS[i])) { tipo = TIPOS[i]; break; }
+    }
+    try {
+      Rec.mr = tipo ? new MediaRecorder(stream, { mimeType: tipo }) : new MediaRecorder(stream);
+    } catch (e) {
+      try { Rec.mr = new MediaRecorder(stream); } catch (e2) { return false; }
+    }
+    Rec.trozos = [];
+    Rec.tipo = Rec.mr.mimeType || tipo || 'audio/webm';
+    Rec.mr.ondataavailable = function (e) { if (e.data && e.data.size) Rec.trozos.push(e.data); };
+    Rec.mr.start(250); // trozos periódicos: si algo falla no se pierde todo
+    return true;
+  }
+  function recStop() {
+    return new Promise(function (res) {
+      if (!Rec.mr || Rec.mr.state === 'inactive') { res(null); return; }
+      Rec.mr.onstop = function () {
+        var blob = Rec.trozos.length ? new Blob(Rec.trozos, { type: Rec.tipo }) : null;
+        Rec.mr = null; Rec.trozos = null;
+        res(blob);
+      };
+      try { Rec.mr.stop(); } catch (e) { Rec.mr = null; res(null); }
+    });
+  }
+  function recActivo() { return !!(Rec.mr && Rec.mr.state === 'recording'); }
+
   /* ================= transporte ================= */
   function ensureGains() {
     if (St.gains) return;
     var c = ctx();
-    St.gains = { vocals: c.createGain(), music: c.createGain() };
-    St.gains.vocals.gain.value = St.vols.vocals;
-    St.gains.music.gain.value = St.vols.music;
-    St.gains.vocals.connect(c.destination);
-    St.gains.music.connect(c.destination);
+    St.gains = { vocals: c.createGain(), music: c.createGain(), mine: c.createGain() };
+    ['vocals', 'music', 'mine'].forEach(function (k) {
+      St.gains[k].gain.value = St.vols[k];
+      St.gains[k].connect(c.destination);
+    });
   }
 
   function duration() { return St.buffers ? St.buffers.vocals.duration : 0; }
@@ -402,6 +501,25 @@
       return s;
     };
     St.srcs = [mkSrc(St.rendered.vocals, St.gains.vocals), mkSrc(St.rendered.music, St.gains.music)];
+    // La toma se grabó sobre el render, así que va en la misma escala de
+    // tiempo. mineOff descuenta la latencia de captura: lo que cantaste llegó
+    // al micrófono unos milisegundos tarde y hay que adelantarlo para que
+    // suene donde de verdad lo cantaste.
+    if (St.mine) {
+      var offMine = offPlayed + St.mineOff;
+      if (offMine >= 0 && offMine < St.mine.duration) {
+        var sm = c.createBufferSource();
+        sm.buffer = St.mine; sm.connect(St.gains.mine);
+        sm.start(0, offMine);
+        St.srcs.push(sm);
+      } else if (offMine < 0) {
+        // aún no empieza la toma: programarla para dentro de un momento
+        var sm2 = c.createBufferSource();
+        sm2.buffer = St.mine; sm2.connect(St.gains.mine);
+        sm2.start(c.currentTime - offMine, 0);
+        St.srcs.push(sm2);
+      }
+    }
     St.srcs[0].onended = function () {
       if (!St.playing) return;
       St.playing = false; St.posPaused = duration();
@@ -465,7 +583,32 @@
     tempo: function () { return St.tempo; }, semis: function () { return St.semis; },
     setVol: setVol, vols: function () { return St.vols; },
     setOnEnded: function (fn) { St.onEnded = fn; },
-    unload: function () { stop(); St.pkg = null; St.buffers = null; St.rendered = null; },
+    // tomas del usuario
+    takePut: takePut, takeList: takeList, takeGet: takeGet, takeDelete: takeDelete,
+    decodeBlob: decodeBlob,
+    recSoportado: recSoportado, recStart: recStart, recStop: recStop, recActivo: recActivo,
+    // Monta (o quita) la voz grabada como tercera pista. offset en segundos:
+    // positivo = la toma se adelanta, para descontar la latencia de captura.
+    setMine: function (buffer, offset) {
+      var sonaba = St.playing, pos = position();
+      if (sonaba) pause();
+      St.mine = buffer || null;
+      St.mineOff = offset || 0;
+      if (sonaba) play(pos);
+    },
+    mineOffset: function (offset) {
+      if (offset == null) return St.mineOff;
+      var sonaba = St.playing, pos = position();
+      if (sonaba) pause();
+      St.mineOff = offset;
+      if (sonaba) play(pos);
+      return St.mineOff;
+    },
+    hasMine: function () { return !!St.mine; },
+    unload: function () {
+      stop(); St.pkg = null; St.buffers = null; St.rendered = null;
+      St.mine = null; St.mineOff = 0;
+    },
     // inspección para depurar (no usar desde herramientas)
     _debug: function () {
       return {

@@ -35,13 +35,16 @@
     score: 0, streak: 0, best: 0, wrapOff: 0,
     micMode: 'off', lastSampleT: 0, applyTimer: null, rendering: false,
     pendSemis: 0, pendTempo: 100,
-    mountSeq: 0, applySeq: 0, frame: 0
+    mountSeq: 0, applySeq: 0, frame: 0,
+    // grabación de tu voz
+    grabando: false, tomaTrace: [], tomaInicio: 0, tomaTempo: 1, tomaSemis: 0,
+    tomaId: null, tomaCurva: null, tomaLat: 0
   };
 
   /* ---------------- configuración ---------------- */
   function loadCfg() {
-    var d = { volV: 0.6, volM: 1.0, latency: 0.1, octaveFree: true, latin: true,
-              micDev: null, audifonos: false };
+    var d = { volV: 0.6, volM: 1.0, volMine: 1.0, latency: 0.1, octaveFree: true, latin: true,
+              micDev: null, audifonos: false, grabar: true };
     try { Object.assign(d, JSON.parse(localStorage.getItem(CFGKEY) || '{}')); } catch (e) {}
     return d;
   }
@@ -443,6 +446,11 @@
     S.best = bestFor(pkg.id);
     S.score = 0; S.streak = 0; S.trace = []; S.lineIdx = -1; S.wrapOff = 0;
     S.pendSemis = 0; S.pendTempo = 100;
+    // otra canción: la toma cargada y la grabación en curso no aplican
+    S.grabando = false; S.tomaTrace = [];
+    S.tomaId = null; S.tomaCurva = null;
+    E().setMine(null, 0);
+    S.pkg = pkg;
     S.notes = (pkg.notes || []).map(function (n) {
       return { s: n.s, e: n.e, m: n.m, segs: [], hitT: 0, totT: 0, done: false, green: false, scored: false, pts: 0 };
     }).sort(function (a, b) { return a.s - b.s; });
@@ -474,6 +482,8 @@
       '<div class="controls ka-ctl">' +
       '<div class="ctl"><span class="ctl-label">Voz</span><input type="range" id="kaVolV" min="0" max="130" aria-label="Volumen voz"></div>' +
       '<div class="ctl"><span class="ctl-label">Música</span><input type="range" id="kaVolM" min="0" max="130" aria-label="Volumen música"></div>' +
+      '<div class="ctl" id="kaMineWrap" hidden><span class="ctl-label" title="Tu propia grabación, para compararte con el original">Mi voz</span>' +
+      '<input type="range" id="kaVolMine" min="0" max="130" aria-label="Volumen de tu voz"></div>' +
       '<div class="ctl"><span class="ctl-label" title="Cada clic sube o baja medio tono (un semitono); se muestra en tonos">Tono</span><div class="stepper">' +
       '<button id="kaSemD" aria-label="Bajar medio tono">−</button><span class="val" id="kaSem">0</span><button id="kaSemU" aria-label="Subir medio tono">+</button></div></div>' +
       '<div class="ctl"><span class="ctl-label">Velocidad</span><div class="stepper">' +
@@ -483,11 +493,17 @@
       '<div class="ctl" id="kaMicDevWrap" hidden><span class="ctl-label" title="Si tienes una interfaz de audio conectada, elígela aquí. El navegador usa el micrófono del sistema salvo que le indiques otro">Entrada</span>' +
       '<select id="kaMicDev"></select></div>' +
       '<label class="check" title="Con audífonos se apaga la cancelación de eco del navegador, que atenúa el micrófono cada vez que suena la música y corta tu voz a pedazos"><input type="checkbox" id="kaAudif"> Audífonos</label>' +
+      '<label class="check" title="Guarda lo que cantas para poder escucharte después y compararte con el original. Las grabaciones quedan solo en este dispositivo"><input type="checkbox" id="kaGrabar"> Grabar mi voz</label>' +
       '<label class="check" title="Acepta tu canto en la octava que te acomode (hombre cantando una canción de mujer, etc.). Desmarcado: exige la octava exacta"><input type="checkbox" id="kaOct"> Octava libre</label>' +
       '<div class="ctl"><span class="ctl-label" title="Compensación del retardo parlante→micrófono→proceso. Si cantas bien pero te marca corrido, ajústala de a 10 ms">Latencia</span><div class="stepper">' +
       '<button id="kaLatD" aria-label="Menos latencia">−</button><span class="val" id="kaLat"></span><button id="kaLatU" aria-label="Más latencia">+</button></div></div>' +
       '</div>' +
       '<p class="set-status" id="kaStatus"></p>' +
+      '<section class="ka-takes" id="kaTakes" hidden>' +
+      '<h2>Lo que cantaste</h2>' +
+      '<div id="kaTakeList"></div>' +
+      '<p class="set-status" id="kaTakeMsg"></p>' +
+      '</section>' +
       '</div>';
 
     S.els = {
@@ -510,6 +526,36 @@
     E().setVol('vocals', S.cfg.volV); E().setVol('music', S.cfg.volM);
     volV.addEventListener('input', function () { S.cfg.volV = +this.value / 100; E().setVol('vocals', S.cfg.volV); saveCfg(); });
     volM.addEventListener('input', function () { S.cfg.volM = +this.value / 100; E().setVol('music', S.cfg.volM); saveCfg(); });
+    var volMine = q('#kaVolMine');
+    volMine.value = Math.round((S.cfg.volMine != null ? S.cfg.volMine : 1) * 100);
+    E().setVol('mine', S.cfg.volMine != null ? S.cfg.volMine : 1);
+    volMine.addEventListener('input', function () {
+      S.cfg.volMine = +this.value / 100; E().setVol('mine', S.cfg.volMine); saveCfg();
+    });
+
+    var grab = q('#kaGrabar');
+    grab.checked = !!S.cfg.grabar;
+    grab.addEventListener('change', function () {
+      S.cfg.grabar = grab.checked; saveCfg();
+      if (!grab.checked && S.grabando) { S.grabando = false; E().recStop(); }
+      status(grab.checked
+        ? 'Voy a grabar lo que cantes; queda guardado solo en este dispositivo.'
+        : 'No grabaré tu voz.');
+    });
+
+    // panel de tomas: un solo escuchador para toda la lista
+    q('#kaTakeList').addEventListener('click', function (e) {
+      var btn = e.target.closest('button[data-a]');
+      if (!btn) return;
+      var id = btn.closest('.ka-take').dataset.id;
+      if (btn.dataset.a === 'load') cargarToma(id);
+      else if (btn.dataset.a === 'cal') calibrarConToma(id);
+      else if (btn.dataset.a === 'del') {
+        if (S.tomaId === id) { S.tomaId = null; S.tomaCurva = null; E().setMine(null, 0); q('#kaMineWrap').hidden = true; }
+        E().takeDelete(id).then(function () { pintarTomas(); takeMsg('Grabación borrada.'); });
+      }
+    });
+    pintarTomas();
     q('#kaSemD').addEventListener('click', function () { bumpSemis(-1); });
     q('#kaSemU').addEventListener('click', function () { bumpSemis(1); });
     q('#kaTemD').addEventListener('click', function () { bumpTempo(-5); });
@@ -540,6 +586,7 @@
     q('#kaLatU').addEventListener('click', function () { bumpLat(0.01); });
 
     E().setOnEnded(function () {
+      cerrarToma();
       finalizeAll();
       saveBest(pkg.id, S.score);
       S.best = bestFor(pkg.id);
@@ -573,15 +620,51 @@
   /* ---------------- transporte y parámetros ---------------- */
   function togglePlay() {
     if (S.rendering) return;
-    if (E().playing()) { E().pause(); }
+    if (E().playing()) { E().pause(); cerrarToma(); }
     else {
       E().ctx(); // gesto del usuario: despierta el AudioContext
       if (E().position() >= E().duration() - 0.05) { E().seek(0); resetRunFrom(0); }
       if (S.score === 0 && E().position() < 0.05) resetRunFrom(0);
       E().play();
+      abrirToma();
       status('');
     }
     updatePlayBtn();
+  }
+
+  /* ---------------- grabar lo que cantas ---------------- */
+  // Se graba sola mientras el micrófono está activo: la gracia es poder
+  // escucharse después, y pedir permiso cada vez rompe el ritmo de ensayo.
+  function abrirToma() {
+    if (S.micMode !== 'mic' || !S.cfg.grabar) return;
+    var stream = SB.cantaPitch.stream();
+    if (!stream || !E().recSoportado()) return;
+    S.tomaTrace = [];
+    S.tomaInicio = E().position();
+    S.tomaTempo = E().tempo(); S.tomaSemis = E().semis();
+    S.grabando = E().recStart(stream);
+  }
+
+  function cerrarToma() {
+    if (!S.grabando) return;
+    S.grabando = false;
+    var traza = S.tomaTrace, tempo = S.tomaTempo, semis = S.tomaSemis;
+    var puntaje = S.score, songId = S.pkg && S.pkg.id;
+    E().recStop().then(function (blob) {
+      if (!blob || !songId || traza.length < 20) return; // apenas cantaste: no la guardamos
+      var toma = {
+        id: songId + '-' + Date.now(),
+        songId: songId, fecha: Date.now(),
+        dur: traza.length ? traza[traza.length - 1].t - traza[0].t : 0,
+        tempo: tempo, semis: semis, puntaje: puntaje,
+        latencia: S.cfg.latency,
+        blob: blob, trace: traza
+      };
+      return E().takePut(toma).then(function () {
+        pintarTomas();
+        status('Guardé lo que cantaste (' + Math.round(toma.dur) + ' s). Está abajo, en "Lo que cantaste".');
+      });
+    }).catch(function (e) { status('No pude guardar la grabación: ' + e.message); });
   }
   function updatePlayBtn() {
     S.els.play.textContent = E().playing() ? 'PAUSA' : 'CANTAR';
@@ -594,6 +677,12 @@
   }
   function bumpTempo(d) {
     S.pendTempo = Math.max(50, Math.min(150, S.pendTempo + d));
+    updateSteppers(); scheduleApply();
+  }
+  // deja el transporte en el tempo/tono con que se grabó una toma
+  function aplicarTempoSemis(tempo, semis) {
+    S.pendTempo = Math.round(tempo * 100);
+    S.pendSemis = semis;
     updateSteppers(); scheduleApply();
   }
   function bumpLat(d) {
@@ -682,6 +771,160 @@
     });
   }
 
+  /* ---------------- panel de tomas ---------------- */
+  function fechaCorta(ms) {
+    var d = new Date(ms);
+    return ('0' + d.getDate()).slice(-2) + '/' + ('0' + (d.getMonth() + 1)).slice(-2) + ' ' +
+           ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+  }
+
+  function pintarTomas() {
+    var sec = q('#kaTakes'), lista = q('#kaTakeList');
+    if (!sec || !lista || !S.pkg) return;
+    E().takeList(S.pkg.id).then(function (tomas) {
+      if (!tomas.length) { sec.hidden = true; return; }
+      sec.hidden = false;
+      lista.innerHTML = tomas.map(function (t) {
+        var cargada = S.tomaId === t.id;
+        var extra = (t.tempo !== 1 || t.semis !== 0)
+          ? ' · ' + Math.round(t.tempo * 100) + '%' + (t.semis ? ' · ' + (t.semis > 0 ? '+' : '') + t.semis + ' st' : '')
+          : '';
+        return '<div class="ka-take' + (cargada ? ' on' : '') + '" data-id="' + esc(t.id) + '">' +
+          '<span class="ka-take-h">' + fechaCorta(t.fecha) + ' · ' + Math.round(t.dur) + ' s · ' +
+          (t.puntaje || 0) + ' pts' + extra + '</span>' +
+          '<span class="ka-take-b">' +
+          '<button class="mini-app-btn" data-a="load">' + (cargada ? 'Quitar' : 'Escuchar') + '</button>' +
+          '<button class="mini-app-btn" data-a="cal">Calibrar latencia</button>' +
+          '<button class="mini-app-btn" data-a="del">Borrar</button>' +
+          '</span></div>';
+      }).join('');
+    });
+  }
+
+  // Monta (o desmonta) una toma como tercera pista, con su curva de tono.
+  // La toma se grabó sobre un render concreto: si el tempo o el tono de ahora
+  // no son los mismos, no calzaría, así que se vuelve a los de la grabación.
+  function cargarToma(id) {
+    if (S.tomaId === id) {  // ya estaba puesta: quitarla
+      S.tomaId = null; S.tomaCurva = null;
+      E().setMine(null, 0);
+      q('#kaMineWrap').hidden = true;
+      pintarTomas(); takeMsg('Quité tu voz de la mezcla.');
+      return;
+    }
+    takeMsg('Cargando…');
+    E().takeGet(id).then(function (rec) {
+      if (!rec) { takeMsg('Esa grabación ya no está.'); return; }
+      return E().decodeBlob(rec.blob).then(function (buf) {
+        var aviso = '';
+        if (rec.tempo !== E().tempo() || rec.semis !== E().semis()) {
+          aviso = ' Volví a ' + Math.round(rec.tempo * 100) + '% y ' +
+                  (rec.semis > 0 ? '+' : '') + rec.semis + ' semitonos, que es como la cantaste.';
+          aplicarTempoSemis(rec.tempo, rec.semis);
+        }
+        S.tomaId = id;
+        S.tomaCurva = rec.trace || null;
+        S.tomaLat = rec.latencia || 0;
+        E().setMine(buf, 0);
+        var w = q('#kaMineWrap'); if (w) w.hidden = false;
+        pintarTomas();
+        takeMsg('Tu voz está en la mezcla; súbela o bájala con "Mi voz". Tu línea sale punteada.' + aviso);
+      });
+    }).catch(function (e) { takeMsg('No pude cargarla: ' + e.message); });
+  }
+
+  function calibrarConToma(id) {
+    takeMsg('Comparando tu voz con la original…');
+    E().takeGet(id).then(function (rec) {
+      if (!rec || !rec.trace) { takeMsg('Esa grabación no tiene curva de tono.'); return; }
+      var r = calibrarLatencia(S.f0, rec.trace, rec.latencia || 0);
+      if (!r) { takeMsg('No hay suficiente canto en esa toma para medir la latencia.'); return; }
+      if (!r.confiable) {
+        takeMsg('Medí ' + Math.round(r.latencia * 1000) + ' ms, pero no me fío: ' +
+          (r.rangoMelodia < 2 ? 'el tramo que cantaste es casi una sola nota.'
+                              : 'tu canto no sigue de cerca la melodía.') +
+          ' Canta un trozo largo siguiendo la melodía y vuelve a probar.');
+        return;
+      }
+      var antes = Math.round(S.cfg.latency * 1000);
+      S.cfg.latency = r.latencia; saveCfg(); updateSteppers();
+      var tono = Math.abs(r.desvioTono) < 0.7 ? ''
+        : ' De paso: cantaste ' + (r.desvioTono > 0 ? 'más agudo' : 'más grave') +
+          ' que el original, unos ' + Math.abs(Math.round(r.desvioTono)) + ' semitonos' +
+          (Math.abs(Math.abs(r.desvioTono) - 12) < 2 ? ' (o sea, una octava, que está perfecto)' : '') + '.';
+      takeMsg('Latencia ajustada: ' + antes + ' ms → ' + Math.round(r.latencia * 1000) + ' ms, ' +
+        'comparando ' + r.puntos + ' momentos de tu voz con la original.' + tono);
+    }).catch(function (e) { takeMsg('No pude calibrar: ' + e.message); });
+  }
+
+  function takeMsg(t) { var e = q('#kaTakeMsg'); if (e) e.textContent = t || ''; }
+
+  /* ---------------- comparación de curvas y latencia ---------------- */
+  // Busca el desfase que mejor alinea lo que cantaste con la voz original.
+  //
+  // No compara alturas absolutas sino la FORMA: si cantas una octava abajo, o
+  // transpuesto, la diferencia contra el original es grande pero CONSTANTE.
+  // Por eso se mide la dispersión de esa diferencia: cuando el desfase es el
+  // correcto, las dos curvas suben y bajan juntas y la dispersión cae al
+  // mínimo. Así funciona igual para voz de hombre sobre canción de mujer.
+  function calibrarLatencia(f0, traza, latActual) {
+    if (!f0 || !f0.v || !traza || traza.length < 30) return null;
+    var dt = f0.dt, v = f0.v;
+    var origEn = function (t) {
+      var i = Math.round(t / dt);
+      if (i < 0 || i >= v.length) return 0;
+      return v[i];
+    };
+    // la traza viene con la latencia actual ya descontada: se re-suma para
+    // razonar siempre sobre el tiempo crudo de captura
+    var pts = traza.filter(function (p) { return p.m > 0; })
+                   .map(function (p) { return { t: p.t + latActual, m: p.m }; });
+    if (pts.length < 30) return null;
+
+    var mejor = null;
+    for (var d = -0.10; d <= 0.45001; d += 0.005) {
+      var difs = [], origs = [];
+      for (var i = 0; i < pts.length; i++) {
+        var ov = origEn(pts[i].t - d);
+        if (ov > 0) { difs.push(pts[i].m - ov); origs.push(ov); }
+      }
+      if (difs.length < 20) continue;
+      // dispersión robusta: mediana de |dif - mediana|, insensible a los
+      // saltos de octava sueltos que igual deja pasar el detector
+      var ord = difs.slice().sort(function (a, b) { return a - b; });
+      var med = ord[ord.length >> 1];
+      var abs = difs.map(function (x) { return Math.abs(x - med); })
+                    .sort(function (a, b) { return a - b; });
+      var disp = abs[abs.length >> 1];
+      // se premia tener más puntos comparables: un desfase que solapa poco
+      // puede dar dispersión baja por casualidad
+      var puntaje = disp + 0.4 * (1 - difs.length / pts.length);
+      if (!mejor || puntaje < mejor.puntaje) {
+        mejor = { d: d, puntaje: puntaje, disp: disp, n: difs.length, offset: med, orig: origs };
+      }
+    }
+    if (!mejor) return null;
+    // ¿la melodía comparada sube y baja, o es toda la misma nota? Sobre un
+    // tramo plano cualquier desfase calza igual de bien y el resultado no
+    // significa nada: hay que decirlo en vez de proponer un numero al azar.
+    var o = mejor.orig.slice().sort(function (a, b) { return a - b; });
+    var varOrig = o[Math.floor(o.length * 0.9)] - o[Math.floor(o.length * 0.1)];
+    return {
+      latencia: Math.max(0, Math.min(0.3, Math.round(mejor.d * 100) / 100)),
+      dispersion: mejor.disp,
+      puntos: mejor.n,
+      rangoMelodia: varOrig,
+      // cuántos semitonos, en promedio, cantaste por sobre o bajo el original
+      desvioTono: mejor.offset,
+      // hace falta cantar un buen rato Y que la melodía tenga altibajos:
+      // ~4 s de voz sobre un tramo que recorra al menos 2 semitonos
+      confiable: mejor.disp < 1.6 && mejor.n >= 250 && varOrig >= 2
+    };
+  }
+
+  // expuesta para poder medirla con curvas sintéticas (ver README)
+  SB.cantaCalibrar = calibrarLatencia;
+
   /* ---------------- lógica de partido ---------------- */
   function noteAt(t) {
     var ns = S.notes, lo = 0, hi = ns.length - 1;
@@ -756,6 +999,12 @@
     if (shown != null) {
       S.trace.push({ t: tAdj, m: shown, st: state });
       if (S.trace.length > 400) S.trace.splice(0, S.trace.length - 400);
+      // La traza de dibujo es una ventana corta. Para poder comparar tu voz
+      // con la original y medir la latencia hace falta la sesión entera.
+      if (S.grabando) {
+        S.tomaTrace.push({ t: Math.round(tAdj * 1000) / 1000, m: Math.round(shown * 100) / 100 });
+        if (S.tomaTrace.length > 30000) S.grabando = false; // ~8 min, tope de seguridad
+      }
     }
   }
 
@@ -1113,6 +1362,37 @@
       g.globalAlpha = 1;
     }
 
+    // curva de la toma cargada: tu voz de una vez anterior, punteada, para
+    // poder compararla con la línea continua del original
+    if (S.tomaCurva && S.tomaCurva.length) {
+      var tc = S.tomaCurva;
+      // Si cantaste en otra octava (lo normal: un hombre sobre una canción de
+      // mujer), la curva cruda cae fuera del carril y quedaría aplastada
+      // contra el borde. Se pliega por octavas hasta entrar, que es la misma
+      // regla con que se puntúa cuando "Octava libre" está marcada.
+      var plegar = function (m) {
+        if (!S.cfg.octaveFree) return m;
+        while (m < loM && m + 12 <= hiM) m += 12;
+        while (m > hiM && m - 12 >= loM) m -= 12;
+        return m;
+      };
+      g.strokeStyle = C.ink; g.lineWidth = 1.5; g.globalAlpha = 0.75;
+      g.setLineDash([4, 3]);
+      g.beginPath();
+      var dibujando = false;
+      for (i = 0; i < tc.length; i++) {
+        var pc = tc[i];
+        if (pc.t < t0Vis) continue;
+        if (pc.t > t1Vis) break;
+        var cx = xOf(pc.t), cy = yOf(Math.max(loM, Math.min(hiM, plegar(pc.m + semis))));
+        if (dibujando && i > 0 && pc.t - tc[i - 1].t < 0.15) g.lineTo(cx, cy);
+        else { g.moveTo(cx, cy); dibujando = true; }
+      }
+      g.stroke();
+      g.setLineDash([]);
+      g.globalAlpha = 1;
+    }
+
     // traza de la voz del usuario
     if (S.trace.length) {
       g.lineWidth = 2;
@@ -1199,10 +1479,15 @@
 
   // gancho mínimo de inspección (depurar sin exponer el estado entero)
   SB.canta = {
+    // fuerza un cuadro: requestAnimationFrame se congela en pestañas ocultas,
+    // así que sin esto no hay forma de comprobar el dibujo automáticamente
+    redibujar: function () { if (S.screen === 'play') draw(); },
     debug: function () {
       return {
         screen: S.screen, score: S.score, streak: S.streak,
         trace: S.trace.length, micMode: S.micMode,
+        grabando: S.grabando, tomaTrace: S.tomaTrace.length,
+        tomaId: S.tomaId, tomaCurva: S.tomaCurva ? S.tomaCurva.length : 0,
         notesDone: S.notes ? S.notes.filter(function (n) { return n.done; }).length : 0,
         notesGreen: S.notes ? S.notes.filter(function (n) { return n.green; }).length : 0,
         notesScored: S.notes ? S.notes.filter(function (n) { return n.scored; }).length : 0,
