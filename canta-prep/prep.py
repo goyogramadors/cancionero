@@ -241,11 +241,15 @@ def transcribir(vocals, modelo, idioma):
     """faster-whisper sobre la voz. Devuelve (lines, lang)."""
     from faster_whisper import WhisperModel
     wm = WhisperModel(modelo, device='cpu', compute_type='int8')
-    # condition_on_previous_text=False es clave en canciones: con el default
-    # (True) el modelo "recuerda" lo ya transcrito y se salta los coros y las
-    # repeticiones del final, dejando la segunda mitad sin letra ni tiempos.
+    # Dos ajustes que en canciones cambian el resultado por completo:
+    # - condition_on_previous_text=False: con el default (True) el modelo
+    #   "recuerda" lo ya transcrito y se salta los coros y las repeticiones
+    #   del final, dejando la segunda mitad sin letra ni tiempos.
+    # - vad_filter=False: el VAD esta entrenado para habla y descarta la voz
+    #   cantada (notas sostenidas, reverb). Medido en Suspicious Minds:
+    #   138 palabras con VAD contra 291 sin el, sobre la misma voz separada.
     segmentos, info = wm.transcribe(vocals, word_timestamps=True,
-                                    vad_filter=True, language=idioma,
+                                    vad_filter=False, language=idioma,
                                     condition_on_previous_text=False)
     lines = []
     for seg in segmentos:

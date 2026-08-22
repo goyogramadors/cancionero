@@ -71,15 +71,20 @@ def asignar_tiempos(reconocidas, correctas):
             continue  # Whisper alucino palabras que no existen: se descartan
         if etiqueta == 'insert':
             continue  # faltan en Whisper: se interpolan mas abajo
-        if etiqueta == 'equal':
-            exactas += j2 - j1
-        # 'equal' o 'replace': repartir los tiempos del bloque entre las palabras
         origen, destino = i2 - i1, j2 - j1
-        for k in range(destino):
-            # si los largos difieren, se estira proporcionalmente
-            idx = i1 + min(origen - 1, k * origen // destino) if origen else None
-            if idx is not None:
-                tiempos[j1 + k] = (reconocidas[idx][0], reconocidas[idx][1])
+        if etiqueta == 'equal':
+            exactas += destino
+            for k in range(destino):
+                tiempos[j1 + k] = (reconocidas[i1 + k][0], reconocidas[i1 + k][1])
+        else:
+            # 'replace': Whisper oyo otra cosa aqui. Se reparte el INTERVALO
+            # completo del bloque entre las palabras de la letra. Darles a
+            # todas el instante de la misma palabra oida las amontonaba en
+            # 0.2 s y dejaba la siguiente estirada 30 s.
+            ini, fin = reconocidas[i1][0], reconocidas[i2 - 1][1]
+            ancho = (fin - ini) / destino if destino else 0
+            for k in range(destino):
+                tiempos[j1 + k] = (ini + ancho * k, ini + ancho * (k + 1))
     return tiempos, exactas
 
 
@@ -151,6 +156,7 @@ def ajustar(carpeta, ruta_letra, respaldo=True):
     tiempos, exactas = asignar_tiempos(reconocidas, correctas)
     tiempos = interpolar(tiempos, datos.get('duration', 0) or 0)
     datos['lines'] = armar_lineas(versos, tiempos)
+    partidos = sanear_versos(datos['lines'])
 
     pct = 100.0 * exactas / len(correctas)
     if pct < 25:
@@ -169,7 +175,94 @@ def ajustar(carpeta, ruta_letra, respaldo=True):
     print('El resto conserva el tiempo de lo que Whisper oyo en su lugar.')
     if respaldo:
         print('Respaldo del original en canta.json.bak')
+    if partidos:
+        print('Se re-anclaron %d verso(s) que habian quedado partidos en dos.' % partidos)
+    revisar_versos(datos['lines'])
     return pct
+
+
+def sanear_versos(lineas, max_hueco=4.0):
+    """Las palabras de un mismo verso se cantan seguidas, nunca con decenas de
+    segundos entre medio.
+
+    Cuando una palabra de la letra no existe en lo cantado (un "Well," que el
+    cantante no dice), el alineador la puede anclar a una repeticion lejana y
+    el verso queda partido en dos mitades separadas por medio minuto. Aqui se
+    detecta ese corte y se re-reparte el verso completo en el rango del grupo
+    mayoritario, que es el que de verdad corresponde.
+    """
+    arreglados = 0
+    for L in lineas:
+        ws = L.get('words') or []
+        if len(ws) < 2:
+            continue
+        grupos, actual = [], [ws[0]]
+        for k in range(1, len(ws)):
+            if ws[k]['s'] - ws[k - 1]['e'] > max_hueco:
+                grupos.append(actual)
+                actual = []
+            actual.append(ws[k])
+        grupos.append(actual)
+        if len(grupos) < 2:
+            # Sin cortes, pero puede estar estirado: si ninguna palabra del
+            # verso consiguio ancla, la interpolacion lo reparte por todo el
+            # hueco y cada palabra "dura" diez segundos. Se comprime a algo
+            # cantable al inicio del hueco.
+            if L['e'] - L['s'] > len(ws) * 2.5:
+                ini, ancho = L['s'], 0.5
+                for k, w in enumerate(ws):
+                    w['s'] = round(ini + ancho * k, 3)
+                    w['e'] = round(ini + ancho * (k + 1), 3)
+                L['s'], L['e'] = ws[0]['s'], ws[-1]['e']
+                arreglados += 1
+            continue
+        mayor = max(grupos, key=len)
+        ini, fin = mayor[0]['s'], mayor[-1]['e']
+        ancho = (fin - ini) / len(ws) if fin > ini else 0.25
+        for k, w in enumerate(ws):
+            w['s'] = round(ini + ancho * k, 3)
+            w['e'] = round(ini + ancho * (k + 1), 3)
+        L['s'], L['e'] = ws[0]['s'], ws[-1]['e']
+        arreglados += 1
+    return arreglados
+
+
+def revisar_versos(lineas, max_dur=12.0, max_hueco=4.0):
+    """Avisa que versos quedaron mal, en vez de darlos por buenos.
+
+    Un porcentaje alto de calce no garantiza que TODOS los versos quedaran
+    bien: basta que la cancion repita un estribillo mas veces que la letra
+    para que un verso se estire por decenas de segundos.
+    """
+    sospechosos = []
+    for i, L in enumerate(lineas):
+        motivos = []
+        if L['e'] - L['s'] > max_dur:
+            motivos.append('dura %.0f s' % (L['e'] - L['s']))
+        # versos aplastados: pasa cuando la letra trae MAS versos de los que la
+        # cancion canta, y los que sobran se amontonan todos en el ultimo
+        # instante. Sin este chequeo se reportaban como "razonables".
+        if L['e'] - L['s'] < 0.4 * max(1, len(L.get('words') or [1])) * 0.25:
+            motivos.append('dura %.1f s, no alcanza a cantarse' % (L['e'] - L['s']))
+        ws = L.get('words') or []
+        hueco = max([ws[k]['s'] - ws[k - 1]['e'] for k in range(1, len(ws))] or [0])
+        if hueco > max_hueco:
+            motivos.append('salto de %.0f s entre sus palabras' % hueco)
+        if motivos:
+            sospechosos.append((i, ' y '.join(motivos), L['text'][:44]))
+
+    if not sospechosos:
+        print('Revision: los %d versos quedaron con tiempos razonables.' % len(lineas))
+        return sospechosos
+
+    print('\nOJO: %d de %d versos quedaron mal sincronizados:' % (len(sospechosos), len(lineas)))
+    for i, motivo, texto in sospechosos[:10]:
+        print('  verso %d (%s): "%s"' % (i, motivo, texto))
+    if len(sospechosos) > 10:
+        print('  ...y %d mas.' % (len(sospechosos) - 10))
+    print('Suele pasar cuando la cancion repite un estribillo mas veces que tu\n'
+          'letra: agrega esas repeticiones al .txt y vuelve a correr esto.')
+    return sospechosos
 
 
 def autochequeo():
@@ -182,9 +275,17 @@ def autochequeo():
     tiempos, exactas = asignar_tiempos(reconocidas, correctas)
     assert tiempos[0] == (0.0, 0.5), 'la palabra que calza conserva su tiempo'
     assert tiempos[3] == (1.0, 1.5), 'la palabra que calza conserva su tiempo'
-    assert tiempos[2] == (0.6, 1.0), 'la mal oida hereda el tiempo de su reemplazo'
-    assert tiempos[5] == (2.0, 2.5), 'la mal oida hereda el tiempo de su reemplazo'
     assert exactas == 3, 'solo we/in/a se oyeron igual, no las reemplazadas'
+    # "cot" (0.6-1.0) se convierte en "are"+"caught": el intervalo se REPARTE,
+    # no se le da el mismo instante a las dos. Este es el caso que amontonaba
+    # versos en 0.2 s y estiraba el siguiente a 30 s.
+    assert abs(tiempos[1][0] - 0.6) < 1e-9 and abs(tiempos[1][1] - 0.8) < 1e-9
+    assert abs(tiempos[2][0] - 0.8) < 1e-9 and abs(tiempos[2][1] - 1.0) < 1e-9
+    assert tiempos[1] != tiempos[2], 'dos palabras nunca pueden caer en el mismo instante'
+    assert tiempos[5] != tiempos[6], 'dos palabras nunca pueden caer en el mismo instante'
+    for k in range(1, len(tiempos)):
+        if tiempos[k] and tiempos[k - 1]:
+            assert tiempos[k][0] >= tiempos[k - 1][0] - 1e-9, 'no pueden ir hacia atras'
 
     # una palabra omitida por Whisper, rodeada de aciertos, queda sin ancla
     faltante, _ = asignar_tiempos(
@@ -213,6 +314,47 @@ def autochequeo():
     # deteccion de "esta no es la letra de esta cancion" no se puede burlar
     _, ninguna = asignar_tiempos(reconocidas, ['zzz', 'qqq'])
     assert ninguna == 0, 'sin coincidencias reales no puede reportar calces'
+
+    # la revision tiene que delatar el verso estirado, no darlo por bueno
+    sano = [{'s': 0.0, 'e': 2.0, 'text': 'ok',
+             'words': [{'s': 0.0, 'e': 1.0, 'w': 'a'}, {'s': 1.0, 'e': 2.0, 'w': 'b'}]}]
+    estirado = [{'s': 0.0, 'e': 60.0, 'text': 'malo',
+                 'words': [{'s': 0.0, 'e': 1.0, 'w': 'a'}, {'s': 59.0, 'e': 60.0, 'w': 'b'}]}]
+    assert revisar_versos(sano) == [], 'un verso normal no puede salir sospechoso'
+    assert len(revisar_versos(estirado)) == 1, 'un verso de 60 s tiene que delatarse'
+
+    # el verso partido en dos (una palabra suelta anclada medio minuto antes)
+    # se re-ancla al grupo mayoritario y deja de estar roto
+    partido = [{'s': 10.0, 'e': 70.0, 'text': 'Well dont you know', 'words': [
+        {'s': 10.0, 'e': 10.5, 'w': 'Well'},      # anclada lejos, ella sola
+        {'s': 68.0, 'e': 68.5, 'w': 'dont'},      # el grupo de verdad
+        {'s': 68.5, 'e': 69.0, 'w': 'you'},
+        {'s': 69.0, 'e': 70.0, 'w': 'know'}]}]
+    assert sanear_versos(partido) == 1, 'tiene que detectar el verso partido'
+    ws = partido[0]['words']
+    assert ws[0]['s'] >= 67.0, 'la palabra suelta se mueve junto a las demas'
+    assert partido[0]['e'] - partido[0]['s'] < 12.0, 'el verso deja de estar estirado'
+    for k in range(1, len(ws)):
+        assert ws[k]['s'] >= ws[k - 1]['s'], 'las palabras quedan en orden'
+    assert revisar_versos(partido) == [], 'ya no debe salir sospechoso'
+    assert sanear_versos(sano) == 0, 'un verso sano no se toca'
+
+    # verso sin ninguna ancla: la interpolacion lo estira por todo el hueco,
+    # con palabras contiguas de 15 s cada una (no hay "salto" que detectar)
+    estirado2 = [{'s': 100.0, 'e': 160.0, 'text': 'a b c d', 'words': [
+        {'s': 100.0, 'e': 115.0, 'w': 'a'}, {'s': 115.0, 'e': 130.0, 'w': 'b'},
+        {'s': 130.0, 'e': 145.0, 'w': 'c'}, {'s': 145.0, 'e': 160.0, 'w': 'd'}]}]
+    assert sanear_versos(estirado2) == 1, 'tiene que detectar el verso estirado'
+    assert estirado2[0]['e'] - estirado2[0]['s'] <= 3.0, 'queda con duracion cantable'
+    assert estirado2[0]['s'] == 100.0, 'arranca donde arrancaba'
+    assert revisar_versos(estirado2) == [], 'ya no debe salir sospechoso'
+
+    # versos aplastados al final: la letra traia mas repeticiones de las que la
+    # cancion canta y los sobrantes cayeron todos en el ultimo instante
+    aplastados = [{'s': 272.0, 'e': 272.0, 'text': 'x y z', 'words': [
+        {'s': 272.0, 'e': 272.0, 'w': 'x'}, {'s': 272.0, 'e': 272.0, 'w': 'y'},
+        {'s': 272.0, 'e': 272.0, 'w': 'z'}]}]
+    assert len(revisar_versos(aplastados)) == 1, 'un verso de 0 s tiene que delatarse'
 
     print('autochequeo OK')
 
