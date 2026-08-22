@@ -164,6 +164,8 @@
       '<option value="tiny">Rápida</option>' +
       '<option value="small" selected>Normal</option>' +
       '<option value="medium">Mejor (más lenta)</option>' +
+      '<option value="large-v3-turbo">Muy buena (lenta)</option>' +
+      '<option value="large-v3">La mejor (la más lenta)</option>' +
       '</select></label>' +
       '<label class="prep-field">Idioma' +
       '<select id="pxLang"><option value="">Detectar solo</option><option value="es">Español</option>' +

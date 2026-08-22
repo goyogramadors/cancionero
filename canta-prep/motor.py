@@ -47,7 +47,7 @@ VIDA_TRABAJO = 30 * 60              # s: los trabajos terminados se olvidan
 TIMEOUT_GIT = 300                   # s por cada comando de git
 
 # Modelos de Whisper que acepta prep.py
-MODELOS = ('tiny', 'base', 'small', 'medium')
+MODELOS = ('tiny', 'base', 'small', 'medium', 'large-v3-turbo', 'large-v3')
 
 # Lineas que sabemos leer de la salida de prep.py
 RE_ETAPA = re.compile(r'^\[(\d+)/(\d+)\]\s*(.+?)\s*\.*\s*$')

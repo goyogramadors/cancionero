@@ -1,5 +1,11 @@
 [
   {
+    "id": "blues-a-dos-mujeres",
+    "title": "Blues a dos mujeres",
+    "artist": "La Rue Morgue",
+    "duration": 197.64
+  },
+  {
     "id": "continentales-macha-y-el-bloque-depresivo",
     "title": "Continentales -- Macha y El Bloque Depresivo",
     "artist": "Perros con Tiña",
@@ -10,5 +16,17 @@
     "title": "Flaca",
     "artist": "Calamaro",
     "duration": 272.09
+  },
+  {
+    "id": "i-will-survive",
+    "title": "I Will Survive",
+    "artist": "CAKE",
+    "duration": 246.92
+  },
+  {
+    "id": "suspicious-minds",
+    "title": "Suspicious Minds",
+    "artist": "Elvis Presley",
+    "duration": 272.36
   }
 ]

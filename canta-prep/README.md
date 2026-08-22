@@ -84,6 +84,25 @@ archivo). Otras opciones:
 - `--out <carpeta>` — dónde dejar el paquete (default `../app/canta-media`).
 - `--keep-work` — conserva la carpeta temporal de trabajo (para depurar).
 
+### Corregir la letra a mano
+
+Whisper acierta los **tiempos** pero se equivoca en las **palabras**, sobre todo
+si la canción tiene mucha instrumentación. Si tienes la letra buena, esto la
+monta sobre los tiempos que Whisper ya encontró, en vez de rehacer la canción:
+
+```
+ajustar-letra.bat "..\app\canta-media\<id-de-la-cancion>" letra.txt
+```
+
+El `.txt` va con **un verso por línea** (las líneas en blanco se ignoran); esas
+líneas son las que verás en el karaoke. Al terminar dice qué porcentaje de
+palabras calzó exactamente con lo cantado. Si calza menos del 25 % se detiene sin
+tocar nada: es la señal de que esa letra no es de esta canción.
+
+Deja un respaldo en `canta.json.bak` (evítalo con `--sin-respaldo`). No toca las
+notas ni la curva de tono, solo la letra. Para probar que el alineador está sano:
+`ajustar-letra.bat --autochequeo`.
+
 ### Rehacer solo la melodía
 
 Si una canción ya preparada quedó con pocas notas (o mejoramos el detector),

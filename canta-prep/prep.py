@@ -153,6 +153,9 @@ def audio_desde_youtube(url, workdir):
     opts = {
         'format': 'bestaudio/best',
         'outtmpl': plantilla,
+        # YouTube exige resolver un desafio JS: sin runtime da HTTP 403.
+        # Se ofrecen los tres y yt-dlp usa el primero que encuentre instalado.
+        'js_runtimes': {'deno': {}, 'node': {}, 'bun': {}},
         'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'wav'}],
         'noplaylist': True,
         'quiet': True,
@@ -164,7 +167,9 @@ def audio_desde_youtube(url, workdir):
             info = ydl.extract_info(url, download=True)
     except yt_dlp.utils.DownloadError as e:
         morir('no se pudo descargar el audio de YouTube.\n'
-              '       Revisa la URL y tu conexion. Detalle: %s' % str(e).splitlines()[-1])
+              '       Revisa la URL y tu conexion. Si dice 403, falta un runtime\n'
+              '       JavaScript: instala Node (winget install OpenJS.NodeJS).\n'
+              '       Detalle: %s' % str(e).splitlines()[-1])
     if info is None:
         morir('yt-dlp no devolvio informacion del video.')
     if 'entries' in info:  # por si llega una playlist igual
@@ -236,8 +241,12 @@ def transcribir(vocals, modelo, idioma):
     """faster-whisper sobre la voz. Devuelve (lines, lang)."""
     from faster_whisper import WhisperModel
     wm = WhisperModel(modelo, device='cpu', compute_type='int8')
+    # condition_on_previous_text=False es clave en canciones: con el default
+    # (True) el modelo "recuerda" lo ya transcrito y se salta los coros y las
+    # repeticiones del final, dejando la segunda mitad sin letra ni tiempos.
     segmentos, info = wm.transcribe(vocals, word_timestamps=True,
-                                    vad_filter=True, language=idioma)
+                                    vad_filter=True, language=idioma,
+                                    condition_on_previous_text=False)
     lines = []
     for seg in segmentos:
         texto = (seg.text or '').strip()
@@ -526,9 +535,19 @@ def codificar_m4a(wav, m4a):
 
 def escribir_paquete(out_dir, paquete, vocals_wav, music_wav):
     destino = os.path.join(out_dir, paquete['id'])
-    if os.path.isdir(destino):
-        shutil.rmtree(destino)
+    # Se vacia el contenido en vez de borrar la carpeta: en Windows no se puede
+    # borrar un directorio que algun proceso tenga abierto (el explorador, una
+    # consola parada ahi), y perder el trabajo de 10 minutos en el ultimo paso
+    # por eso es inaceptable.
     os.makedirs(destino, exist_ok=True)
+    for nombre in os.listdir(destino):
+        ruta = os.path.join(destino, nombre)
+        try:
+            shutil.rmtree(ruta) if os.path.isdir(ruta) else os.remove(ruta)
+        except OSError as e:
+            morir('no se pudo reemplazar "%s".\n'
+                  '       Cierra lo que lo tenga abierto y vuelve a intentar.\n'
+                  '       Detalle: %s' % (ruta, e))
     codificar_m4a(vocals_wav, os.path.join(destino, 'vocals.m4a'))
     codificar_m4a(music_wav, os.path.join(destino, 'music.m4a'))
     with open(os.path.join(destino, 'canta.json'), 'w', encoding='utf-8') as f:
@@ -570,8 +589,10 @@ def parsear_args():
                         '(no descarga, no corre Demucs ni Whisper)')
     p.add_argument('--title', default=None, help='titulo de la cancion')
     p.add_argument('--artist', default=None, help='artista')
-    p.add_argument('--model', default='small', choices=['tiny', 'base', 'small', 'medium'],
-                   help='modelo de Whisper (default: small)')
+    p.add_argument('--model', default='small',
+                   choices=['tiny', 'base', 'small', 'medium', 'large-v3-turbo', 'large-v3'],
+                   help='modelo de Whisper (default: small; large-v3 es el mejor pero '
+                        'el mas lento en CPU, large-v3-turbo casi lo iguala y es ~4x mas rapido)')
     p.add_argument('--language', default=None,
                    help='idioma de la letra, ej. es (default: autodetectar)')
     p.add_argument('--out', default=None,
