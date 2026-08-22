@@ -445,7 +445,7 @@
     S.notes = (pkg.notes || []).map(function (n) {
       return { s: n.s, e: n.e, m: n.m, segs: [], hitT: 0, totT: 0, done: false, green: false, scored: false, pts: 0 };
     }).sort(function (a, b) { return a.s - b.s; });
-    S.lines = letraEfectiva(pkg);
+    S.lines = partirLargas(letraEfectiva(pkg));
     S.letraEditada = S.lines !== pkg.lines && S.lines.length > 0;
     S.f0 = pkg.f0 && pkg.f0.v && pkg.f0.v.length ? pkg.f0 : null; // curva de tono real
     S.finPtr = 0;
@@ -870,6 +870,42 @@
         i--; j--;
       } else if (d === 0) { j--; } else { i--; }
     }
+  }
+
+  // Whisper devuelve segmentos de hasta 50 palabras como una sola "linea".
+  // Mostrada entera tapa el carril de notas (en el celular, un segmento largo
+  // ocupa mas alto que el canvas). Se parte en trozos legibles cortando en la
+  // puntuacion, y si no hay, por largo. Los tiempos salen de las palabras, asi
+  // que el karaoke sigue sincronizado y no hay que volver a preparar la cancion.
+  var MAX_CHARS = 44;
+  function partirLargas(lines) {
+    var out = [];
+    (lines || []).forEach(function (L) {
+      var ws = (L.words || []).filter(function (w) { return w && w.w; });
+      if (!ws.length || (L.text || '').length <= MAX_CHARS) { out.push(L); return; }
+      var buf = [];
+      function empujar() {
+        if (!buf.length) return;
+        out.push({
+          s: buf[0].s,
+          e: buf[buf.length - 1].e,
+          text: buf.map(function (w) { return w.w; }).join(' '),
+          words: buf
+        });
+        buf = [];
+      }
+      var largo = 0;
+      ws.forEach(function (w) {
+        buf.push(w);
+        largo += w.w.length + 1;
+        // cortar en puntuacion solo si el trozo ya tiene cuerpo, para no dejar
+        // versos de dos palabras cada vez que Whisper pone una coma
+        var pausa = /[.,;:!?¿¡]$/.test(w.w) && largo >= MAX_CHARS * 0.45;
+        if (pausa || largo >= MAX_CHARS) { empujar(); largo = 0; }
+      });
+      empujar();
+    });
+    return out;
   }
 
   function letraEfectiva(pkg) {
