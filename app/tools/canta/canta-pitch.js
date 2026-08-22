@@ -34,7 +34,14 @@
   };
 
   /* ---------- estabilizador ---------- */
-  function resetStab() { St.hist = []; St.lastOut = null; St.voicedRun = 0; St.jump = null; }
+  var PISO_INICIAL = 0.002;
+  function resetStab() {
+    St.hist = []; St.lastOut = null; St.voicedRun = 0; St.jump = null;
+    // el piso de ruido TAMBIEN se reinicia: solo sube y nunca bajaba solo,
+    // asi que un ruido fuerte al empezar dejaba la compuerta tan alta que la
+    // voz no volvia a pasar, ni al cambiar de cancion ni al reabrir el mic
+    St.noiseFloor = PISO_INICIAL;
+  }
 
   function stabilize(raw) {
     var now = raw.t;
@@ -43,12 +50,17 @@
     if (raw.rms < St.noiseFloor) St.noiseFloor = St.noiseFloor * 0.7 + raw.rms * 0.3;
     else if (raw.clarity < 0.5) St.noiseFloor = St.noiseFloor * 0.995 + raw.rms * 0.005;
     var gate = Math.max(0.006, St.noiseFloor * 3.5);
-    var voiced = raw.f0 >= 60 && raw.f0 <= 1100 && raw.clarity >= 0.72 && raw.rms >= gate;
+    // 0.72 era un umbral de voz HABLADA. El canto sostenido baja de ahi en el
+    // vibrato y en las consonantes, y cada caida partia la linea. Con la
+    // compuerta de ruido cuidando los falsos positivos, 0.60 sigue el canto
+    // sin dejar entrar el silencio.
+    var voiced = raw.f0 >= 60 && raw.f0 <= 1100 && raw.clarity >= 0.60 && raw.rms >= gate;
 
     if (!voiced) {
       St.voicedRun = 0;
-      // retención breve para no parpadear
-      if (St.lastOut && now - St.lastOut.t < 0.15) return { t: now, midi: St.lastOut.m, held: true };
+      // retencion: aguanta un bache del detector sin cortar la linea. A 16 ms
+      // por cuadro, 0.28 s cubre ~17 cuadros perdidos seguidos.
+      if (St.lastOut && now - St.lastOut.t < 0.28) return { t: now, midi: St.lastOut.m, held: true };
       St.hist = [];
       return { t: now, midi: null };
     }
@@ -175,8 +187,22 @@
 
   /* ---------- API ---------- */
   SB.cantaPitch = {
+    // Micrófonos disponibles. Ojo: los nombres solo aparecen DESPUÉS de que el
+    // usuario dio permiso, así que conviene llamarla con el mic ya andando.
+    async listarMicrofonos() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return [];
+      try {
+        var ds = await navigator.mediaDevices.enumerateDevices();
+        return ds.filter(function (d) { return d.kind === 'audioinput'; })
+          .map(function (d, i) {
+            return { id: d.deviceId, nombre: d.label || ('Micrófono ' + (i + 1)) };
+          });
+      } catch (e) { return []; }
+    },
+
     // mode: 'mic' | 'test'. onSample(estable, crudo) — estable = {t, midi|null}
-    async start(audioCtx, mode, onSample) {
+    // opts: {deviceId, audifonos} — con audífonos se apaga la cancelación de eco
+    async start(audioCtx, mode, onSample, opts) {
       this.stop();
       var seq = ++St.startSeq; // si stop() corre durante los await, abortamos
       St.ctx = audioCtx; St.onSample = onSample; St.mode = mode;
@@ -189,12 +215,28 @@
         }, 20);
         return;
       }
-      // micrófono: cancelación de eco SÍ (resta lo que suena por el parlante,
-      // si no la app "se escucha a sí misma"); supresión de ruido y ganancia
-      // automática NO (deforman el canto)
-      var stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: false, channelCount: 1 }
-      });
+      // Supresión de ruido y ganancia automática NO: deforman el canto.
+      // Cancelación de eco: SÍ con parlantes (si no, la app se escucha a sí
+      // misma), pero NO con audífonos — el cancelador atenúa el micrófono cada
+      // vez que suena la música, y eso corta la voz a pedazos.
+      opts = opts || {};
+      var audio = {
+        echoCancellation: !opts.audifonos,
+        noiseSuppression: false,
+        autoGainControl: false,
+        channelCount: 1
+      };
+      if (opts.deviceId) audio.deviceId = { exact: opts.deviceId };
+      var stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: audio });
+      } catch (e) {
+        // el dispositivo elegido ya no está (se desconectó la interfaz):
+        // volver al de por defecto en vez de quedarse sin micrófono
+        if (!opts.deviceId) throw e;
+        delete audio.deviceId;
+        stream = await navigator.mediaDevices.getUserMedia({ audio: audio });
+      }
       if (seq !== St.startSeq) { stream.getTracks().forEach(function (t) { t.stop(); }); return; }
       St.stream = stream;
       St.srcNode = audioCtx.createMediaStreamSource(St.stream);
@@ -233,6 +275,13 @@
       resetStab();
     },
 
-    active() { return !!(St.timer || St.node); }
+    active() { return !!(St.timer || St.node); },
+
+    // solo para medir el estabilizador con cuadros sintéticos (ver README).
+    // No lo usan las herramientas.
+    _probar(cuadros) {
+      resetStab();
+      return cuadros.map(function (c) { return stabilize(c); });
+    }
   };
 })();

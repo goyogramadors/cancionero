@@ -40,7 +40,8 @@
 
   /* ---------------- configuración ---------------- */
   function loadCfg() {
-    var d = { volV: 0.6, volM: 1.0, latency: 0.1, octaveFree: true, latin: true };
+    var d = { volV: 0.6, volM: 1.0, latency: 0.1, octaveFree: true, latin: true,
+              micDev: null, audifonos: false };
     try { Object.assign(d, JSON.parse(localStorage.getItem(CFGKEY) || '{}')); } catch (e) {}
     return d;
   }
@@ -479,6 +480,9 @@
       '<button id="kaTemD" aria-label="Más lento">−</button><span class="val" id="kaTem">100%</span><button id="kaTemU" aria-label="Más rápido">+</button></div></div>' +
       '<div class="ctl"><span class="ctl-label">Escucha</span><div class="seg" id="kaMicSeg">' +
       '<button data-m="off">Off</button><button data-m="mic">Mic</button><button data-m="test">Prueba</button></div></div>' +
+      '<div class="ctl" id="kaMicDevWrap" hidden><span class="ctl-label" title="Si tienes una interfaz de audio conectada, elígela aquí. El navegador usa el micrófono del sistema salvo que le indiques otro">Entrada</span>' +
+      '<select id="kaMicDev"></select></div>' +
+      '<label class="check" title="Con audífonos se apaga la cancelación de eco del navegador, que atenúa el micrófono cada vez que suena la música y corta tu voz a pedazos"><input type="checkbox" id="kaAudif"> Audífonos</label>' +
       '<label class="check" title="Acepta tu canto en la octava que te acomode (hombre cantando una canción de mujer, etc.). Desmarcado: exige la octava exacta"><input type="checkbox" id="kaOct"> Octava libre</label>' +
       '<div class="ctl"><span class="ctl-label" title="Compensación del retardo parlante→micrófono→proceso. Si cantas bien pero te marca corrido, ajústala de a 10 ms">Latencia</span><div class="stepper">' +
       '<button id="kaLatD" aria-label="Menos latencia">−</button><span class="val" id="kaLat"></span><button id="kaLatU" aria-label="Más latencia">+</button></div></div>' +
@@ -516,6 +520,22 @@
     var oct = q('#kaOct');
     oct.checked = S.cfg.octaveFree;
     oct.addEventListener('change', function () { S.cfg.octaveFree = oct.checked; saveCfg(); });
+
+    // cambiar de micrófono o de audífonos obliga a reabrir el stream
+    var aud = q('#kaAudif');
+    aud.checked = !!S.cfg.audifonos;
+    aud.addEventListener('change', function () {
+      S.cfg.audifonos = aud.checked; saveCfg();
+      if (S.micMode === 'mic') setMicMode('mic', true);
+      status(aud.checked
+        ? 'Cancelación de eco apagada: mejor seguimiento, pero usa audífonos o se escuchará a sí misma.'
+        : 'Cancelación de eco encendida (para parlantes).');
+    });
+    q('#kaMicDev').addEventListener('change', function () {
+      S.cfg.micDev = this.value || null; saveCfg();
+      if (S.micMode === 'mic') setMicMode('mic', true);
+      status('Entrada cambiada. Si no se escucha, revisa que el dispositivo esté activo.');
+    });
     q('#kaLatD').addEventListener('click', function () { bumpLat(-0.01); });
     q('#kaLatU').addEventListener('click', function () { bumpLat(0.01); });
 
@@ -636,11 +656,30 @@
         return n.m + E().semis() + 0.12 * Math.sin(ta * 7);
       });
     }
-    SB.cantaPitch.start(E().ctx(), mode, onPitchSample).catch(function (e) {
+    SB.cantaPitch.start(E().ctx(), mode, onPitchSample, {
+      deviceId: S.cfg.micDev, audifonos: !!S.cfg.audifonos
+    }).then(function () {
+      if (mode === 'mic') poblarMicrofonos();
+    }).catch(function (e) {
       S.micMode = 'off'; setMicMode('off');
       status('No pude usar el micrófono: ' + e.message);
     });
     if (!silent) status(mode === 'mic' ? 'Micrófono activo. Con parlantes fuertes conviene usar audífonos.' : 'Modo prueba: canto automático.');
+  }
+
+  // El selector solo tiene sentido con más de una entrada, y los nombres solo
+  // llegan una vez dado el permiso: por eso se puebla al prender el micrófono.
+  function poblarMicrofonos() {
+    SB.cantaPitch.listarMicrofonos().then(function (devs) {
+      var wrap = q('#kaMicDevWrap'), sel = q('#kaMicDev');
+      if (!wrap || !sel || devs.length < 2) return;
+      sel.innerHTML = '<option value="">Por defecto del sistema</option>' +
+        devs.map(function (d) {
+          return '<option value="' + esc(d.id) + '">' + esc(d.nombre) + '</option>';
+        }).join('');
+      sel.value = devs.some(function (d) { return d.id === S.cfg.micDev; }) ? S.cfg.micDev : '';
+      wrap.hidden = false;
+    });
   }
 
   /* ---------------- lógica de partido ---------------- */
