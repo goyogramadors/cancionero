@@ -103,6 +103,36 @@ Deja un respaldo en `canta.json.bak` (evítalo con `--sin-respaldo`). No toca la
 notas ni la curva de tono, solo la letra. Para probar que el alineador está sano:
 `ajustar-letra.bat --autochequeo`.
 
+### Medir qué tan bien salió la melodía
+
+El carril de afinación depende de que el detector siga de verdad la voz. Como
+no hay una "respuesta correcta" contra la cual comparar, se miden las señales
+que delatan cuándo se equivoca:
+
+```
+evaluar-melodia.bat
+evaluar-melodia.bat --contra ..\referencia    REM comparar con una tanda anterior
+evaluar-melodia.bat --guardar ..\referencia   REM dejar la tanda actual como referencia
+```
+
+| Columna | Qué es | Dirección |
+|---|---|---|
+| `en-canto` | % del tiempo con letra que tiene nota. Lo que falta es melodía que el detector no vio | subir |
+| `8vas/min` | saltos de ±una octava entre notas seguidas: el error clásico de pyin, y el que más se nota | bajar |
+| `fuera` | % del tiempo de las notas que cae donde no hay letra (suele ser un instrumento colado en la pista de voz) | bajar |
+| `cortas` | % de notas de menos de 0,12 s: contorno picado en vez de notas sostenidas | bajar |
+| `saltos` | mediana del salto entre notas seguidas, en semitonos | bajar |
+
+**Cómo usarlo para mejorar el detector:** guarda una referencia, cambia los
+parámetros de `prep.py`, corre `--remelodia` sobre las canciones y compara. Las
+marcas `+` y `-` dicen si cada canción mejoró o empeoró. Conviene mirar canción
+por canción y no solo el promedio: un cambio puede arreglar una voz grave y
+arruinar una aguda.
+
+Ojo con `fuera`: si a la canción le falta letra en algún tramo (un *fade-out*
+que repite más de lo que dice el `.txt`), ahí hay canto real sin verso al cual
+pegarse y la cifra sale inflada sin que el detector tenga la culpa.
+
 ### Rehacer solo la melodía
 
 Si una canción ya preparada quedó con pocas notas (o mejoramos el detector),

@@ -308,6 +308,44 @@ def _corregir_octavas(m):
     return out
 
 
+def _pegar_octavas_sueltas(notas):
+    """Baja (o sube) una octava las notas que quedaron descolgadas de su frase.
+
+    _corregir_octavas ya limpia la curva, pero trabaja sobre los frames validos
+    seguidos, que pueden venir de frases distintas separadas por silencios. A
+    nivel de NOTA el contexto es mas honesto: se compara cada nota con la
+    mediana de las que la rodean en el tiempo. Si esta a una octava de ese
+    contexto y plegarla la acerca de verdad, se pliega. Un salto de octava
+    cantado a proposito no se toca, porque arrastra a sus vecinas con el.
+    """
+    import numpy as np
+    if len(notas) < 3:
+        return notas
+    VENTANA = 3.0        # s de contexto a cada lado
+    CERCA_OCTAVA = 2.5   # semitonos de tolerancia alrededor de los 12
+    GANANCIA = 4.0       # semitonos que debe acercar para justificar el pliegue
+    centros = np.array([n['m'] for n in notas], dtype=float)
+    tiempos = np.array([(n['s'] + n['e']) / 2 for n in notas], dtype=float)
+    salida = centros.copy()
+    for i in range(len(notas)):
+        cerca = (np.abs(tiempos - tiempos[i]) <= VENTANA)
+        cerca[i] = False
+        if cerca.sum() < 2:
+            continue
+        ref = float(np.median(centros[cerca]))
+        d = ref - salida[i]
+        k = round(d / 12.0)
+        if k == 0 or abs(abs(d) - 12 * abs(k)) > CERCA_OCTAVA:
+            continue
+        if abs(d) - abs(d - 12 * k) > GANANCIA:
+            salida[i] = salida[i] + 12 * k
+    for i, n in enumerate(notas):
+        if salida[i] != centros[i]:
+            n['m'] = float(salida[i])
+            n['vals'] = n['vals'] + (salida[i] - centros[i])
+    return notas
+
+
 def _segmentar_notas(contorno, indices):
     """Agrupa frames en notas siguiendo el contorno con histeresis.
 
@@ -368,6 +406,8 @@ def _segmentar_notas(contorno, indices):
         vals = np.asarray(s['vals'], dtype=float)
         tono = vals[FRAMES_ATAQUE:] if len(vals) > 3 * FRAMES_ATAQUE else vals
         notas.append({'s': ini, 'e': fin, 'm': float(np.median(tono)), 'vals': vals})
+
+    notas = _pegar_octavas_sueltas(notas)
 
     # Fusiona notas contiguas practicamente iguales separadas por un hueco corto
     fundidas = []
