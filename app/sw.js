@@ -6,7 +6,7 @@
    caché, así los cambios llegan en la siguiente carga sin quedar atascado
    en una versión vieja. Igual conviene subir CACHE en cada release.
    ============================================================ */
-const CACHE = 'cancionero-v10';
+const CACHE = 'cancionero-v11';
 const SHELL = [
   'index.html',
   'css/base.css',

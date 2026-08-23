@@ -98,7 +98,9 @@
         '&title=' + encodeURIComponent(datos.title || '') +
         '&artist=' + encodeURIComponent(datos.artist || '') +
         '&model=' + encodeURIComponent(datos.model || 'small') +
-        (datos.language ? '&language=' + encodeURIComponent(datos.language) : '');
+        (datos.language ? '&language=' + encodeURIComponent(datos.language) : '') +
+        (datos.detector ? '&detector=' + encodeURIComponent(datos.detector) : '') +
+        (datos.ejercicio ? '&ejercicio=1' : '');
       var url = exigir() + 'api/preparar-archivo?' + qs;
       return new Promise(function (res, rej) {
         var xhr = new XMLHttpRequest();

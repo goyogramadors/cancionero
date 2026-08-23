@@ -78,8 +78,16 @@ prep.bat --file "C:\Descargas\cancion.mp4" --title "Gracias a la Vida" --artist 
 Si no das `--title`/`--artist`, se usan los metadatos de YouTube (o el nombre del
 archivo). Otras opciones:
 
-- `--model tiny|base|small|medium` — modelo de Whisper (default `small`; `medium`
-  transcribe mejor pero es más lento).
+- `--detector pyin|crepe` — de dónde sale la melodía (ver arriba).
+- `--ejercicio` — vocalizos y ejercicios de afinación: el audio es el
+  acompañamiento para cantar encima, no una canción con voz. No separa (no hay
+  voz que separar), saca la melodía del audio tal cual e implica `--sin-letra`.
+  Además se salta Demucs, que es la etapa más lenta: un ejercicio pasa de 40 a
+  11 minutos.
+- `--sin-letra` — no transcribir. Sobre un vocalizo Whisper no se queda callado:
+  inventa frases y las sincroniza al ejercicio.
+- `--model tiny|base|small|medium|large-v3-turbo|large-v3` — modelo de Whisper
+  (default `small`; los `large-v3` transcriben bastante mejor pero son lentos).
 - `--language es` — fuerza el idioma de la letra (default: autodetecta).
 - `--out <carpeta>` — dónde dejar el paquete (default `../app/canta-media`).
 - `--keep-work` — conserva la carpeta temporal de trabajo (para depurar).
@@ -102,6 +110,41 @@ tocar nada: es la señal de que esa letra no es de esta canción.
 Deja un respaldo en `canta.json.bak` (evítalo con `--sin-respaldo`). No toca las
 notas ni la curva de tono, solo la letra. Para probar que el alineador está sano:
 `ajustar-letra.bat --autochequeo`.
+
+### Los dos detectores de melodía
+
+El carril de afinación se dibuja a partir de la melodía, y hay dos formas de
+sacarla. Ninguna gana siempre, por eso están las dos:
+
+| | **pyin** (clásico, por defecto) | **crepe** (red neuronal) |
+|---|---|---|
+| Cómo funciona | busca periodicidad en la onda | modelo entrenado con voz |
+| Saltos de octava | se engancha a la subarmónica en voces graves | no tiene ese defecto |
+| Melodía detectada | más | algo menos |
+| Velocidad | 85 s por canción | 39 s |
+
+Medido sobre el vocalizo de nota larga, que es el único material con verdad
+conocida (sabemos que las notas son largas y estables): **pyin dejó 7 notas
+descolgadas una octava y crepe ninguna, en la mitad de tiempo**. A cambio, crepe
+marcó 70 % de cobertura contra 90 % de pyin — parte de ese 90 % es reverb tomada
+por nota, pero no todo.
+
+**Cuál usar:** si al cantar ves que la línea se va de golpe a otro registro,
+prueba crepe. Si ves el carril demasiado vacío, prueba pyin.
+
+Se elige en el selector **Detector de melodía** del cuadro "Preparar una
+canción", o por consola con `--detector pyin|crepe`. El paquete guarda cuál se
+usó, así que `--remelodia` lo respeta.
+
+**Para comparar los dos sobre una canción que ya tienes**, sin volver a bajar ni
+separar nada (~1 minuto):
+
+```
+prep.bat --remelodia "..\app\canta-media\<id>" --detector crepe
+```
+
+Eso pisa el `canta.json`; para volver atrás, `--detector pyin`. Cambiar de
+detector **no toca la letra ni el audio**, solo las notas y la curva de tono.
 
 ### Medir qué tan bien salió la melodía
 

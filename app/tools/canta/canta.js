@@ -174,6 +174,13 @@
       '<label class="prep-field">Idioma' +
       '<select id="pxLang"><option value="">Detectar solo</option><option value="es">Español</option>' +
       '<option value="en">Inglés</option><option value="pt">Portugués</option></select></label>' +
+      '<label class="prep-field" title="pyin escucha la periodicidad de la onda; en voces graves se engancha a veces una octava más abajo. Crepe es una red neuronal que no tiene ese defecto y además es más rápida, pero detecta algo menos de melodía">Detector de melodía' +
+      '<select id="pxDet">' +
+      '<option value="pyin" selected>Clásico (pyin)</option>' +
+      '<option value="crepe">Neuronal (crepe) — sin saltos de octava</option>' +
+      '</select></label>' +
+      '<label class="check wide" title="Para vocalizos y ejercicios: el audio es el acompañamiento para cantar encima, no una canción con voz. No separa pistas ni transcribe letra, y saca la melodía del audio tal cual"><input type="checkbox" id="pxEjer"> ' +
+      'Es un ejercicio de vocalización (sin voz que separar)</label>' +
       '<label class="check wide"><input type="checkbox" id="pxSubir" checked> ' +
       'Subir al cancionero al terminar (letra + canción, para tenerla en el celular)</label>' +
       '<button class="pr-play prep-go" id="pxGo">PREPARAR CANCIÓN</button>' +
@@ -212,7 +219,9 @@
       title: (q('#pxTitle').value || '').trim(),
       artist: (q('#pxArtist').value || '').trim(),
       model: q('#pxModel').value,
-      language: q('#pxLang').value || null
+      language: q('#pxLang').value || null,
+      detector: q('#pxDet').value,
+      ejercicio: q('#pxEjer').checked ? '1' : ''
     };
     S.prepSubir = q('#pxSubir').checked;
     try { localStorage.setItem('sb.canta.subir', S.prepSubir ? '1' : '0'); } catch (e) {}

@@ -49,6 +49,9 @@ TIMEOUT_GIT = 300                   # s por cada comando de git
 # Modelos de Whisper que acepta prep.py
 MODELOS = ('tiny', 'base', 'small', 'medium', 'large-v3-turbo', 'large-v3')
 
+# Detectores de tono que acepta prep.py
+DETECTORES = ('pyin', 'crepe')
+
 # Lineas que sabemos leer de la salida de prep.py
 RE_ETAPA = re.compile(r'^\[(\d+)/(\d+)\]\s*(.+?)\s*\.*\s*$')
 RE_CANCION = re.compile(r'^Cancion:\s*(.+?)\s*\(id:\s*([^)]+)\)\s*$')
@@ -738,12 +741,14 @@ class Manejador(SimpleHTTPRequestHandler):
         return self.error_json('no existe %s' % ruta, 404)
 
     def opciones_prep(self, fuente):
-        """Traduce title/artist/model/language a argumentos de prep.py."""
+        """Traduce title/artist/model/language/detector/ejercicio a argumentos."""
         args = []
         titulo = (fuente.get('title') or '').strip() if fuente.get('title') else ''
         artista = (fuente.get('artist') or '').strip() if fuente.get('artist') else ''
         modelo = (fuente.get('model') or '').strip() if fuente.get('model') else ''
         idioma = (fuente.get('language') or '').strip() if fuente.get('language') else ''
+        detector = (fuente.get('detector') or '').strip() if fuente.get('detector') else ''
+        ejercicio = str(fuente.get('ejercicio') or '').lower() in ('1', 'true', 'si', 'on')
         if titulo:
             args += ['--title', titulo]
         if artista:
@@ -755,6 +760,14 @@ class Manejador(SimpleHTTPRequestHandler):
             args += ['--model', modelo]
         if idioma:
             args += ['--language', idioma]
+        if detector:
+            if detector not in DETECTORES:
+                return None, 'detector desconocido "%s" (usa: %s).' % (
+                    detector, ', '.join(DETECTORES))
+            args += ['--detector', detector]
+        if ejercicio:
+            # un vocalizo: sin separacion ni transcripcion
+            args += ['--ejercicio']
         return args, None
 
     def api_preparar(self):
@@ -794,7 +807,8 @@ class Manejador(SimpleHTTPRequestHandler):
             self.descartar_cuerpo()
             return self.error_json('el archivo pesa mas de 500 MB.', 413)
 
-        fuente = {k: self.un_valor(q, k) for k in ('title', 'artist', 'model', 'language')}
+        fuente = {k: self.un_valor(q, k)
+                  for k in ('title', 'artist', 'model', 'language', 'detector', 'ejercicio')}
         extras, problema = self.opciones_prep(fuente)
         if problema:
             self.descartar_cuerpo()

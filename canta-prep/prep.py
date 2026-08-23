@@ -716,7 +716,7 @@ def parsear_args():
     p.add_argument('--sin-letra', action='store_true',
                    help='no transcribir: para vocalizos y ejercicios de afinacion, '
                         'donde Whisper solo inventaria palabras')
-    p.add_argument('--detector', default='pyin', choices=['pyin', 'crepe'],
+    p.add_argument('--detector', default=None, choices=['pyin', 'crepe'],
                    help='detector de tono. pyin (default) busca periodicidad en la '
                         'onda; crepe es una red neuronal que no se engancha a la '
                         'octava de abajo. Medido en el vocalizo: pyin dejo 7 notas '
@@ -747,7 +747,7 @@ def parsear_args():
     return args
 
 
-def rehacer_melodia(carpeta):
+def rehacer_melodia(carpeta, forzar_detector=None):
     """Recalcula notes y f0 de un paquete existente y reescribe su canta.json."""
     carpeta = os.path.abspath(carpeta)
     ruta_json = os.path.join(carpeta, 'canta.json')
@@ -773,13 +773,16 @@ def rehacer_melodia(carpeta):
     t0 = time.time()
     print('== Canta prep: rehacer melodia ==')
     print('Paquete: %s  (%s)' % (paquete.get('title') or paquete.get('id'), carpeta))
-    det = paquete.get('detector') or 'pyin'
+    # el detector guardado en el paquete manda, salvo que se pida otro a mano:
+    # asi se puede probar el otro sobre una cancion ya hecha, en un minuto y
+    # sin volver a bajar ni separar nada
+    det = forzar_detector or paquete.get('detector') or 'pyin'
     if paquete.get('ejercicio'):
         # su pista de voz es muda: la melodia vive en el instrumental
-        print('[1/2] Extrayendo melodia del instrumental (ejercicio)...', flush=True)
+        print('[1/2] Extrayendo melodia del instrumental con %s (ejercicio)...' % det, flush=True)
         notes, f0 = extraer_melodia(music, None, detector=det)
     else:
-        print('[1/2] Extrayendo melodia de la voz (pyin)...', flush=True)
+        print('[1/2] Extrayendo melodia de la voz con %s...' % det, flush=True)
         notes, f0 = extraer_melodia(vocals, music, detector=det)
     print('      listo en %.1f s' % (time.time() - t0), flush=True)
     resumen_melodia(notes, paquete.get('lines'), paquete.get('duration') or 0)
@@ -787,6 +790,7 @@ def rehacer_melodia(carpeta):
     print('[2/2] Reescribiendo canta.json (se conserva todo lo demas)...', flush=True)
     paquete['notes'] = notes
     paquete['f0'] = f0
+    paquete['detector'] = det
     tmp = ruta_json + '.tmp'
     with open(tmp, 'w', encoding='utf-8') as f:
         json.dump(paquete, f, ensure_ascii=False)
@@ -806,7 +810,7 @@ def main():
     warnings.filterwarnings('ignore')  # librosa/numba son ruidosos en consola
 
     if args.remelodia:
-        rehacer_melodia(args.remelodia)
+        rehacer_melodia(args.remelodia, args.detector)
         return
 
     revisar_ffmpeg()
@@ -868,7 +872,7 @@ def main():
             # medir la dominancia voz/musica: se pasa None y ese filtro se omite.
             notes, f0 = extraer_melodia(melodia_desde,
                                         None if args.ejercicio else music_wav,
-                                        detector=args.detector)
+                                        detector=args.detector or 'pyin')
             resumen_melodia(notes, lines, duracion)
 
         with Etapa(5, 6, 'Estimando tonalidad'):
@@ -891,7 +895,7 @@ def main():
                 # recalcularia desde el silencio y lo dejaria vacio.
                 'ejercicio': bool(args.ejercicio),
                 # que detector produjo estas notas: --remelodia lo reusa
-                'detector': args.detector,
+                'detector': args.detector or 'pyin',
                 'lines': lines,
                 'notes': notes,
                 'f0': f0,
