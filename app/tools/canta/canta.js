@@ -497,6 +497,8 @@
       '<button id="kaSemD" aria-label="Bajar medio tono">−</button><span class="val" id="kaSem">0</span><button id="kaSemU" aria-label="Subir medio tono">+</button></div></div>' +
       '<div class="ctl"><span class="ctl-label">Velocidad</span><div class="stepper">' +
       '<button id="kaTemD" aria-label="Más lento">−</button><span class="val" id="kaTem">100%</span><button id="kaTemU" aria-label="Más rápido">+</button></div></div>' +
+      '<div class="ctl" id="kaMelWrap" hidden><span class="ctl-label" title="La canción trae la melodía calculada por dos detectores distintos. Si la línea salta de registro, prueba el neuronal; si el carril se ve vacío, prueba el clásico">Melodía</span><div class="seg" id="kaMelSeg">' +
+      '<button data-d="pyin">Clásica</button><button data-d="crepe">Neuronal</button></div></div>' +
       '<div class="ctl"><span class="ctl-label">Escucha</span><div class="seg" id="kaMicSeg">' +
       '<button data-m="off">Off</button><button data-m="mic">Mic</button><button data-m="test">Prueba</button></div></div>' +
       '<div class="ctl" id="kaMicDevWrap" hidden><span class="ctl-label" title="Si tienes una interfaz de audio conectada, elígela aquí. El navegador usa el micrófono del sistema salvo que le indiques otro">Entrada</span>' +
@@ -575,6 +577,19 @@
     var oct = q('#kaOct');
     oct.checked = S.cfg.octaveFree;
     oct.addEventListener('change', function () { S.cfg.octaveFree = oct.checked; saveCfg(); });
+
+    // interruptor de melodia: solo si el paquete trae las dos versiones
+    var mels = pkg.melodias || {};
+    if (mels.pyin && mels.crepe) {
+      q('#kaMelWrap').hidden = false;
+      var recordada = null;
+      try { recordada = localStorage.getItem('sb.canta.melodia.' + pkg.id); } catch (e) {}
+      setMelodia(mels[recordada] ? recordada : (pkg.detector || 'pyin'), true);
+      q('#kaMelSeg').addEventListener('click', function (e) {
+        var b = e.target.closest('button[data-d]');
+        if (b) setMelodia(b.dataset.d);
+      });
+    }
 
     // cambiar de micrófono o de audífonos obliga a reabrir el stream
     var aud = q('#kaAudif');
@@ -736,6 +751,30 @@
       }
     }
     if (mySeq === S.applySeq) { S.rendering = false; updatePlayBtn(); }
+  }
+
+  /* ---------------- elegir la melodia (pyin / crepe) ---------------- */
+  // El paquete puede traer la melodia de los dos detectores. Cambiarla en vivo
+  // reinicia el puntaje (las notas contra las que se evalua son otras), pero
+  // no toca el audio ni la posicion.
+  function setMelodia(det, silent) {
+    var pkg = S.pkg, m = pkg && pkg.melodias && pkg.melodias[det];
+    if (!m) return;
+    pkg.detector = det;
+    pkg.notes = m.notes; pkg.f0 = m.f0;
+    S.notes = (m.notes || []).map(function (n) {
+      return { s: n.s, e: n.e, m: n.m, segs: [], hitT: 0, totT: 0, done: false, green: false, scored: false, pts: 0 };
+    }).sort(function (a, b) { return a.s - b.s; });
+    S.f0 = m.f0 && m.f0.v && m.f0.v.length ? m.f0 : null;
+    S.finPtr = 0; S.trace = []; S.score = 0; S.streak = 0;
+    q('#kaMelSeg').querySelectorAll('button').forEach(function (b) {
+      b.setAttribute('aria-pressed', b.dataset.d === det ? 'true' : 'false');
+    });
+    updateHud();
+    try { localStorage.setItem('sb.canta.melodia.' + pkg.id, det); } catch (e) {}
+    if (!silent) status(det === 'crepe'
+      ? 'Melodía neuronal (crepe): sin saltos de octava, algo menos de notas.'
+      : 'Melodía clásica (pyin): más notas, puede saltar de octava en voces graves.');
   }
 
   function setMicMode(mode, silent) {

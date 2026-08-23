@@ -747,6 +747,26 @@ def parsear_args():
     return args
 
 
+def extraer_ambas(fuente, music):
+    """Corre los dos detectores sobre el mismo audio. Devuelve
+    {'pyin': {'notes','f0'}, 'crepe': {...}}; si crepe no esta instalado,
+    solo pyin (la app simplemente no ofrece el interruptor)."""
+    out = {}
+    for det in ('pyin', 'crepe'):
+        try:
+            t0 = time.time()
+            notes, f0 = extraer_melodia(fuente, music, detector=det)
+            print('      %-5s %3d notas en %.0f s' % (det, len(notes), time.time() - t0), flush=True)
+            out[det] = {'notes': notes, 'f0': f0}
+        except ImportError:
+            print('      %-5s omitido (torchcrepe no instalado)' % det, flush=True)
+        except Exception as e:
+            print('      %-5s fallo (%s)' % (det, e), flush=True)
+    if 'pyin' not in out:
+        morir('no se pudo extraer la melodia con ningun detector.')
+    return out
+
+
 def rehacer_melodia(carpeta, forzar_detector=None):
     """Recalcula notes y f0 de un paquete existente y reescribe su canta.json."""
     carpeta = os.path.abspath(carpeta)
@@ -773,24 +793,27 @@ def rehacer_melodia(carpeta, forzar_detector=None):
     t0 = time.time()
     print('== Canta prep: rehacer melodia ==')
     print('Paquete: %s  (%s)' % (paquete.get('title') or paquete.get('id'), carpeta))
-    # el detector guardado en el paquete manda, salvo que se pida otro a mano:
-    # asi se puede probar el otro sobre una cancion ya hecha, en un minuto y
-    # sin volver a bajar ni separar nada
+    # se recalculan LAS DOS melodias; el detector activo del paquete se
+    # conserva, salvo que se fuerce otro con --detector
     det = forzar_detector or paquete.get('detector') or 'pyin'
     if paquete.get('ejercicio'):
         # su pista de voz es muda: la melodia vive en el instrumental
-        print('[1/2] Extrayendo melodia del instrumental con %s (ejercicio)...' % det, flush=True)
-        notes, f0 = extraer_melodia(music, None, detector=det)
+        print('[1/2] Extrayendo melodia del instrumental (pyin y crepe, ejercicio)...', flush=True)
+        melodias = extraer_ambas(music, None)
     else:
-        print('[1/2] Extrayendo melodia de la voz con %s...' % det, flush=True)
-        notes, f0 = extraer_melodia(vocals, music, detector=det)
-    print('      listo en %.1f s' % (time.time() - t0), flush=True)
+        print('[1/2] Extrayendo melodia de la voz (pyin y crepe)...', flush=True)
+        melodias = extraer_ambas(vocals, music)
+    if det not in melodias:
+        det = 'pyin'
+    notes, f0 = melodias[det]['notes'], melodias[det]['f0']
+    print('      listo en %.1f s (activo: %s)' % (time.time() - t0, det), flush=True)
     resumen_melodia(notes, paquete.get('lines'), paquete.get('duration') or 0)
 
     print('[2/2] Reescribiendo canta.json (se conserva todo lo demas)...', flush=True)
     paquete['notes'] = notes
     paquete['f0'] = f0
     paquete['detector'] = det
+    paquete['melodias'] = melodias
     tmp = ruta_json + '.tmp'
     with open(tmp, 'w', encoding='utf-8') as f:
         json.dump(paquete, f, ensure_ascii=False)
@@ -867,12 +890,15 @@ def main():
                 if not lines:
                     print('      AVISO: no se detecto letra; el paquete queda sin lines.')
 
-        with Etapa(4, 6, 'Extrayendo melodia de la voz (pyin)'):
+        with Etapa(4, 6, 'Extrayendo melodia (pyin y crepe)'):
             # En un ejercicio no hay separacion, asi que tampoco hay con que
             # medir la dominancia voz/musica: se pasa None y ese filtro se omite.
-            notes, f0 = extraer_melodia(melodia_desde,
-                                        None if args.ejercicio else music_wav,
-                                        detector=args.detector or 'pyin')
+            # Se calculan LAS DOS melodias (crepe agrega ~40 s, nada al lado de
+            # Demucs) y la app deja alternar entre ellas mientras cantas.
+            melodias = extraer_ambas(melodia_desde,
+                                     None if args.ejercicio else music_wav)
+            act = args.detector if args.detector in melodias else 'pyin'
+            notes, f0 = melodias[act]['notes'], melodias[act]['f0']
             resumen_melodia(notes, lines, duracion)
 
         with Etapa(5, 6, 'Estimando tonalidad'):
@@ -895,7 +921,8 @@ def main():
                 # recalcularia desde el silencio y lo dejaria vacio.
                 'ejercicio': bool(args.ejercicio),
                 # que detector produjo estas notas: --remelodia lo reusa
-                'detector': args.detector or 'pyin',
+                'detector': act,
+                'melodias': melodias,
                 'lines': lines,
                 'notes': notes,
                 'f0': f0,
