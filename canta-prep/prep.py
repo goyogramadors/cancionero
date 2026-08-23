@@ -213,6 +213,14 @@ def duracion_wav(wav):
 
 # ------------------------------------------------------------- separacion ----
 
+def silencio_wav(modelo, workdir):
+    """Un wav mudo del mismo largo: es la 'voz original' de un ejercicio, que no
+    existe. Asi la app conserva sus dos pistas y el control de voz queda inerte."""
+    salida = os.path.join(workdir, 'silencio.wav')
+    correr_ffmpeg(['-i', modelo, '-af', 'volume=0', salida], 'generar pista muda')
+    return salida
+
+
 def separar_voz(wav, workdir):
     """Corre Demucs (htdemucs, two-stems) y devuelve (vocals.wav, no_vocals.wav)."""
     env = dict(os.environ)
@@ -633,6 +641,13 @@ def parsear_args():
                         '(no descarga, no corre Demucs ni Whisper)')
     p.add_argument('--title', default=None, help='titulo de la cancion')
     p.add_argument('--artist', default=None, help='artista')
+    p.add_argument('--sin-letra', action='store_true',
+                   help='no transcribir: para vocalizos y ejercicios de afinacion, '
+                        'donde Whisper solo inventaria palabras')
+    p.add_argument('--ejercicio', action='store_true',
+                   help='vocalizo o ejercicio: el audio es el acompanamiento para '
+                        'cantar encima. No separa (no hay voz que separar) y saca la '
+                        'melodia del audio tal cual. Implica --sin-letra')
     p.add_argument('--model', default='small',
                    choices=['tiny', 'base', 'small', 'medium', 'large-v3-turbo', 'large-v3'],
                    help='modelo de Whisper (default: small; large-v3 es el mejor pero '
@@ -650,6 +665,8 @@ def parsear_args():
     elif bool(args.url) == bool(args.archivo):
         p.error('entrega exactamente una entrada: una URL de YouTube, --file <ruta> '
                 'o --remelodia <carpeta>.')
+    if args.ejercicio:
+        args.sin_letra = True   # un vocalizo no tiene palabras
     return args
 
 
@@ -735,17 +752,39 @@ def main():
         ident = slugificar(titulo)
         print('Cancion: %s%s  (id: %s)' % (titulo, ' - ' + artista if artista else '', ident))
 
-        with Etapa(2, 6, 'Separando voz e instrumental (Demucs, puede tardar varios minutos)'):
-            vocals_wav, music_wav = separar_voz(wav, workdir)
+        if args.ejercicio:
+            # Un vocalizo es el piano tocando la secuencia para que TU cantes
+            # encima: no hay voz que separar. Demucs mandaria casi todo al
+            # instrumental, la pista de voz quedaria con residuos y el detector
+            # se quedaria sin melodia (medido: 6% de cobertura). La melodia de
+            # referencia se saca del audio tal cual, y sale gratis saltarse
+            # Demucs, que es la etapa mas lenta de todas.
+            print('[2/6] Separacion omitida (--ejercicio): la melodia sale del audio tal cual.')
+            music_wav = wav
+            vocals_wav = silencio_wav(wav, workdir)
+            melodia_desde = wav
+        else:
+            with Etapa(2, 6, 'Separando voz e instrumental (Demucs, puede tardar varios minutos)'):
+                vocals_wav, music_wav = separar_voz(wav, workdir)
+            melodia_desde = vocals_wav
 
-        with Etapa(3, 6, 'Transcribiendo letra (Whisper %s)' % args.model):
-            lines, lang = transcribir(vocals_wav, args.model, args.language)
-            print('      lineas de letra: %d' % len(lines))
-            if not lines:
-                print('      AVISO: no se detecto letra; el paquete queda sin lines.')
+        if args.sin_letra:
+            # Un vocalizo o un ejercicio de afinacion no tiene palabras: dejar que
+            # Whisper lo intente solo produce letra inventada, ademas de tardar.
+            print('[3/6] Transcripcion omitida (--sin-letra).')
+            lines, lang = [], args.language
+        else:
+            with Etapa(3, 6, 'Transcribiendo letra (Whisper %s)' % args.model):
+                lines, lang = transcribir(vocals_wav, args.model, args.language)
+                print('      lineas de letra: %d' % len(lines))
+                if not lines:
+                    print('      AVISO: no se detecto letra; el paquete queda sin lines.')
 
         with Etapa(4, 6, 'Extrayendo melodia de la voz (pyin)'):
-            notes, f0 = extraer_melodia(vocals_wav, music_wav)
+            # En un ejercicio no hay separacion, asi que tampoco hay con que
+            # medir la dominancia voz/musica: se pasa None y ese filtro se omite.
+            notes, f0 = extraer_melodia(melodia_desde,
+                                        None if args.ejercicio else music_wav)
             resumen_melodia(notes, lines, duracion)
 
         with Etapa(5, 6, 'Estimando tonalidad'):

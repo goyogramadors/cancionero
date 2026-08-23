@@ -60,11 +60,15 @@ def metricas(j):
     saltos = [abs(b['m'] - a['m']) for a, b in seguidas]
     durs = [n['e'] - n['s'] for n in ns]
 
+    # Un vocalizo o un ejercicio no tiene letra: las dos metricas que se apoyan
+    # en los versos no aplican, y meterlas en el promedio como cero lo falsea.
+    # Las otras (saltos de octava, notas cortas) siguen siendo validas y de hecho
+    # un ejercicio de nota larga es material limpio para juzgar al detector.
     return {
         'notas': len(ns),
-        'en_canto': 100.0 * con_nota / cantado if cantado else float('nan'),
+        'en_canto': (100.0 * con_nota / cantado) if cantado else None,
         'oct_min': octavas / (dur / 60.0),
-        'fuera': 100.0 * (1 - en_letra / total_notas) if total_notas else 0.0,
+        'fuera': (100.0 * (1 - en_letra / total_notas)) if (total_notas and cantado) else None,
         'cortas': 100.0 * sum(1 for x in durs if x < 0.12) / len(durs),
         'salto_med': st.median(saltos) if saltos else 0.0,
     }
@@ -107,8 +111,11 @@ def imprimir(actual, previo=None):
         m = actual[ident]
         fila = '%-26s' % ident[:26]
         for clave, _, fmt, signo in COLS:
+            if m[clave] is None:
+                fila += '%9s' % '  -'      # sin letra: la metrica no aplica
+                continue
             celda = fmt % m[clave]
-            if previo and ident in previo:
+            if previo and ident in previo and previo[ident][clave] is not None:
                 d = m[clave] - previo[ident][clave]
                 if signo and abs(d) > 0.05:
                     celda += '+' if d * signo > 0 else '-'
@@ -121,16 +128,27 @@ def imprimir(actual, previo=None):
         print('-' * (26 + 9 * len(COLS)))
         prom = '%-26s' % 'PROMEDIO'
         for clave, _, fmt, signo in COLS:
-            v = st.mean(m[clave] for m in actual.values())
+            vals = [m[clave] for m in actual.values() if m[clave] is not None]
+            if not vals:
+                prom += '%9s' % '  -'
+                continue
+            v = st.mean(vals)
             celda = fmt % v
             if previo:
-                comunes = [i for i in actual if i in previo]
+                # solo las canciones comparables en AMBAS tandas
+                comunes = [i for i in actual if i in previo
+                           and actual[i][clave] is not None and previo[i][clave] is not None]
                 if comunes:
                     d = v - st.mean(previo[i][clave] for i in comunes)
                     if signo and abs(d) > 0.05:
                         celda += '+' if d * signo > 0 else '-'
             prom += '%9s' % celda
         print(prom)
+        sin_letra = [i for i, m in actual.items() if m['en_canto'] is None]
+        if sin_letra:
+            print('\n(- = no aplica: %s no tiene letra, asi que no hay con que medir'
+                  % ', '.join(sin_letra))
+            print(' cobertura ni notas fuera de los versos; queda fuera del promedio)')
     if previo:
         print('\n(+ mejor que la referencia, - peor)')
 

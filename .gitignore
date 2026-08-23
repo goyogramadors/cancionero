@@ -24,3 +24,4 @@ __pycache__/
 
 # referencia local para comparar tandas del detector de melodia
 canta-prep/referencia-melodia/
+canta-prep/cache-melodia/

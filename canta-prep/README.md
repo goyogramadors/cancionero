@@ -133,6 +133,34 @@ Ojo con `fuera`: si a la canción le falta letra en algún tramo (un *fade-out*
 que repite más de lo que dice el `.txt`), ahí hay canto real sin verso al cual
 pegarse y la cifra sale inflada sin que el detector tenga la culpa.
 
+### Afinar los umbrales del detector
+
+`evaluar-melodia.bat` dice **si** una tanda salió mejor; esto sirve para encontrar
+**qué umbrales** probar. El problema es que pyin tarda ~90 s por canción, así que
+mover un umbral y volver a medir es inviable. La solución es separar lo caro de lo
+barato: se corre el análisis una vez y se cachea, y después evaluar cualquier
+combinación cuesta milisegundos.
+
+```
+calibrar-melodia.bat --preparar    REM una vez: ~90 s por cancion
+calibrar-melodia.bat --actual      REM que dan los umbrales de hoy
+calibrar-melodia.bat --barrer      REM explora combinaciones y las ordena
+```
+
+El barrido muestra las dos métricas que **se pelean entre sí**: subir la cobertura
+(capturar la melodía que falta) empuja al detector a seguir instrumentos donde no
+hay canto, y bajar los falsos positivos se lleva melodía real por delante. No hay
+un valor "correcto": hay un intercambio que conviene ver completo antes de elegir.
+
+Por eso la tabla incluye `peor-cob`, la canción peor parada. Un promedio bonito con
+una canción hundida no sirve cuando el corpus va a crecer: **mira siempre canción por
+canción**, no solo el promedio.
+
+El caché queda en `cache-melodia/` (gitignoreado). Si cambias los parámetros que
+afectan a pyin —`FRAME`, `NOTA_MIN/MAX`, `NO_TROUGH_PROB`— el caché queda obsoleto:
+bórralo y vuelve a prepararlo. Los umbrales que se barren (`RMS_MIN_REL`,
+`DOMINANCIA_MIN`) se aplican *después* de pyin, por eso no lo invalidan.
+
 ### Rehacer solo la melodía
 
 Si una canción ya preparada quedó con pocas notas (o mejoramos el detector),

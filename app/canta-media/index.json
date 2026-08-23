@@ -28,5 +28,11 @@
     "title": "Suspicious Minds",
     "artist": "Elvis Presley",
     "duration": 272.36
+  },
+  {
+    "id": "vocalizo-nota-larga",
+    "title": "Vocalizo — nota larga",
+    "artist": "Ejercicio de afinación",
+    "duration": 232.07
   }
 ]
