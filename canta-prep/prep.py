@@ -45,10 +45,20 @@ NOTA_MAX = 'C6'             # inventa saltos de octava hacia abajo
 NO_TROUGH_PROB = 0.30       # pyin, prob. a priori de "no hay tono aqui". El 0.01
                             # por defecto es muy pesimista con voz procesada
                             # (comprimida y con reverb); 0.30 recupera ~7 puntos
+BETA_PYIN = (2, 18)         # el default de pyin. Se probo (2, 8) con la teoria de
+                            # que reparte mejor la evidencia y evita el candidato
+                            # de octava-abajo: sobre el vocalizo, que es el unico
+                            # material con verdad conocida, EMPEORO (7 -> 11 notas
+                            # descolgadas una octava). Queda documentado para no
+                            # volver a intentarlo sin medir.
 
-# Nota: NO se usa la "voiced_probability" de pyin como umbral. En voz real su
-# mediana es ~0.11 y el viejo PROB_MIN=0.5 descartaba el 80% de los frames
-# cantados. La decision de voz la toma voiced_flag (Viterbi) + energia.
+# Nota: NO se usa la "voiced_probability" de pyin como umbral. Su mediana en las
+# canciones del corpus va de 0.30 a 0.37 (el "~0.11" que decia antes este
+# comentario estaba mal medido), pero un umbral fijo de 0.5 igual descartaria el
+# 48% de los frames cantados de blues y el 91% de suspicious-minds. Y no sirve
+# como compuerta: separa canto de no-canto en blues (AUC 0.86) pero es inutil o
+# esta invertida justo en las dos canciones problematicas (0.47 y 0.36).
+# La decision de voz la toma voiced_flag (Viterbi) + energia.
 RMS_MIN_ABS = 0.004         # piso absoluto de energia (silencio digital)
 RMS_MIN_REL = 0.03          # ...y 3% del percentil 90 del track, para adaptarse
                             # a mezclas mas o menos calientes
@@ -316,6 +326,53 @@ def _corregir_octavas(m):
     return out
 
 
+CREPE_UMBRAL = 0.10         # periodicidad minima para dar un frame por cantado.
+                            # Mas bajo que el 0.5 tipico: la voz cantada baja de
+                            # ahi seguido y el resto de los filtros (energia,
+                            # dominancia) ya cuidan los falsos positivos. Medido
+                            # sobre el vocalizo: 0.05 -> 76% de cobertura,
+                            # 0.10 -> 72%, 0.30 -> 66%, 0.50 -> 62%, y en TODOS
+                            # los casos cero notas descolgadas de octava.
+CREPE_MODELO = 'tiny'       # 'full' es ~15x mas lento en CPU y en las pruebas dio
+                            # el mismo rango de notas. Medido sobre 60 s de audio:
+                            # tiny 18 s, full 272 s, pyin 42 s.
+
+
+def _pitch_crepe(y, sr):
+    """Detector neuronal de tono (torchcrepe). Devuelve (hz, voz) por frame, en la
+    MISMA grilla temporal que pyin, para que el resto del pipeline no note la
+    diferencia.
+
+    pyin busca periodicidad en la onda y en voces graves se engancha seguido a la
+    subarmonica: en el vocalizo de nota larga daba un rango de 14 semitonos donde
+    el ejercicio se mueve en 6. La red no tiene ese modo de fallo.
+    """
+    import numpy as np
+    import torch
+    import torchcrepe
+    import librosa
+
+    SR_CREPE = 16000
+    yc = librosa.resample(y, orig_sr=sr, target_sr=SR_CREPE) if sr != SR_CREPE else y
+    # hop equivalente al del pipeline, expresado en la tasa de crepe
+    hop = max(1, int(round(HOP * SR_CREPE / sr)))
+    audio = torch.tensor(yc, dtype=torch.float32)[None]
+    f0, per = torchcrepe.predict(
+        audio, SR_CREPE, hop_length=hop,
+        fmin=float(librosa.note_to_hz(NOTA_MIN)), fmax=float(librosa.note_to_hz(NOTA_MAX)),
+        model=CREPE_MODELO, batch_size=512, device='cpu', return_periodicity=True)
+    hz = f0[0].numpy().astype(float)
+    voz = per[0].numpy().astype(float) >= CREPE_UMBRAL
+
+    # crepe corre a 16 kHz, asi que su grilla no cae exactamente donde la del
+    # resto del pipeline. Se remuestrea al vecino mas cercano (no interpolado:
+    # promediar dos tonos vecinos inventaria alturas que nadie canto).
+    n_obj = 1 + len(y) // HOP
+    t_obj = np.arange(n_obj) * (HOP / sr)
+    idx = np.clip(np.round(t_obj * SR_CREPE / hop).astype(int), 0, len(hz) - 1)
+    return hz[idx], voz[idx]
+
+
 def _pegar_octavas_sueltas(notas):
     """Baja (o sube) una octava las notas que quedaron descolgadas de su frase.
 
@@ -329,7 +386,9 @@ def _pegar_octavas_sueltas(notas):
     import numpy as np
     if len(notas) < 3:
         return notas
-    VENTANA = 3.0        # s de contexto a cada lado
+    VENTANA = 7.0        # s de contexto a cada lado. Con 3 s una nota larga
+                         # (un vocalizo sostenido dura varios segundos) casi no
+                         # alcanzaba a ver vecinas y se quedaba sin corregir
     CERCA_OCTAVA = 2.5   # semitonos de tolerancia alrededor de los 12
     GANANCIA = 4.0       # semitonos que debe acercar para justificar el pliegue
     centros = np.array([n['m'] for n in notas], dtype=float)
@@ -428,7 +487,13 @@ def _segmentar_notas(contorno, indices):
                 p['m'] = float(np.median(p['vals']))
                 continue
         fundidas.append(dict(nt))
-    return fundidas
+
+    # Segunda pasada, ya con las notas fusionadas. Es la que de verdad atrapa
+    # los errores largos: cuando pyin se va de octava durante varios segundos,
+    # antes de fusionar son varias notas cortas equivocadas y CONTIGUAS, que se
+    # dan la razon entre ellas. Recien unidas en un solo bloque se ve que ese
+    # bloque esta descolgado del resto de la frase.
+    return _pegar_octavas_sueltas(fundidas)
 
 
 def _dominancia_voz(vocals, music, n):
@@ -460,8 +525,11 @@ def _dominancia_voz(vocals, music, n):
     return out
 
 
-def extraer_melodia(vocals, music=None):
-    """pyin sobre la voz. Devuelve (notes, f0) segun el contrato de canta.json."""
+def extraer_melodia(vocals, music=None, detector='pyin'):
+    """Extrae la melodia. Devuelve (notes, f0) segun el contrato de canta.json.
+
+    detector: 'pyin' (clasico, por periodicidad) o 'crepe' (red neuronal).
+    """
     import numpy as np
     import librosa
 
@@ -469,10 +537,14 @@ def extraer_melodia(vocals, music=None):
     if len(y) == 0:
         return [], {'dt': DT_F0, 'v': []}
 
-    f0, vflag, vprob = librosa.pyin(
-        y, fmin=librosa.note_to_hz(NOTA_MIN), fmax=librosa.note_to_hz(NOTA_MAX),
-        sr=sr, frame_length=FRAME, hop_length=HOP,
-        no_trough_prob=NO_TROUGH_PROB)
+    if detector == 'crepe':
+        f0, vflag = _pitch_crepe(y, sr)
+        f0 = np.where(vflag, f0, np.nan)
+    else:
+        f0, vflag, vprob = librosa.pyin(
+            y, fmin=librosa.note_to_hz(NOTA_MIN), fmax=librosa.note_to_hz(NOTA_MAX),
+            sr=sr, frame_length=FRAME, hop_length=HOP,
+            no_trough_prob=NO_TROUGH_PROB, beta_parameters=BETA_PYIN)
     with np.errstate(invalid='ignore', divide='ignore'):
         midi = librosa.hz_to_midi(f0)
     rms = librosa.feature.rms(y=y, frame_length=FRAME, hop_length=HOP)[0]
@@ -644,6 +716,11 @@ def parsear_args():
     p.add_argument('--sin-letra', action='store_true',
                    help='no transcribir: para vocalizos y ejercicios de afinacion, '
                         'donde Whisper solo inventaria palabras')
+    p.add_argument('--detector', default='pyin', choices=['pyin', 'crepe'],
+                   help='detector de tono. pyin (default) busca periodicidad en la '
+                        'onda; crepe es una red neuronal que no se engancha a la '
+                        'octava de abajo. Medido en el vocalizo: pyin dejo 7 notas '
+                        'descolgadas una octava y crepe ninguna, en la mitad de tiempo')
     p.add_argument('--ejercicio', action='store_true',
                    help='vocalizo o ejercicio: el audio es el acompanamiento para '
                         'cantar encima. No separa (no hay voz que separar) y saca la '
@@ -696,8 +773,14 @@ def rehacer_melodia(carpeta):
     t0 = time.time()
     print('== Canta prep: rehacer melodia ==')
     print('Paquete: %s  (%s)' % (paquete.get('title') or paquete.get('id'), carpeta))
-    print('[1/2] Extrayendo melodia de la voz (pyin)...', flush=True)
-    notes, f0 = extraer_melodia(vocals, music)
+    det = paquete.get('detector') or 'pyin'
+    if paquete.get('ejercicio'):
+        # su pista de voz es muda: la melodia vive en el instrumental
+        print('[1/2] Extrayendo melodia del instrumental (ejercicio)...', flush=True)
+        notes, f0 = extraer_melodia(music, None, detector=det)
+    else:
+        print('[1/2] Extrayendo melodia de la voz (pyin)...', flush=True)
+        notes, f0 = extraer_melodia(vocals, music, detector=det)
     print('      listo en %.1f s' % (time.time() - t0), flush=True)
     resumen_melodia(notes, paquete.get('lines'), paquete.get('duration') or 0)
 
@@ -784,7 +867,8 @@ def main():
             # En un ejercicio no hay separacion, asi que tampoco hay con que
             # medir la dominancia voz/musica: se pasa None y ese filtro se omite.
             notes, f0 = extraer_melodia(melodia_desde,
-                                        None if args.ejercicio else music_wav)
+                                        None if args.ejercicio else music_wav,
+                                        detector=args.detector)
             resumen_melodia(notes, lines, duracion)
 
         with Etapa(5, 6, 'Estimando tonalidad'):
@@ -802,6 +886,12 @@ def main():
                 'key': tonalidad,
                 'lang': lang,
                 'files': {'vocals': 'vocals.m4a', 'music': 'music.m4a'},
+                # marca el paquete como ejercicio: su pista de voz es muda y la
+                # melodia sale del instrumental. --remelodia necesita saberlo o
+                # recalcularia desde el silencio y lo dejaria vacio.
+                'ejercicio': bool(args.ejercicio),
+                # que detector produjo estas notas: --remelodia lo reusa
+                'detector': args.detector,
                 'lines': lines,
                 'notes': notes,
                 'f0': f0,

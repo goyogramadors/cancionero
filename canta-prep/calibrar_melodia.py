@@ -41,10 +41,12 @@ def preparar(carpeta, destino):
     music = os.path.join(carpeta, j['files']['music'])
 
     y, sr = librosa.load(vocals, sr=prep.SR_MELODIA, mono=True)
+    # OJO: esta llamada tiene que ser identica a la de prep.extraer_melodia, o el
+    # barrido termina afinando umbrales contra un detector que no es el que corre.
     f0, vflag, _ = librosa.pyin(
         y, fmin=librosa.note_to_hz(prep.NOTA_MIN), fmax=librosa.note_to_hz(prep.NOTA_MAX),
         sr=sr, frame_length=prep.FRAME, hop_length=prep.HOP,
-        no_trough_prob=prep.NO_TROUGH_PROB)
+        no_trough_prob=prep.NO_TROUGH_PROB, beta_parameters=prep.BETA_PYIN)
     with np.errstate(invalid='ignore', divide='ignore'):
         midi = librosa.hz_to_midi(f0)
     rms = librosa.feature.rms(y=y, frame_length=prep.FRAME, hop_length=prep.HOP)[0]
