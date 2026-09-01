@@ -284,6 +284,12 @@ code{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:var
 .ka-now span{color:var(--faint);transition:color .12s}
 .ka-now span.on{color:var(--ink)}
 .ka-next{font-size:14.5px;color:var(--mut);margin-top:2px;min-height:1.3em}
+#kaCanvas.editando{cursor:crosshair;touch-action:none}
+.ka-edit{margin-top:10px;border:1px solid var(--ink);border-radius:4px;padding:10px 12px}
+.ka-edit-tips{font-size:12px;color:var(--mut);line-height:1.6;margin-bottom:8px}
+.ka-edit-tips b{color:var(--ink);font-weight:700}
+.ka-edit-btns{display:flex;gap:6px;flex-wrap:wrap}
+#kaEdit.on{background:var(--ink);color:var(--bg)}
 .ka-takes{margin-top:26px;border-top:1px solid var(--line);padding-top:14px}
 .ka-takes h2{font-size:14px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin:0 0 10px}
 .ka-take{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;
