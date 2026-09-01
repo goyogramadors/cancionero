@@ -1846,7 +1846,62 @@
   }
 
   // gancho mínimo de inspección (depurar sin exponer el estado entero)
+  /* ---------------- ajustes que viajan en el sync ----------------
+     Van al repo las CORRECCIONES: las plataformas editadas a mano y qué
+     melodía elegiste para cada canción. Eso es trabajo tuyo y se pierde al
+     cambiar de aparato.
+
+     NO viaja la configuración del dispositivo (latencia, micrófono elegido,
+     audífonos, volúmenes): esos valores describen el equipo donde estás, y
+     llevar la latencia del computador al celular sería empeorarlo.
+  */
+  var PREF_NOTAS = 'sb.canta.notas.';
+  var PREF_MEL = 'sb.canta.melodia.';
+
+  function exportarAjustes() {
+    var notas = {}, melodia = {}, n = 0;
+    try {
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (!k) continue;
+        if (k.indexOf(PREF_NOTAS) === 0) {
+          notas[k.slice(PREF_NOTAS.length)] = JSON.parse(localStorage.getItem(k));
+          n++;
+        } else if (k.indexOf(PREF_MEL) === 0) {
+          melodia[k.slice(PREF_MEL.length)] = localStorage.getItem(k);
+          n++;
+        }
+      }
+    } catch (e) { return null; }
+    return n ? { notas: notas, melodia: melodia } : null;
+  }
+
+  function importarAjustes(obj) {
+    if (!obj || typeof obj !== 'object') return 0;
+    var n = 0;
+    try {
+      var notas = obj.notas || {};
+      for (var k in notas) {
+        if (Array.isArray(notas[k])) {
+          localStorage.setItem(PREF_NOTAS + k, JSON.stringify(notas[k]));
+          n++;
+        }
+      }
+      var mel = obj.melodia || {};
+      for (var j in mel) {
+        if (mel[j] === 'pyin' || mel[j] === 'crepe') {
+          localStorage.setItem(PREF_MEL + j, mel[j]);
+          n++;
+        }
+      }
+    } catch (e) {}
+    return n;
+  }
+
   SB.canta = {
+    // lo que viaja al repo con Ajustes → Sincronizar
+    exportarAjustes: exportarAjustes,
+    importarAjustes: importarAjustes,
     // fuerza un cuadro: requestAnimationFrame se congela en pestañas ocultas,
     // así que sin esto no hay forma de comprobar el dibujo automáticamente
     redibujar: function () { if (S.screen === 'play') draw(); },

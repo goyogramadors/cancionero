@@ -40,16 +40,25 @@
     if (!res.ok) throw new Error('GitHub ' + res.status + ' — ' + (await res.text()).slice(0, 140));
     const data = await res.json();
     const parsed = JSON.parse(b64dec(data.content));
-    return { songs: parsed.overrides || parsed || {}, sha: data.sha };
+    // Un archivo viejo es el objeto de canciones pelado; uno nuevo trae
+    // {overrides, canta}. Se aceptan los dos para no romper lo ya subido.
+    return {
+      songs: parsed.overrides || parsed || {},
+      canta: parsed.canta || null,
+      sha: data.sha
+    };
   }
 
-  // Sube el objeto de canciones (overrides) al repo (commit).
-  async function push(overrides) {
+  // Sube las canciones y, si se le pasan, los ajustes de Canta (plataformas
+  // corregidas a mano y qué melodía se eligió para cada canción).
+  async function push(overrides, canta) {
     const c = cfg(); assertCfg(c);
     const sha = await currentSha(c);
+    const payload = { overrides: overrides };
+    if (canta) payload.canta = canta;
     const body = {
       message: 'songbook: actualiza canciones (' + new Date().toISOString() + ')',
-      content: b64enc(JSON.stringify({ overrides }, null, 2)),
+      content: b64enc(JSON.stringify(payload, null, 2)),
       branch: branch(c)
     };
     if (sha) body.sha = sha;

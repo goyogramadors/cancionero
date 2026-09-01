@@ -112,10 +112,14 @@
       SB.github.setCfg(readCfg());
       status(ss, 'Trayendo del repo…');
       try {
-        const { songs, empty } = await SB.github.pull();
+        const { songs, canta, empty } = await SB.github.pull();
         if (empty) { status(ss, 'El archivo aún no existe en el repo (sube primero).'); return; }
         SB.store.merge(songs);
-        status(ss, 'Traído ' + Object.keys(songs).length + ' canción(es). Recargando…');
+        // plataformas corregidas a mano y melodía elegida por canción
+        const nCanta = (canta && SB.canta && SB.canta.importarAjustes)
+          ? SB.canta.importarAjustes(canta) : 0;
+        status(ss, 'Traído ' + Object.keys(songs).length + ' canción(es)'
+          + (nCanta ? ' y ' + nCanta + ' ajuste(s) de Canta' : '') + '. Recargando…');
         setTimeout(() => location.reload(), 700);
       } catch (err) { status(ss, 'Error al traer: ' + err.message, false); }
     });
@@ -123,8 +127,12 @@
       SB.github.setCfg(readCfg());
       status(ss, 'Subiendo al repo…');
       try {
-        const res = await SB.github.push(SB.store.dump());
-        status(ss, 'Subido. Commit ' + (res.commit && res.commit.sha ? res.commit.sha.slice(0, 7) : 'ok') + '.');
+        const canta = (SB.canta && SB.canta.exportarAjustes) ? SB.canta.exportarAjustes() : null;
+        const res = await SB.github.push(SB.store.dump(), canta);
+        const nCanta = canta
+          ? Object.keys(canta.notas || {}).length + Object.keys(canta.melodia || {}).length : 0;
+        status(ss, 'Subido' + (nCanta ? ' (con ' + nCanta + ' ajuste(s) de Canta)' : '')
+          + '. Commit ' + (res.commit && res.commit.sha ? res.commit.sha.slice(0, 7) : 'ok') + '.');
       } catch (err) { status(ss, 'Error al subir: ' + err.message, false); }
     });
   }
