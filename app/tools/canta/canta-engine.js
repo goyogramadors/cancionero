@@ -150,6 +150,37 @@
     return await ctx().decodeAudioData(ab);
   }
 
+  // Recompone una toma en el tiempo de la CANCION.
+  //
+  // El microfono graba de corrido, pero la cancion pudo pausarse o saltar
+  // mientras tanto. Sin esto, los trozos quedan pegados uno tras otro y todo lo
+  // que cantaste despues de la primera pausa suena corrido. Cada tramo se copia
+  // en el punto de la cancion donde de verdad se canto, y lo que queda entre
+  // medio es silencio.
+  function alinearToma(buffer, tramos, duracion) {
+    if (!tramos || !tramos.length) return buffer;
+    var c = ctx(), sr = buffer.sampleRate;
+    var fin = 0;
+    for (var i = 0; i < tramos.length; i++) {
+      fin = Math.max(fin, tramos[i].canc0 + (tramos[i].grab1 - tramos[i].grab0));
+    }
+    var largo = Math.ceil(Math.max(fin, duracion || 0) * sr);
+    if (largo <= 0) return buffer;
+    var out = c.createBuffer(buffer.numberOfChannels, largo, sr);
+    for (var ch = 0; ch < buffer.numberOfChannels; ch++) {
+      var src = buffer.getChannelData(ch), dst = out.getChannelData(ch);
+      for (var k = 0; k < tramos.length; k++) {
+        var t = tramos[k];
+        var i0 = Math.max(0, Math.round(t.grab0 * sr));
+        var i1 = Math.min(src.length, Math.round(t.grab1 * sr));
+        var d0 = Math.round(t.canc0 * sr);
+        var n = Math.min(i1 - i0, dst.length - d0);
+        if (n > 0) dst.set(src.subarray(i0, i0 + n), d0);
+      }
+    }
+    return out;
+  }
+
   async function usePackage(json, vocalsBlob, musicBlob) {
     // decodificar ANTES de tocar el estado: si falla, la canción anterior queda intacta
     var v = await decodeBlob(vocalsBlob);
@@ -450,21 +481,27 @@
     } catch (e) {
       try { Rec.mr = new MediaRecorder(stream); } catch (e2) { return false; }
     }
-    Rec.trozos = [];
+    // Los trozos viven en el closure, no en el objeto global: parar y volver a
+    // grabar enseguida hacia que la grabacion nueva vaciara el array justo
+    // antes de que la anterior armara su blob, y esa se perdia.
+    var trozos = [];
+    Rec.trozos = trozos;
     Rec.tipo = Rec.mr.mimeType || tipo || 'audio/webm';
-    Rec.mr.ondataavailable = function (e) { if (e.data && e.data.size) Rec.trozos.push(e.data); };
+    Rec.mr.ondataavailable = function (e) { if (e.data && e.data.size) trozos.push(e.data); };
     Rec.mr.start(250); // trozos periódicos: si algo falla no se pierde todo
     return true;
   }
   function recStop() {
     return new Promise(function (res) {
-      if (!Rec.mr || Rec.mr.state === 'inactive') { res(null); return; }
-      Rec.mr.onstop = function () {
-        var blob = Rec.trozos.length ? new Blob(Rec.trozos, { type: Rec.tipo }) : null;
-        Rec.mr = null; Rec.trozos = null;
-        res(blob);
+      var mr = Rec.mr, trozos = Rec.trozos, tipo = Rec.tipo;
+      if (!mr || mr.state === 'inactive') { res(null); return; }
+      // soltar la referencia global de inmediato, para que una grabacion nueva
+      // no se cruce con esta mientras termina de cerrarse
+      Rec.mr = null; Rec.trozos = null;
+      mr.onstop = function () {
+        res((trozos && trozos.length) ? new Blob(trozos, { type: tipo }) : null);
       };
-      try { Rec.mr.stop(); } catch (e) { Rec.mr = null; res(null); }
+      try { mr.stop(); } catch (e) { res(null); }
     });
   }
   function recActivo() { return !!(Rec.mr && Rec.mr.state === 'recording'); }
@@ -585,7 +622,7 @@
     setOnEnded: function (fn) { St.onEnded = fn; },
     // tomas del usuario
     takePut: takePut, takeList: takeList, takeGet: takeGet, takeDelete: takeDelete,
-    decodeBlob: decodeBlob,
+    decodeBlob: decodeBlob, alinearToma: alinearToma,
     recSoportado: recSoportado, recStart: recStart, recStop: recStop, recActivo: recActivo,
     // Monta (o quita) la voz grabada como tercera pista. offset en segundos:
     // positivo = la toma se adelanta, para descontar la latencia de captura.

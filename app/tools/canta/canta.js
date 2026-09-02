@@ -37,7 +37,8 @@
     pendSemis: 0, pendTempo: 100,
     mountSeq: 0, applySeq: 0, frame: 0,
     // grabación de tu voz
-    grabando: false, tomaTrace: [], tomaInicio: 0, tomaTempo: 1, tomaSemis: 0,
+    grabando: false, tomaTrace: [], tomaTempo: 1, tomaSemis: 0,
+    grabBase: 0, tomaTramos: [], tramo: null,
     tomaId: null, tomaCurva: null, tomaLat: 0
   };
 
@@ -456,7 +457,7 @@
     S.score = 0; S.streak = 0; S.trace = []; S.lineIdx = -1; S.wrapOff = 0;
     S.pendSemis = 0; S.pendTempo = 100;
     // otra canción: la toma cargada y la grabación en curso no aplican
-    S.grabando = false; S.tomaTrace = [];
+    S.grabando = false; S.tomaTrace = []; S.tomaTramos = []; S.tramo = null;
     S.tomaId = null; S.tomaCurva = null;
     E().setMine(null, 0);
     S.pkg = pkg;
@@ -703,15 +704,57 @@
     var stream = SB.cantaPitch.stream();
     if (!stream || !E().recSoportado()) return;
     S.tomaTrace = [];
-    S.tomaInicio = E().position();
     S.tomaTempo = E().tempo(); S.tomaSemis = E().semis();
     S.grabando = E().recStart(stream);
+    if (!S.grabando) return;
+    // El micrófono graba de corrido, pero la canción puede pausarse o saltar.
+    // Se anota en qué punto de la canción cae cada trozo de grabación, para
+    // poder recomponerla después en su sitio y con silencio en los huecos.
+    S.grabBase = E().ctx().currentTime;
+    S.tomaTramos = [];
+    abrirTramo();
+  }
+
+  function abrirTramo() {
+    S.tramo = { grab0: E().ctx().currentTime - S.grabBase, canc0: E().position(),
+                ultGrab: E().ctx().currentTime - S.grabBase, ultPos: E().position() };
+  }
+
+  function cerrarTramo() {
+    var T = S.tramo;
+    S.tramo = null;
+    if (!T) return;
+    var grab1 = E().ctx().currentTime - S.grabBase;
+    if (grab1 - T.grab0 < 0.15) return;   // un pestañeo: no vale la pena
+    S.tomaTramos.push({ grab0: +T.grab0.toFixed(3), grab1: +grab1.toFixed(3),
+                        canc0: +T.canc0.toFixed(3) });
+  }
+
+  // Vigila que la canción siga corriendo pareja con la grabación. Si se pausó o
+  // saltó (arrastraste la barra), se corta el tramo y empieza otro: así lo que
+  // cantaste no se pega al trozo anterior y queda donde corresponde.
+  function vigilarTramos() {
+    if (!S.grabando) return;
+    var sonando = E().playing();
+    if (!sonando) { if (S.tramo) cerrarTramo(); return; }
+    if (!S.tramo) { abrirTramo(); return; }
+    var grabAhora = E().ctx().currentTime - S.grabBase;
+    var pos = E().position();
+    var esperado = S.tramo.ultPos + (grabAhora - S.tramo.ultGrab) * E().tempo();
+    if (Math.abs(pos - esperado) > 0.3) {   // hubo un salto en la canción
+      cerrarTramo();
+      abrirTramo();
+      return;
+    }
+    S.tramo.ultGrab = grabAhora; S.tramo.ultPos = pos;
   }
 
   function cerrarToma() {
     if (!S.grabando) return;
+    cerrarTramo();
     S.grabando = false;
     var traza = S.tomaTrace, tempo = S.tomaTempo, semis = S.tomaSemis;
+    var tramos = S.tomaTramos || [];
     var puntaje = S.score, songId = S.pkg && S.pkg.id;
     E().recStop().then(function (blob) {
       if (!blob || !songId || traza.length < 20) return; // apenas cantaste: no la guardamos
@@ -721,6 +764,7 @@
         dur: traza.length ? traza[traza.length - 1].t - traza[0].t : 0,
         tempo: tempo, semis: semis, puntaje: puntaje,
         latencia: S.cfg.latency,
+        tramos: tramos,
         blob: blob, trace: traza
       };
       return E().takePut(toma).then(function () {
@@ -933,7 +977,9 @@
         S.tomaId = id;
         S.tomaCurva = rec.trace || null;
         S.tomaLat = rec.latencia || 0;
-        E().setMine(buf, 0);
+        // recomponer en el tiempo de la canción: cada trozo en su sitio y
+        // silencio donde pausaste
+        E().setMine(E().alinearToma(buf, rec.tramos, E().duration()), 0);
         var w = q('#kaMineWrap'); if (w) w.hidden = false;
         pintarTomas();
         takeMsg('Tu voz está en la mezcla; súbela o bájala con "Mi voz". Tu línea sale punteada.' + aviso);
@@ -1629,6 +1675,7 @@
     var tAdj = now - S.cfg.latency;
     finalizeUpTo(tAdj);
     updateLyrics(now);
+    vigilarTramos();
 
     // rango vertical según la melodía transpuesta (congelado mientras se edita)
     var ns = S.notes, R = rangoVertical(), loM = R.loM, hiM = R.hiM;
@@ -1923,6 +1970,7 @@
                    y: Math.round(G.yOf(S.selNota.m + G.semis)) };
         })(),
         grabando: S.grabando, tomaTrace: S.tomaTrace.length,
+        tramos: (S.tomaTramos || []).length, tramoAbierto: !!S.tramo,
         tomaId: S.tomaId, tomaCurva: S.tomaCurva ? S.tomaCurva.length : 0,
         notesDone: S.notes ? S.notes.filter(function (n) { return n.done; }).length : 0,
         notesGreen: S.notes ? S.notes.filter(function (n) { return n.green; }).length : 0,
