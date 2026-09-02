@@ -522,8 +522,17 @@
       '<label class="check" title="Guarda lo que cantas para poder escucharte después y compararte con el original. Las grabaciones quedan solo en este dispositivo"><input type="checkbox" id="kaGrabar"> Grabar mi voz</label>' +
       '<label class="check" title="Acepta tu canto en la octava que te acomode (hombre cantando una canción de mujer, etc.). Desmarcado: exige la octava exacta"><input type="checkbox" id="kaOct"> Octava libre</label>' +
       '<div class="ctl"><span class="ctl-label" title="Compensación del retardo parlante→micrófono→proceso. Si cantas bien pero te marca corrido, ajústala de a 10 ms">Latencia</span><div class="stepper">' +
-      '<button id="kaLatD" aria-label="Menos latencia">−</button><span class="val" id="kaLat"></span><button id="kaLatU" aria-label="Más latencia">+</button></div></div>' +
+      '<button id="kaLatD" aria-label="Menos latencia">−</button><span class="val" id="kaLat"></span><button id="kaLatU" aria-label="Más latencia">+</button>' +
+      '<button class="mini-app-btn" id="kaLatCal" title="Suena una serie de clics: da una palmada junto a cada uno y calculo tu latencia sola">Calibrar</button></div></div>' +
       '</div>' +
+      '<div class="ka-cal" id="kaCalBox" hidden>' +
+      '<div class="ka-cal-num" id="kaCalNum">—</div>' +
+      '<div class="ka-cal-txt" id="kaCalTxt"></div>' +
+      '<div class="ka-cal-btns">' +
+      '<button class="mini-app-btn" id="kaCalGo">Empezar</button>' +
+      '<button class="mini-app-btn" id="kaCalUsar" hidden>Usar este valor</button>' +
+      '<button class="mini-app-btn" id="kaCalCerrar">Cerrar</button>' +
+      '</div></div>' +
       '<p class="set-status" id="kaStatus"></p>' +
       '<section class="ka-takes" id="kaTakes" hidden>' +
       '<h2>Lo que cantaste</h2>' +
@@ -557,6 +566,70 @@
     E().setVol('mine', S.cfg.volMine != null ? S.cfg.volMine : 1);
     volMine.addEventListener('input', function () {
       S.cfg.volMine = +this.value / 100; E().setVol('mine', S.cfg.volMine); saveCfg();
+    });
+
+    // --- calibrador de latencia ---
+    // Suenan clics en instantes que conocemos exactos; tú das una palmada junto
+    // a cada uno. El desfase entre lo que sonó y lo que volvió por el micrófono
+    // ES la latencia, medida en vez de adivinada.
+    var calBox = q('#kaCalBox'), calNum = q('#kaCalNum'), calTxt = q('#kaCalTxt');
+    var calGo = q('#kaCalGo'), calUsar = q('#kaCalUsar'), calMedida = null;
+
+    function calCerrar() {
+      calBox.hidden = true; calUsar.hidden = true;
+      calNum.textContent = '—'; calTxt.textContent = ''; calMedida = null;
+    }
+    q('#kaLatCal').addEventListener('click', function () {
+      if (!calBox.hidden) { calCerrar(); return; }
+      calBox.hidden = false; calUsar.hidden = true; calMedida = null;
+      calNum.textContent = '—';
+      calTxt.textContent = S.micMode === 'mic'
+        ? 'Van a sonar 8 clics. Da una palmada justo con cada uno, cerca del micrófono.'
+        : 'Necesito el micrófono: pon "Escucha" en Mic y vuelve.';
+      calGo.disabled = S.micMode !== 'mic';
+    });
+    q('#kaCalCerrar').addEventListener('click', calCerrar);
+
+    calGo.addEventListener('click', async function () {
+      var stream = SB.cantaPitch.stream();
+      if (!stream) { calTxt.textContent = 'No encuentro el micrófono. Pon "Escucha" en Mic.'; return; }
+      E().pause(); updatePlayBtn();
+      calGo.disabled = true; calUsar.hidden = true; calMedida = null;
+      calTxt.textContent = 'Prepárate…';
+      try {
+        var r = await E().pruebaLatencia({
+          stream: stream, clics: 8, intervalo: 0.8,
+          onTick: function (n, total) {
+            calNum.textContent = n > 0 ? n + ' / ' + total : '…';
+            if (n > 0) calTxt.textContent = '¡Palmada con cada clic!';
+          }
+        });
+        calNum.textContent = '—';
+        if (r.error) {
+          calTxt.textContent = r.error + '. Prueba de nuevo, más cerca del micrófono y con palmadas fuertes.';
+        } else if (!r.confiable) {
+          calTxt.textContent = 'Medí ' + Math.round(r.latencia * 1000) + ' ms con ' + r.emparejados +
+            ' palmadas, pero van muy dispares (±' + Math.round(r.dispersion * 1000) +
+            ' ms) para fiarme. Repite marcando parejo.';
+          calMedida = r.latencia; calUsar.hidden = false;
+        } else {
+          calNum.textContent = Math.round(r.latencia * 1000) + ' ms';
+          calTxt.textContent = 'Medido con ' + r.emparejados + ' palmadas (±' +
+            Math.round(r.dispersion * 1000) + ' ms). Ahora tienes ' +
+            Math.round(S.cfg.latency * 1000) + ' ms.';
+          calMedida = r.latencia; calUsar.hidden = false;
+        }
+      } catch (e) {
+        calTxt.textContent = 'No pude hacer la prueba: ' + e.message;
+      }
+      calGo.disabled = false;
+    });
+
+    calUsar.addEventListener('click', function () {
+      if (calMedida == null) return;
+      S.cfg.latency = calMedida; saveCfg(); updateSteppers();
+      calTxt.textContent = 'Listo: latencia en ' + Math.round(calMedida * 1000) + ' ms.';
+      calUsar.hidden = true;
     });
 
     // --- editor de plataformas ---

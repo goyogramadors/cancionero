@@ -506,6 +506,130 @@
   }
   function recActivo() { return !!(Rec.mr && Rec.mr.state === 'recording'); }
 
+  /* ================= prueba de latencia =================
+     Suena una serie de clics en instantes que conocemos al milisegundo, se
+     graba el microfono mientras tanto y se busca cuando llegaron TUS palmadas.
+     La diferencia entre lo que sono y lo que se oyo de vuelta es el retardo del
+     circuito completo: parlante -> aire -> microfono -> proceso.
+  */
+  function pruebaLatencia(opts) {
+    opts = opts || {};
+    var nClics = opts.clics || 8;
+    var paso = opts.intervalo || 0.8;
+    var preparacion = opts.preparacion != null ? opts.preparacion : 1.2;
+    var stream = opts.stream;
+    if (!stream) return Promise.reject(new Error('sin micrófono'));
+
+    var c = ctx();
+    var t0 = c.currentTime + preparacion;
+    var tiemposClic = [];
+
+    // clic corto y seco: pega mejor de lo que uno cree para marcar un instante
+    for (var i = 0; i < nClics; i++) {
+      var t = t0 + i * paso;
+      tiemposClic.push(t);
+      var osc = c.createOscillator(), g = c.createGain();
+      osc.frequency.value = i === 0 ? 1760 : 1320;   // el primero mas agudo: es la "1"
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.6, t + 0.002);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+      osc.connect(g); g.connect(c.destination);
+      osc.start(t); osc.stop(t + 0.08);
+    }
+
+    // captura cruda del microfono, para poder buscar los golpes con precision
+    // de muestra en vez de depender de la resolucion de un temporizador
+    var src = c.createMediaStreamSource(stream);
+    var TAM = 2048;
+    var proc = c.createScriptProcessor(TAM, 1, 1);
+    var mudo = c.createGain(); mudo.gain.value = 0;
+    var trozos = [], capturaT0 = null;
+    proc.onaudioprocess = function (e) {
+      if (capturaT0 == null) capturaT0 = c.currentTime;
+      trozos.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+    };
+    src.connect(proc); proc.connect(mudo); mudo.connect(c.destination);
+
+    var finT = t0 + (nClics - 1) * paso + 1.2;
+    return new Promise(function (res) {
+      var avisar = opts.onTick;
+      var timer = avisar && setInterval(function () {
+        var n = Math.floor((c.currentTime - t0) / paso) + 1;
+        avisar(Math.max(0, Math.min(nClics, n)), nClics);
+      }, 60);
+      setTimeout(function () {
+        if (timer) clearInterval(timer);
+        try { src.disconnect(); proc.disconnect(); mudo.disconnect(); } catch (e) {}
+        proc.onaudioprocess = null;
+        res(analizarGolpes(trozos, capturaT0, c.sampleRate, tiemposClic, TAM));
+      }, (finT - c.currentTime) * 1000);
+    });
+  }
+
+  // Busca los golpes en la señal capturada y los empareja con los clics.
+  function analizarGolpes(trozos, capturaT0, sr, tiemposClic, TAM) {
+    if (!trozos.length || capturaT0 == null) {
+      return { error: 'no llegó nada del micrófono' };
+    }
+    var total = trozos.length * TAM;
+    var x = new Float32Array(total), off = 0, i;
+    for (i = 0; i < trozos.length; i++) { x.set(trozos[i], off); off += trozos[i].length; }
+
+    // envolvente de energia en ventanas de ~5 ms
+    var W = Math.max(16, Math.round(sr * 0.005));
+    var nEnv = Math.floor(total / W);
+    var env = new Float32Array(nEnv);
+    for (i = 0; i < nEnv; i++) {
+      var s = 0;
+      for (var k = 0; k < W; k++) { var v = x[i * W + k]; s += v * v; }
+      env[i] = Math.sqrt(s / W);
+    }
+    // umbral robusto: muy por encima del ruido de fondo tipico
+    var orden = Array.prototype.slice.call(env).sort(function (a, b) { return a - b; });
+    var mediana = orden[orden.length >> 1] || 1e-6;
+    var alto = orden[Math.floor(orden.length * 0.98)] || 1e-5;
+    var umbral = Math.max(mediana * 6, alto * 0.35, 0.01);
+
+    // ataques: cruce hacia arriba, con refractario para no contar el mismo golpe
+    var golpes = [], ultimo = -1e9;
+    var refract = 0.2;
+    for (i = 1; i < nEnv; i++) {
+      var t = capturaT0 + (i * W) / sr;
+      if (env[i] >= umbral && env[i - 1] < umbral && t - ultimo > refract) {
+        golpes.push(t); ultimo = t;
+      }
+    }
+    if (golpes.length < 3) {
+      return { error: 'oí ' + golpes.length + ' golpe(s): muy pocos', golpes: golpes.length };
+    }
+
+    // cada clic busca su golpe: el mas cercano dentro de media ventana
+    var difs = [];
+    for (i = 0; i < tiemposClic.length; i++) {
+      var mejor = null, mejorD = 1e9;
+      for (var j = 0; j < golpes.length; j++) {
+        var d = golpes[j] - tiemposClic[i];
+        if (d < -0.15 || d > 0.6) continue;      // fuera de rango razonable
+        if (Math.abs(d) < Math.abs(mejorD)) { mejorD = d; mejor = golpes[j]; }
+      }
+      if (mejor != null) difs.push(mejorD);
+    }
+    if (difs.length < 3) {
+      return { error: 'no pude emparejar tus palmadas con los clics', golpes: golpes.length };
+    }
+    var ord = difs.slice().sort(function (a, b) { return a - b; });
+    var med = ord[ord.length >> 1];
+    var desv = ord.map(function (d) { return Math.abs(d - med); })
+                  .sort(function (a, b) { return a - b; })[ord.length >> 1];
+    return {
+      latencia: Math.max(0, Math.min(0.4, Math.round(med * 1000) / 1000)),
+      golpes: golpes.length, emparejados: difs.length,
+      dispersion: desv,
+      // con palmadas parejas la dispersion baja de 40 ms; si no, el numero no sirve
+      confiable: difs.length >= 4 && desv < 0.05
+    };
+  }
+
   /* ================= transporte ================= */
   function ensureGains() {
     if (St.gains) return;
@@ -624,6 +748,7 @@
     takePut: takePut, takeList: takeList, takeGet: takeGet, takeDelete: takeDelete,
     decodeBlob: decodeBlob, alinearToma: alinearToma,
     recSoportado: recSoportado, recStart: recStart, recStop: recStop, recActivo: recActivo,
+    pruebaLatencia: pruebaLatencia, _analizarGolpes: analizarGolpes,
     // Monta (o quita) la voz grabada como tercera pista. offset en segundos:
     // positivo = la toma se adelanta, para descontar la latencia de captura.
     setMine: function (buffer, offset) {
