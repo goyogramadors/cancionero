@@ -130,6 +130,16 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: id })
       });
+    },
+
+    // Borra el paquete: de disco siempre, y del repo (git rm + commit + push)
+    // si ya estaba publicado. Solo funciona con el motor corriendo.
+    eliminar: function (id) {
+      return json('api/eliminar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: id })
+      });
     }
   };
 })();

@@ -483,6 +483,138 @@ def publicar(ident, mensaje=None):
         restaurar_indice()
 
 
+def eliminar(ident):
+    """Borra un paquete: de disco siempre, y del repo (git rm + commit + push)
+    si ya estaba publicado. Simetrico a publicar().
+
+    Devuelve un dict con ok/mensaje (o ok=False + error).
+    """
+    bitacora = []
+
+    def anotar(titulo, codigo, salida):
+        bitacora.append('$ git %s  (codigo %d)\n%s' % (titulo, codigo, salida))
+
+    def fallo(msg):
+        return {'ok': False, 'error': msg, 'salida': '\n\n'.join(bitacora)}
+
+    def logrado(msg):
+        return {'ok': True, 'mensaje': msg, 'salida': '\n\n'.join(bitacora)}
+
+    if not os.path.isdir(os.path.join(RAIZ, '.git')):
+        return fallo('esta carpeta no es un repositorio git: %s' % RAIZ)
+    if _rebase_a_medias():
+        return fallo('hay un rebase de git a medias en %s. Terminalo primero.' % RAIZ)
+
+    carpeta = os.path.join(OUT_DIR, ident)
+    if not os.path.isdir(carpeta):
+        return fallo('no existe el paquete "%s" en %s' % (ident, OUT_DIR))
+
+    ruta_idx = os.path.join(OUT_DIR, 'index.json')
+    idx_full = []
+    try:
+        with open(ruta_idx, encoding='utf-8') as f:
+            cargado = json.load(f)
+        if isinstance(cargado, list):
+            idx_full = cargado
+    except Exception:
+        pass
+    idx_sin = [e for e in idx_full if not (isinstance(e, dict) and e.get('id') == ident)]
+
+    publicado = ident in _ids_trackeados()
+    if not publicado:
+        # nunca se publico: es solo un experimento local, basta con borrarlo
+        try:
+            shutil.rmtree(carpeta)
+        except Exception as e:
+            return fallo('no pude borrar la carpeta local: %s' % e)
+        try:
+            _escribir_json(ruta_idx, idx_sin)
+        except Exception as e:
+            return fallo('borre los archivos pero no pude actualizar el indice: %s' % e)
+        return logrado('"%s" no estaba publicado: se borro solo de este computador.' % ident)
+
+    # ya estaba en GitHub: hay que sacarlo tambien de ahi
+    rel_paq = 'app/canta-media/%s' % ident
+    rel_idx = 'app/canta-media/index.json'
+    try:
+        _escribir_json(ruta_idx, idx_sin)
+    except Exception as e:
+        return fallo('no pude preparar el indice sin "%s": %s' % (ident, e))
+
+    def restaurar_si_falla():
+        # si el commit/push no cuaja, el indice local no debe quedar mintiendo
+        # que la cancion desaparecio cuando en realidad sigue en git
+        try:
+            _escribir_json(ruta_idx, idx_full)
+        except Exception:
+            pass
+
+    # git rm -r borra del arbol de trabajo Y del indice de git en un solo paso
+    codigo, salida = correr_git(['rm', '-r', '-f', '-q', '--', rel_paq])
+    anotar('rm -r -f -q', codigo, salida)
+    if codigo == 127:
+        restaurar_si_falla()
+        return fallo('no se encontro git en el PATH. Instala Git para Windows y '
+                     'abre una consola nueva.')
+    if codigo != 0:
+        restaurar_si_falla()
+        return fallo('fallo "git rm": %s' % (salida or 'sin detalle'))
+
+    codigo, salida = correr_git(['add', '-f', '--', rel_idx])
+    anotar('add -f', codigo, salida)
+    if codigo != 0:
+        restaurar_si_falla()
+        return fallo('fallo "git add" del indice: %s' % (salida or 'sin detalle'))
+
+    codigo, salida = correr_git(['commit', '-m', 'canta: elimina %s' % ident, '--', rel_paq, rel_idx])
+    anotar('commit', codigo, salida)
+    if codigo != 0:
+        if 'Please tell me who you are' in salida or 'user.email' in salida:
+            restaurar_si_falla()
+            return fallo('git no sabe quien eres. Configura tu identidad:\n'
+                         '  git config --global user.name "Tu Nombre"\n'
+                         '  git config --global user.email "tu@correo.com"')
+        restaurar_si_falla()
+        return fallo('fallo "git commit": %s' % (salida or 'sin detalle'))
+
+    codigo, salida = correr_git(['push'])
+    anotar('push', codigo, salida)
+    if codigo == 0:
+        return logrado('Eliminado: "%s" ya no esta en GitHub (el sitio se actualiza '
+                       'en 1-2 minutos).' % ident)
+
+    tipo, msg = _error_de_push(salida)
+    if tipo == 'auth':
+        # el commit YA quedo hecho localmente (borrando los archivos): no se
+        # puede deshacer sin perder el commit, asi que se avisa tal cual
+        return fallo('el commit de eliminacion quedo hecho, pero ' + msg +
+                     ' Detalle: %s' % (salida or 'sin detalle'))
+    if tipo != 'atrasado':
+        return fallo('el commit quedo hecho, pero fallo "git push": %s'
+                     % (salida or 'sin detalle'))
+
+    codigo, salida = correr_git(['pull', '--rebase'])
+    anotar('pull --rebase', codigo, salida)
+    if codigo != 0:
+        if _rebase_a_medias():
+            cod2, sal2 = correr_git(['rebase', '--abort'])
+            anotar('rebase --abort', cod2, sal2)
+        return fallo('el commit quedo hecho, pero fallo "git pull --rebase": %s\n'
+                     'Resuelvelo a mano y despues corre "git push".' % (salida or 'sin detalle'))
+
+    codigo, salida = correr_git(['push'])
+    anotar('push (2)', codigo, salida)
+    if codigo != 0:
+        tipo2, msg2 = _error_de_push(salida)
+        if tipo2 == 'auth':
+            return fallo('el commit quedo hecho, pero ' + msg2 +
+                         ' Detalle: %s' % (salida or 'sin detalle'))
+        return fallo('el commit quedo hecho, pero fallo "git push": %s'
+                     % (salida or 'sin detalle'))
+
+    return logrado('Eliminado: "%s" ya no esta en GitHub (el sitio se actualiza en 1-2 minutos).' % ident)
+
+
 # --------------------------------------------------------------- servidor ----
 
 class Manejador(SimpleHTTPRequestHandler):
@@ -737,6 +869,8 @@ class Manejador(SimpleHTTPRequestHandler):
             return self.api_cancelar()
         if ruta == '/api/publicar':
             return self.api_publicar()
+        if ruta == '/api/eliminar':
+            return self.api_eliminar()
         self.descartar_cuerpo()
         return self.error_json('no existe %s' % ruta, 404)
 
@@ -887,6 +1021,15 @@ class Manejador(SimpleHTTPRequestHandler):
         mensaje = (datos.get('mensaje') or '').strip() or None
         # git es lento: lo corremos aqui mismo (ThreadingHTTPServer atiende el resto)
         return self.responder_json(publicar(ident, mensaje))
+
+    def api_eliminar(self):
+        datos = self.cuerpo_json()
+        if datos is None:
+            return self.error_json('el cuerpo no es un JSON valido.', 400)
+        ident = (datos.get('id') or '').strip()
+        if not ident or not re.match(r'^[A-Za-z0-9][A-Za-z0-9._-]*$', ident):
+            return self.error_json('falta un "id" de cancion valido.', 400)
+        return self.responder_json(eliminar(ident))
 
 
 # ------------------------------------------------------------------ main ----

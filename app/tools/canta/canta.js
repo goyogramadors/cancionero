@@ -102,7 +102,8 @@
       '<button class="mini-app-btn" id="kaDemo">Probar la demo</button>' +
       '<input type="file" id="kaPickFallback" webkitdirectory multiple style="display:none">' +
       '</div>' +
-      '<table class="rep" id="kaList"><thead><tr><th>Canción</th><th>Intérprete</th><th>Duración</th><th></th></tr></thead><tbody></tbody></table>' +
+      '<div class="rep-scroll"><table class="rep" id="kaList"><thead><tr><th>Canción</th><th>Intérprete</th><th>Duración</th><th></th></tr></thead><tbody></tbody></table></div>' +
+      '<div class="ka-arch" id="kaArchBox" hidden></div>' +
       '<p class="set-status" id="kaLibStatus"></p>' +
       '</div>';
     q('#kaDemo').addEventListener('click', function () { S.ctx.navigate('canta/song/demo-estrellita'); });
@@ -377,6 +378,7 @@
       ? 'Importadas: ' + found.map(function (f) { return f.title; }).join(', ')
       : 'En esa carpeta no encontré paquetes (busco canta.json + audios).';
   }
+  function libMsg(txt) { var el = q('#kaLibStatus'); if (el) el.textContent = txt || ''; }
 
   async function pickFolder() {
     try {
@@ -397,31 +399,110 @@
     }
   }
 
+  /* ---------------- archivar (ocultar sin borrar, por dispositivo) ----------------
+     "Archivar" es reversible y no toca el repo ni el navegador de otro: solo
+     saca la fila de la vista principal en ESTE dispositivo. Para de verdad
+     borrar (que sí es irreversible, y en las publicadas afecta a todos los que
+     entren al sitio) está "Eliminar" aparte, con confirmación.
+  */
+  var ARCHKEY = 'sb.canta.archivadas';
+  function archivadas() {
+    try { return JSON.parse(localStorage.getItem(ARCHKEY) || '{}'); } catch (e) { return {}; }
+  }
+  function setArchivada(id, on) {
+    var a = archivadas();
+    if (on) a[id] = true; else delete a[id];
+    try { localStorage.setItem(ARCHKEY, JSON.stringify(a)); } catch (e) {}
+  }
+
+  function filaLibreria(r, opts) {
+    opts = opts || {};
+    var botones = '';
+    if (opts.archivada) {
+      botones = '<button class="mini-x" data-unarch="' + esc(r.p.id) + '" title="Sacar de archivadas">Desarchivar</button>';
+    } else {
+      botones = '<button class="mini-x" data-arch="' + esc(r.p.id) + '" title="Ocultar de la lista, sin borrarla (solo en este dispositivo)">Archivar</button>';
+      if (r.src === 'guardada') {
+        botones += ' <button class="mini-x danger" data-del="' + esc(r.p.id) + '" title="Borrar de este navegador">Eliminar</button>';
+      } else if (SB.cantaMotor.disponible()) {
+        botones += ' <button class="mini-x danger" data-delmotor="' + esc(r.p.id) + '" title="Borrar del repositorio (con el motor)">Eliminar</button>';
+      }
+    }
+    return '<tr class="song" data-id="' + esc(r.p.id) + '"><td class="t-title">' + esc(r.p.title) +
+      '</td><td>' + esc(r.p.artist || '') + '</td><td class="t-key">' + fmtT(r.p.duration || 0) +
+      '</td><td class="t-acc"><span class="badge">' + r.src + '</span> ' + botones + '</td></tr>';
+  }
+
   async function drawLibrary() {
     var saved = await E().savedList();
     var server = await E().fetchServerList();
-    var seen = {}, rows = [];
-    (server || []).forEach(function (p) { seen[p.id] = true; rows.push({ p: p, src: 'servidor' }); });
-    saved.forEach(function (p) { if (!seen[p.id]) rows.push({ p: p, src: 'guardada' }); });
-    rows.sort(function (a, b) { return a.p.title.localeCompare(b.p.title); });
+    var seen = {}, todas = [];
+    (server || []).forEach(function (p) { seen[p.id] = true; todas.push({ p: p, src: 'servidor' }); });
+    saved.forEach(function (p) { if (!seen[p.id]) todas.push({ p: p, src: 'guardada' }); });
+    todas.sort(function (a, b) { return a.p.title.localeCompare(b.p.title); });
     if (S.screen !== 'lib' || !q('#kaList')) return;
-    q('#kaCount').textContent = rows.length + ' canciones';
+
+    var arch = archivadas();
+    var activas = todas.filter(function (r) { return !arch[r.p.id]; });
+    var archivas = todas.filter(function (r) { return arch[r.p.id]; });
+
+    q('#kaCount').textContent = activas.length + ' canciones' +
+      (archivas.length ? ' · ' + archivas.length + ' archivada' + (archivas.length === 1 ? '' : 's') : '');
+
     var tb = q('#kaList tbody');
-    tb.innerHTML = rows.map(function (r) {
-      var del = r.src === 'guardada'
-        ? ' <button class="mini-x" data-del="' + esc(r.p.id) + '" title="Borrar del navegador">×</button>' : '';
-      return '<tr class="song" data-id="' + esc(r.p.id) + '"><td class="t-title">' + esc(r.p.title) +
-        '</td><td>' + esc(r.p.artist || '') + '</td><td class="t-key">' + fmtT(r.p.duration || 0) +
-        '</td><td><span class="badge">' + r.src + '</span>' + del + '</td></tr>';
-    }).join('') || '<tr class="stub"><td colspan="4">Sin canciones todavía — prepara una arriba, o prueba la demo.</td></tr>';
-    tb.querySelectorAll('tr.song').forEach(function (tr) {
-      tr.addEventListener('click', function () { S.ctx.navigate('canta/song/' + encodeURIComponent(tr.dataset.id)); });
-    });
-    tb.querySelectorAll('button[data-del]').forEach(function (b) {
-      b.addEventListener('click', async function (ev) {
-        ev.stopPropagation();
-        await E().deleteSaved(b.dataset.del);
-        drawLibrary();
+    tb.innerHTML = activas.map(function (r) { return filaLibreria(r); }).join('') ||
+      '<tr class="stub"><td colspan="4">Sin canciones todavía — prepara una arriba, o prueba la demo.</td></tr>';
+
+    var cajaArch = q('#kaArchBox');
+    if (archivas.length) {
+      cajaArch.hidden = false;
+      cajaArch.innerHTML = '<button class="mini-app-btn" id="kaArchToggle">Ver ' + archivas.length +
+        ' archivada' + (archivas.length === 1 ? '' : 's') + '</button><table class="rep" id="kaArchList" hidden>' +
+        '<tbody>' + archivas.map(function (r) { return filaLibreria(r, { archivada: true }); }).join('') + '</tbody></table>';
+      q('#kaArchToggle').addEventListener('click', function () {
+        var t = q('#kaArchList'), on = t.hidden;
+        t.hidden = !on;
+        this.textContent = on ? 'Ocultar archivadas' : 'Ver ' + archivas.length + ' archivada' + (archivas.length === 1 ? '' : 's');
+      });
+    } else {
+      cajaArch.hidden = true; cajaArch.innerHTML = '';
+    }
+
+    [tb, q('#kaArchList')].forEach(function (cont) {
+      if (!cont) return;
+      cont.querySelectorAll('tr.song').forEach(function (tr) {
+        tr.addEventListener('click', function () { S.ctx.navigate('canta/song/' + encodeURIComponent(tr.dataset.id)); });
+      });
+      cont.querySelectorAll('button[data-arch]').forEach(function (b) {
+        b.addEventListener('click', function (ev) { ev.stopPropagation(); setArchivada(b.dataset.arch, true); drawLibrary(); });
+      });
+      cont.querySelectorAll('button[data-unarch]').forEach(function (b) {
+        b.addEventListener('click', function (ev) { ev.stopPropagation(); setArchivada(b.dataset.unarch, false); drawLibrary(); });
+      });
+      cont.querySelectorAll('button[data-del]').forEach(function (b) {
+        b.addEventListener('click', async function (ev) {
+          ev.stopPropagation();
+          if (!confirm('¿Borrar esta canción de este navegador? No se puede deshacer.')) return;
+          await E().deleteSaved(b.dataset.del);
+          drawLibrary();
+        });
+      });
+      cont.querySelectorAll('button[data-delmotor]').forEach(function (b) {
+        b.addEventListener('click', async function (ev) {
+          ev.stopPropagation();
+          var id = b.dataset.delmotor;
+          if (!confirm('¿Borrar "' + id + '" del repositorio? Esto la saca del sitio para todos y sube ' +
+                       'un commit; no se puede deshacer desde aquí.')) return;
+          b.disabled = true; b.textContent = 'Borrando…';
+          try {
+            var r = await SB.cantaMotor.eliminar(id);
+            libMsg(r.mensaje);
+            drawLibrary();
+          } catch (e) {
+            libMsg('No pude borrarla: ' + e.message);
+            b.disabled = false; b.textContent = 'Eliminar';
+          }
+        });
       });
     });
   }
@@ -522,8 +603,8 @@
       '<label class="check" title="Guarda lo que cantas para poder escucharte después y compararte con el original. Las grabaciones quedan solo en este dispositivo"><input type="checkbox" id="kaGrabar"> Grabar mi voz</label>' +
       '<label class="check" title="Acepta tu canto en la octava que te acomode (hombre cantando una canción de mujer, etc.). Desmarcado: exige la octava exacta"><input type="checkbox" id="kaOct"> Octava libre</label>' +
       '<div class="ctl"><span class="ctl-label" title="Compensación del retardo parlante→micrófono→proceso. Si cantas bien pero te marca corrido, ajústala de a 10 ms">Latencia</span><div class="stepper">' +
-      '<button id="kaLatD" aria-label="Menos latencia">−</button><span class="val" id="kaLat"></span><button id="kaLatU" aria-label="Más latencia">+</button>' +
-      '<button class="mini-app-btn" id="kaLatCal" title="Suena una serie de clics: da una palmada junto a cada uno y calculo tu latencia sola">Calibrar</button></div></div>' +
+      '<button id="kaLatD" aria-label="Menos latencia">−</button><span class="val" id="kaLat"></span><button id="kaLatU" aria-label="Más latencia">+</button></div>' +
+      '<button class="mini-app-btn" id="kaLatCal" title="Suena una serie de clics: da una palmada junto a cada uno y calculo tu latencia sola">Calibrar</button></div>' +
       '</div>' +
       '<div class="ka-cal" id="kaCalBox" hidden>' +
       '<div class="ka-cal-num" id="kaCalNum">—</div>' +

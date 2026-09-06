@@ -19,6 +19,9 @@ body{
   font-size:15px; line-height:1.45;
 }
 .app{max-width:1060px;margin:0 auto;padding:0 20px 80px}
+/* Canta se beneficia de más ancho (el carril de notas se ve mejor con espacio);
+   el resto de las herramientas se queda angosto porque se lee mejor así. */
+body[data-tool="canta"] .app{max-width:1400px}
 
 /* ---------- barra superior ---------- */
 header.top{
@@ -48,7 +51,13 @@ input.search{
   border:1px solid var(--line);border-radius:2px;background:var(--bg);color:var(--ink);
 }
 input.search::placeholder{color:var(--faint)}
-table.rep{width:100%;border-collapse:collapse;margin-top:10px}
+.rep-scroll{overflow-x:auto;margin-top:10px}
+table.rep{width:100%;border-collapse:collapse}
+.rep-scroll table.rep{margin-top:0}
+.t-acc{white-space:nowrap;text-align:right}
+.t-acc .badge{margin-right:6px}
+.ka-arch{margin-top:14px}
+.ka-arch table.rep{margin-top:10px;opacity:.75}
 table.rep th{
   text-align:left;font-size:11px;letter-spacing:.12em;text-transform:uppercase;
   color:var(--mut);font-weight:600;padding:10px 8px;border-bottom:1px solid var(--ink);

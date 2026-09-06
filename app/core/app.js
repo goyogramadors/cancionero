@@ -60,6 +60,9 @@
     }
     current = tool;
     markNav(tool ? tool.id : '');
+    // permite que una herramienta pida más ancho en pantallas grandes sin
+    // ensanchar las que se leen mejor angostas (letra, acordes)
+    document.body.dataset.tool = tool ? tool.id : '';
     SB.ui.clear(view);
     if (tool) tool.mount(view, rest, ctx);
     window.scrollTo(0, 0);
