@@ -202,18 +202,27 @@
       Array.isArray(json.notes) && Array.isArray(json.lines) && typeof json.duration === 'number');
   }
 
+  // Ruta a canta-media/, configurable para paginas satelite (p.ej. canta/,
+  // para alumnos) que reusan los paquetes de app/canta-media/ sin duplicarlos.
+  var MEDIA_BASE = (typeof window.SB_CANTA_MEDIA_BASE === 'string') ? window.SB_CANTA_MEDIA_BASE : 'canta-media/';
+
   async function fetchServerList() {
     try {
-      var r = await fetch('canta-media/index.json', { cache: 'no-cache' });
+      var r = await fetch(MEDIA_BASE + 'index.json', { cache: 'no-cache' });
       if (!r.ok) return null;
-      return await r.json();
+      var list = await r.json();
+      // paginas satelite muestran solo un subconjunto (p.ej. los ejercicios)
+      if (Array.isArray(window.SB_CANTA_ALLOW)) {
+        list = list.filter(function (x) { return window.SB_CANTA_ALLOW.indexOf(x.id) !== -1; });
+      }
+      return list;
     } catch (e) { return null; }
   }
 
   async function loadFromServer(id) {
-    var base = 'canta-media/' + id + '/';
+    var base = MEDIA_BASE + id + '/';
     var r = await fetch(base + 'canta.json', { cache: 'no-cache' });
-    if (!r.ok) throw new Error('No se encontró el paquete "' + id + '" en canta-media/');
+    if (!r.ok) throw new Error('No se encontró el paquete "' + id + '" en ' + MEDIA_BASE);
     var json = await r.json();
     if (!validPkg(json)) throw new Error('El canta.json del paquete "' + id + '" no respeta el contrato.');
     var [v, m] = await Promise.all([
@@ -724,6 +733,12 @@
     fetchServerList: fetchServerList,
     savedList: function () {
       return idbAll().then(function (recs) {
+        // mismo filtro que fetchServerList: en paginas satelite (p.ej. canta/,
+        // para alumnos), lo guardado en ESTE navegador de otro sitio del mismo
+        // origen (p.ej. el cancionero personal) no debe colarse aca
+        if (Array.isArray(window.SB_CANTA_ALLOW)) {
+          recs = recs.filter(function (r) { return window.SB_CANTA_ALLOW.indexOf(r.id) !== -1; });
+        }
         return recs.map(function (r) {
           return { id: r.id, title: r.json.title, artist: r.json.artist, duration: r.json.duration };
         });

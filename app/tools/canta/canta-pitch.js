@@ -245,7 +245,7 @@
       var ok = false;
       if (audioCtx.audioWorklet) {
         try {
-          await audioCtx.audioWorklet.addModule('tools/canta/canta-pitch-worklet.js');
+          await audioCtx.audioWorklet.addModule(window.SB_CANTA_WORKLET_URL || 'tools/canta/canta-pitch-worklet.js');
           St.node = new AudioWorkletNode(audioCtx, 'canta-pitch');
           St.node.port.onmessage = function (e) { emit(e.data); };
           ok = true;

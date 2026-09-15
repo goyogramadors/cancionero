@@ -17,6 +17,9 @@
 (function () {
   window.SB = window.SB || {};
   var E = function () { return SB.cantaEngine; };
+  // Paginas satelite de un solo tool (p.ej. canta/, para alumnos): ocultan
+  // "preparar canción"/"elegir carpeta"/"demo", que son para el dueño del repo.
+  var STUDENT = !!window.SB_CANTA_STUDENT;
 
   var CFGKEY = 'sb.canta.cfg', BESTKEY = 'sb.canta.best';
   var TOL = 0.7;          // tolerancia de afinación: ±70 cents alrededor de la nota
@@ -92,6 +95,7 @@
       '<p class="ed-note">Karaoke con afinación en vivo: elige una canción preparada, canta con el micrófono ' +
       'y mira si vas en el tono.</p>' +
 
+      (STUDENT ? '' :
       '<section class="prep" id="kaPrep">' +
       '<h2 class="panel-title">Preparar una canción</h2>' +
       '<div id="kaPrepBody"><p class="set-status">Buscando el motor…</p></div>' +
@@ -101,19 +105,21 @@
       '<button class="mini-app-btn" id="kaPick">Elegir carpeta…</button>' +
       '<button class="mini-app-btn" id="kaDemo">Probar la demo</button>' +
       '<input type="file" id="kaPickFallback" webkitdirectory multiple style="display:none">' +
-      '</div>' +
+      '</div>') +
       '<div class="rep-scroll"><table class="rep" id="kaList"><thead><tr><th>Canción</th><th>Intérprete</th><th>Duración</th><th></th></tr></thead><tbody></tbody></table></div>' +
       '<div class="ka-arch" id="kaArchBox" hidden></div>' +
       '<p class="set-status" id="kaLibStatus"></p>' +
       '</div>';
-    q('#kaDemo').addEventListener('click', function () { S.ctx.navigate('canta/song/demo-estrellita'); });
-    pintarPrep();
-    q('#kaPick').addEventListener('click', pickFolder);
-    q('#kaPickFallback').addEventListener('change', async function (e) {
-      var found = await E().importFiles(Array.from(e.target.files));
-      libStatus(found);
-      drawLibrary();
-    });
+    if (!STUDENT) {
+      q('#kaDemo').addEventListener('click', function () { S.ctx.navigate('canta/song/demo-estrellita'); });
+      pintarPrep();
+      q('#kaPick').addEventListener('click', pickFolder);
+      q('#kaPickFallback').addEventListener('change', async function (e) {
+        var found = await E().importFiles(Array.from(e.target.files));
+        libStatus(found);
+        drawLibrary();
+      });
+    }
     drawLibrary();
   }
 
