@@ -733,6 +733,12 @@
     fetchServerList: fetchServerList,
     savedList: function () {
       return idbAll().then(function (recs) {
+        // mismo filtro que fetchServerList: en paginas satelite (p.ej. canta/,
+        // para alumnos), lo guardado en ESTE navegador de otro sitio del mismo
+        // origen (p.ej. el cancionero personal) no debe colarse aca
+        if (Array.isArray(window.SB_CANTA_ALLOW)) {
+          recs = recs.filter(function (r) { return window.SB_CANTA_ALLOW.indexOf(r.id) !== -1; });
+        }
         return recs.map(function (r) {
           return { id: r.id, title: r.json.title, artist: r.json.artist, duration: r.json.duration };
         });
