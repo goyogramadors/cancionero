@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <title>Canta</title>
+  <meta name="description" content="Ejercicios de vocalización con afinación en vivo.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="../app/pwa/icon.svg">
+  <link rel="apple-touch-icon" href="../app/pwa/icon.svg">
+  <link rel="stylesheet" href="../app/css/base.css">
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <span class="wordmark">Canta</span>
+      <nav class="tabs" id="navPrimary" role="tablist" hidden></nav>
+      <div id="navSecondary" hidden></div>
+    </header>
+    <main id="view"></main>
+  </div>
+
+  <script>
+    // Sitio satelite de un solo tool (para los alumnos): reusa el código y
+    // los paquetes de app/ sin duplicarlos, muestra solo estos ejercicios y
+    // oculta "preparar canción"/"elegir carpeta" (son para el dueño del
+    // repo). Ver la sección "Canta para alumnos" en app/ARQUITECTURA.md.
+    window.SB_CANTA_MEDIA_BASE = '../app/canta-media/';
+    window.SB_CANTA_WORKLET_URL = '../app/tools/canta/canta-pitch-worklet.js';
+    window.SB_CANTA_ALLOW = ['vocalizo-nota-larga', 'vocalizo-sexta', 'vocalizo-tercera-menor'];
+    window.SB_CANTA_STUDENT = true;
+  </script>
+
+  <!-- Núcleo compartido, reusado tal cual desde app/ (mínimo que necesita Canta) -->
+  <script src="../app/core/music.js"></script>
+  <script src="../app/core/registry.js"></script>
+  <script src="../app/core/ui.js"></script>
+  <script src="../app/core/store.js"></script>
+
+  <!-- Solo la herramienta Canta -->
+  <script src="../app/tools/canta/canta-dsp.js"></script>
+  <script src="../app/tools/canta/canta-pitch.js"></script>
+  <script src="../app/tools/canta/canta-motor.js"></script>
+  <script src="../app/tools/canta/canta-engine.js"></script>
+  <script src="../app/tools/canta/canta.js"></script>
+
+  <!-- Arranque (mismo core/app.js: router por hash y registro de SW) -->
+  <script src="../app/core/app.js"></script>
+</body>
+</html>

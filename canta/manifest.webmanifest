@@ -1,0 +1,14 @@
+{
+  "name": "Canta",
+  "short_name": "Canta",
+  "description": "Ejercicios de vocalización con afinación en vivo.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    { "src": "../app/pwa/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

@@ -54,6 +54,14 @@ filtro de mediana, corrección de saltos de octava y retención breve — el ind
 con ruido ambiente. El modo **Prueba** canta solo (sin micrófono) para revisar que todo funcione, y
 **Octava libre** te deja cantar en tu octava cómoda.
 
+### Canta para alumnos
+
+**https://goyogramadors.github.io/cancionero/canta/** es un sitio aparte con **solo** la herramienta
+Canta y **solo** los ejercicios de vocalización (sin el cancionero personal ni los botones de
+preparar/importar canciones) — para compartir con quien solo necesita cantar los ejercicios, por
+ejemplo los alumnos de un profesor de canto. Se instala igual (PWA, offline). Detalle de cómo agregar
+o sacar ejercicios de ese sitio en `app/ARQUITECTURA.md` → "Canta para alumnos".
+
 ## Estado actual (2026-08-08)
 
 - **Construcción iniciada (Fase 1 lista).** La app real vive en `app/` — arquitectura extensible,

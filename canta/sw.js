@@ -1,36 +1,27 @@
 /* ============================================================
-   Service worker — cachea el caparazón para uso offline.
-   Vive en la RAÍZ de la app para controlar todo el ámbito (scope "/").
-   Estrategia: stale-while-revalidate — responde del caché al instante
-   (offline OK) y en segundo plano baja la versión nueva y actualiza el
-   caché, así los cambios llegan en la siguiente carga sin quedar atascado
-   en una versión vieja. Igual conviene subir CACHE en cada release.
+   Service worker del sitio satelite "Canta" (para alumnos).
+   Mismo patrón que app/sw.js: stale-while-revalidate para el
+   caparazón, red-primero para canta-media/ (así una canción
+   reprocesada no queda pegada en caché), con caché de respaldo
+   para offline. Vive en su propia carpeta para no compartir scope
+   ni caché con la PWA principal (app/).
    ============================================================ */
-const CACHE = 'cancionero-v17';
+const CACHE = 'canta-alumnos-v1';
 const SHELL = [
   'index.html',
-  'css/base.css',
-  'core/music.js',
-  'core/registry.js',
-  'core/ui.js',
-  'core/store.js',
-  'core/github.js',
-  'core/diagrams.js',
-  'core/chords.js',
-  'core/app.js',
-  'data/songs.js',
-  'tools/songbook/songbook.js',
-  'tools/canta/canta.js',
-  'tools/canta/canta-engine.js',
-  'tools/canta/canta-pitch.js',
-  'tools/canta/canta-motor.js',
-  'tools/canta/canta-dsp.js',
-  'tools/canta/canta-pitch-worklet.js',
-  'tools/chords/chords.js',
-  'tools/practice/practice.js',
-  'tools/settings/settings.js',
   'manifest.webmanifest',
-  'pwa/icon.svg'
+  '../app/css/base.css',
+  '../app/core/music.js',
+  '../app/core/registry.js',
+  '../app/core/ui.js',
+  '../app/core/store.js',
+  '../app/tools/canta/canta-dsp.js',
+  '../app/tools/canta/canta-pitch.js',
+  '../app/tools/canta/canta-pitch-worklet.js',
+  '../app/tools/canta/canta-motor.js',
+  '../app/tools/canta/canta-engine.js',
+  '../app/tools/canta/canta.js',
+  '../app/pwa/icon.svg'
 ];
 
 self.addEventListener('install', (e) => {
@@ -46,9 +37,8 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
   if (url.origin !== self.location.origin) return; // deja pasar lo externo
-  if (url.pathname.includes('/api/')) return;      // motor local: nunca cachear
-  // Los paquetes de Canta (índice + canta.json + audios) cambian cuando preparas
-  // o re-preparas una canción: red primero, para que no quede uno viejo pegado
+  // Los paquetes de Canta (índice + canta.json + audios) cambian cuando se
+  // reprocesa un ejercicio: red primero, para que no quede uno viejo pegado
   // (el caché queda solo como respaldo offline).
   if (url.pathname.includes('canta-media/')) {
     e.respondWith(
