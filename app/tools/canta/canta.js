@@ -1627,6 +1627,40 @@
     return { loM: loM, hiM: hiM };
   }
 
+  // Rango del modo edición: mucho más ancho que el de cantar (que se ciñe a
+  // las notas para que las barras se vean grandes). Al editar hay que poder
+  // poner una plataforma bien fuera de lo detectado (p.ej. corregir un salto
+  // de octava), así que se centra en las notas existentes pero nunca es
+  // menor a 3 octavas (36 semitonos).
+  var ESPAN_EDICION = 36;
+  function rangoEdicion() {
+    var semis = E().semis(), ns = S.notes, loM = 55, hiM = 79;
+    if (ns.length) {
+      loM = Infinity; hiM = -Infinity;
+      for (var i = 0; i < ns.length; i++) { if (ns[i].m < loM) loM = ns[i].m; if (ns[i].m > hiM) hiM = ns[i].m; }
+      loM += semis; hiM += semis;
+    }
+    var centro = (loM + hiM) / 2;
+    var mitad = Math.max(ESPAN_EDICION, (hiM - loM) + 6) / 2;
+    return { loM: Math.round(centro - mitad), hiM: Math.round(centro + mitad) };
+  }
+
+  // Tono corto para identificar por oido la nota que se está poniendo/moviendo.
+  function sonarNota(midi) {
+    try {
+      var ctx = SB.cantaEngine.ctx();
+      var freq = 440 * Math.pow(2, (midi - 69) / 12);
+      var osc = ctx.createOscillator(), g = ctx.createGain();
+      osc.type = 'sine'; osc.frequency.value = freq;
+      var t0 = ctx.currentTime;
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(0.22, t0 + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.24);
+      osc.connect(g); g.connect(ctx.destination);
+      osc.start(t0); osc.stop(t0 + 0.26);
+    } catch (e) {}
+  }
+
   function geo() {
     var cv = S.els.canvas;
     var W = cv.clientWidth, H = cv.clientHeight;
@@ -1704,7 +1738,9 @@
     if (hit) {
       S.selNota = hit.nota;
       S.arrastre = { tipo: hit.zona, nota: hit.nota, px0: px, py0: py,
-                     s0: hit.nota.s, e0: hit.nota.e, m0: hit.nota.m, movio: false };
+                     s0: hit.nota.s, e0: hit.nota.e, m0: hit.nota.m, movio: false,
+                     ultimoSonido: hit.nota.m };
+      if (hit.zona === 'mover') sonarNota(hit.nota.m + G.semis);
     } else {
       // en el vacío: nace una plataforma nueva donde tocaste
       var t = Math.max(0, G.tOf(px));
@@ -1714,7 +1750,9 @@
       ordenarNotas();
       S.selNota = n;
       S.arrastre = { tipo: 'fin', nota: n, px0: px, py0: py,
-                     s0: n.s, e0: n.e, m0: n.m, movio: true, nueva: true };
+                     s0: n.s, e0: n.e, m0: n.m, movio: true, nueva: true,
+                     ultimoSonido: m };
+      sonarNota(m + G.semis);
     }
     q('#kaEdDel').disabled = false;
     try { cv.setPointerCapture(ev.pointerId); } catch (e) {}
@@ -1738,7 +1776,10 @@
       A.nota.e = A.nota.s + dur;
       // el alto se pega al semitono: una plataforma a mano se pone en una nota,
       // no en 45.3
-      A.nota.m = Math.round(G.mOf(py) );
+      A.nota.m = Math.round(G.mOf(py));
+      // sonar solo cuando cambia de semitono (no en cada pixel): asi se
+      // reconoce por oido la nota, como al deslizar por un teclado
+      if (A.nota.m !== A.ultimoSonido) { A.ultimoSonido = A.nota.m; sonarNota(A.nota.m + G.semis); }
     } else if (A.tipo === 'inicio') {
       A.nota.s = Math.max(0, Math.min(A.e0 - MIN, A.s0 + dt));
     } else {
@@ -1799,7 +1840,7 @@
     q('#kaEdDel').disabled = true;
     if (on) {
       E().pause(); updatePlayBtn();
-      S.edRango = rangoVertical();   // congelar antes de tocar nada
+      S.edRango = rangoEdicion();   // congelar antes de tocar nada
       S.edPila = [];
       q('#kaEdUndo').disabled = true;
       edMsg(S.notes.length + ' plataformas · los cambios quedan en este dispositivo');

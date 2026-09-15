@@ -297,7 +297,11 @@ code{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:var
 .ka-cal-num{font-family:ui-monospace,Consolas,monospace;font-size:34px;font-weight:800;line-height:1.1}
 .ka-cal-txt{font-size:12px;color:var(--mut);margin:6px 0 10px;min-height:2.6em;line-height:1.5}
 .ka-cal-btns{display:flex;gap:6px;justify-content:center;flex-wrap:wrap}
-#kaCanvas.editando{cursor:crosshair;touch-action:none}
+/* editando pide más alto: el rango vertical se amplía a ~3 octavas
+   (ver rangoEdicion() en canta.js) y necesita espacio para que las
+   plataformas no queden apretadas */
+#kaCanvas.editando{cursor:crosshair;touch-action:none;height:640px}
+@media (max-width:600px){ #kaCanvas.editando{height:480px} }
 .ka-edit{margin-top:10px;border:1px solid var(--ink);border-radius:4px;padding:10px 12px}
 .ka-edit-tips{font-size:12px;color:var(--mut);line-height:1.6;margin-bottom:8px}
 .ka-edit-tips b{color:var(--ink);font-weight:700}
