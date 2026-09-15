@@ -36,12 +36,6 @@
     "duration": 246.92
   },
   {
-    "id": "iii-menor",
-    "title": "III Menor",
-    "artist": "",
-    "duration": 231.58
-  },
-  {
     "id": "suspicious-minds",
     "title": "Suspicious Minds",
     "artist": "Elvis Presley",
@@ -58,5 +52,11 @@
     "title": "Vocalizo — sexta",
     "artist": "Ejercicio de afinación",
     "duration": 200.57
+  },
+  {
+    "id": "vocalizo-tercera-menor",
+    "title": "Vocalizo — tercera menor",
+    "artist": "Omar Lavadie",
+    "duration": 231.58
   }
 ]
