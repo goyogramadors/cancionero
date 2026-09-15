@@ -84,11 +84,14 @@ YouTube o archivo) y publicarlas al repo con git. Sin motor —el sitio publicad
 qué hacer y la app sigue funcionando para cantar. Detalles en `app/ARQUITECTURA.md` y
 `canta-prep/README.md`.
 
-**Canta para alumnos** (`/canta/`, sitio aparte): https://goyogramadors.github.io/cancionero/canta/
+**Canta para alumnos** (repo aparte, `goyogramadors/canta`): https://goyogramadors.github.io/canta/
 — solo la herramienta Canta, solo los ejercicios de vocalización (sin el cancionero personal ni
-"preparar canción"/"elegir carpeta"), para compartir con quien solo canta. Reusa `app/core/` y
-`app/tools/canta/*` por ruta relativa (nada duplicado); el filtro de canciones es la lista
-`SB_CANTA_ALLOW` en `canta/index.html`. Detalle en `app/ARQUITECTURA.md` → "Canta para alumnos".
+"preparar canción"/"elegir carpeta"), para compartir con quien solo canta. Es OTRO repo (no una
+carpeta de este) para que su URL no cuelgue de `/cancionero/` y truncarla no lleve al cancionero
+personal; su `index.html` reusa `app/core/` y `app/tools/canta/*` **de este repo** por ruta absoluta
+(`/cancionero/app/...`, mismo origen, nada duplicado). El filtro de canciones es la lista
+`SB_CANTA_ALLOW` en el `index.html` de `goyogramadors/canta`. Detalle en `app/ARQUITECTURA.md` →
+"Canta para alumnos".
 
 ### Pendiente / ideas
 - **Parser de pegado inteligente**: pegar letra+acordes y reconocerlos solos (se pospuso; el usuario

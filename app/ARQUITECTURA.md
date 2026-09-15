@@ -121,38 +121,50 @@ agregan con `git add -f` desde el motor, y una vez trackeados se versionan norma
 del servidor/sitio (`canta-media/index.json`), de una carpeta elegida por el usuario (quedan en
 IndexedDB) o genera una **demo sintética**.
 
-## Canta para alumnos (sitio satélite de un solo tool)
+## Canta para alumnos (sitio satélite, repo aparte)
 
-`/canta/` (raíz del repo, hermano de `app/`) es un sitio aparte, publicado en
-`…/cancionero/canta/`, que muestra **solo** la herramienta Canta con **solo**
-un subconjunto de ejercicios — pensado para compartir con alumnos sin
-exponerles el cancionero personal (canciones propias) ni los controles de
-mantenimiento (preparar canción, elegir carpeta, demo), que son para el
-dueño del repo.
+**https://goyogramadors.github.io/canta/** es un sitio en **otro repo**
+(`goyogramadors/canta`) que muestra **solo** la herramienta Canta con
+**solo** un subconjunto de ejercicios — pensado para compartir con alumnos
+sin exponerles el cancionero personal (canciones propias) ni los controles
+de mantenimiento (preparar canción, elegir carpeta, demo), que son para el
+dueño de este repo.
 
-No es un fork: reusa el mismo `core/` y los mismos `tools/canta/*.js` y
-`canta-media/` de `app/` por **ruta relativa** (`../app/...`), sin duplicar
-código ni audios. Antes de cargar `canta-engine.js`/`canta-pitch.js`, su
-`index.html` fija tres globales que esos archivos leen (con el
-comportamiento de siempre si no están definidos):
+Es un repo aparte, y no uno más liviano dentro de `cancionero`, a propósito:
+GitHub Pages ata la ruta al nombre del repo (`goyogramadors.github.io/<repo>/`),
+así que la única forma de que la URL pública sea `.../canta/` en vez de
+`.../cancionero/canta/` es que "canta" sea su propio repo. Beneficio extra:
+son árboles de URL completamente separados, así que truncar cualquiera de
+las dos direcciones nunca lleva a la otra (con el sitio satélite colgando de
+`/cancionero/canta/`, cortar el último tramo llevaba al cancionero personal).
+
+No es un fork ni una copia: `goyogramadors/canta` es solo un caparazón
+(`index.html` + `manifest.webmanifest` + `sw.js`) que reusa el mismo `core/`
+y los mismos `tools/canta/*.js` y `canta-media/` de este repo por **ruta
+absoluta** (`/cancionero/app/...`) — mismo origen `goyogramadors.github.io`,
+sin CORS, sin duplicar código ni audios. Antes de cargar
+`canta-engine.js`/`canta-pitch.js`, su `index.html` fija tres globales que
+esos archivos leen (con el comportamiento de siempre si no están definidos):
 
 - `SB_CANTA_MEDIA_BASE` — de dónde salen `index.json` y los paquetes
-  (`'../app/canta-media/'` en vez del default `'canta-media/'`).
+  (`'/cancionero/app/canta-media/'` en vez del default `'canta-media/'`).
 - `SB_CANTA_WORKLET_URL` — ruta al AudioWorklet del pitch-detector, misma idea.
 - `SB_CANTA_ALLOW` — lista blanca de ids: `fetchServerList()` filtra el
   índice a solo esos paquetes.
 - `SB_CANTA_STUDENT` — que `canta.js` lee para **no pintar** la sección
   "Preparar una canción" ni los botones "Elegir carpeta…"/"Probar la demo".
 
-Tiene su propio `manifest.webmanifest` (nombre "Canta", `scope: "."` →
-`…/cancionero/canta/`, instalable aparte de la PWA principal) y su propio
-`sw.js` (mismo patrón *stale-while-revalidate* + red-primero para
-`canta-media/` que `app/sw.js`, cache `canta-alumnos-vN`).
+Tiene su propio `manifest.webmanifest` (nombre "Canta", instalable aparte de
+la PWA principal) y su propio `sw.js` (mismo patrón *stale-while-revalidate*
++ red-primero para `canta-media/` que `app/sw.js`, cache `canta-vN`).
 
 **Para agregar o sacar un ejercicio de este sitio:** edita el array
-`SB_CANTA_ALLOW` en `canta/index.html` con los ids de `canta-media/index.json`.
-No hace falta tocar nada más (el paquete real vive en `app/canta-media/`,
-preparado con `canta-prep/` como cualquier otro).
+`SB_CANTA_ALLOW` en `index.html` del repo `goyogramadors/canta` con los ids
+de `app/canta-media/index.json`. No hace falta tocar nada más (el paquete
+real vive en `app/canta-media/` de este repo, preparado con `canta-prep/`
+como cualquier otro; un ejercicio nuevo aparece ahí solo al republicar
+*este* repo — el sitio de Canta puede necesitar un rato más, o un push
+propio, para verlo).
 
 ## Datos (canciones)
 
@@ -190,8 +202,12 @@ python -m http.server 8000
 Publicada desde la rama `main` del repo `goyogramadors/cancionero`, **Pages source = rama `main`,
 carpeta `/` (raíz)**. El `index.html` de la raíz del repo redirige a `app/`, así que el sitio queda
 en `…/cancionero/` y la app en `…/cancionero/app/`. Todo usa rutas relativas, por eso funciona bajo
-ese subpath. Cada `git push` a `main` republica el sitio — incluido `/canta/` (ver más abajo),
-que se sirve del mismo commit.
+ese subpath. Cada `git push` a `main` republica el sitio.
+
+El sitio "Canta para alumnos" (más abajo) vive en **otro repo** (`goyogramadors/canta`), publicado
+igual por GitHub Pages desde su propia rama `main`; consume los archivos de este repo por URL
+absoluta, así que un cambio aquí puede necesitar que ese otro repo también republique (o simplemente
+esperar a que su caché/SW se refresque) para verse reflejado ahí.
 
 > Nota: no se usó GitHub Actions porque el token de `gh` no tenía el scope `workflow`. Si más adelante
 > se agrega ese permiso, el despliegue por Actions (servir `app/` en la raíz del sitio) es una mejora
