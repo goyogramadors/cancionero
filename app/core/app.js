@@ -79,6 +79,17 @@
     // registrar service worker solo si está servido por http(s) (no en file://)
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
       navigator.serviceWorker.register('sw.js').catch(() => {});
+      // Cuando sube el CACHE de sw.js, el SW nuevo puede tomar el control a
+      // mitad de sesión (skipWaiting+clients.claim): sin esto, esta pestaña
+      // sigue mostrando el HTML ya cargado junto a CSS/JS del SW anterior
+      // hasta la próxima recarga manual (un mismatch de caché confuso, p.ej.
+      // un <img> nuevo sin el CSS que lo dimensiona). Recarga una sola vez.
+      var swYaRecargo = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (swYaRecargo) return;
+        swYaRecargo = true;
+        location.reload();
+      });
     }
   }
 
