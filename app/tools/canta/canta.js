@@ -1649,15 +1649,25 @@
   function sonarNota(midi) {
     try {
       var ctx = SB.cantaEngine.ctx();
-      var freq = 440 * Math.pow(2, (midi - 69) / 12);
-      var osc = ctx.createOscillator(), g = ctx.createGain();
-      osc.type = 'sine'; osc.frequency.value = freq;
-      var t0 = ctx.currentTime;
-      g.gain.setValueAtTime(0, t0);
-      g.gain.linearRampToValueAtTime(0.22, t0 + 0.012);
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.24);
-      osc.connect(g); g.connect(ctx.destination);
-      osc.start(t0); osc.stop(t0 + 0.26);
+      var tocar = function () {
+        try {
+          var freq = 440 * Math.pow(2, (midi - 69) / 12);
+          var osc = ctx.createOscillator(), g = ctx.createGain();
+          osc.type = 'sine'; osc.frequency.value = freq;
+          var t0 = ctx.currentTime;
+          g.gain.setValueAtTime(0, t0);
+          g.gain.linearRampToValueAtTime(0.22, t0 + 0.012);
+          g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.24);
+          osc.connect(g); g.connect(ctx.destination);
+          osc.start(t0); osc.stop(t0 + 0.26);
+        } catch (e) {}
+      };
+      // En el celular el contexto suele quedar "suspended" hasta que un
+      // gesto lo despierta; mientras tanto ctx.currentTime está congelado,
+      // así que programar el sonido ANTES de que resume() termine de verdad
+      // lo deja mudo (sin error). Por eso se espera el resume real.
+      if (ctx.state === 'suspended') ctx.resume().then(tocar).catch(function () {});
+      else tocar();
     } catch (e) {}
   }
 
