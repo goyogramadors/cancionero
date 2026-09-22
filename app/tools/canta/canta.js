@@ -88,6 +88,7 @@
     if (S.raf) { cancelAnimationFrame(S.raf); S.raf = 0; }
     if (S.applyTimer) { clearTimeout(S.applyTimer); S.applyTimer = null; }
     SB.cantaPitch.stop();
+    tonoParar();
     E().pause();
     S.view.innerHTML =
       '<div class="ka-scope">' +
@@ -1694,29 +1695,67 @@
     return { loM: Math.round(centro - mitad), hiM: Math.round(centro + mitad) };
   }
 
-  // Tono corto para identificar por oido la nota que se está poniendo/moviendo.
-  function sonarNota(midi) {
+  /* ---------- tono de referencia al editar ----------
+     Suena mientras se sostiene una plataforma (tomar → soltar) y sigue la nota
+     al arrastrarla, para reconocer por oído qué se está poniendo. Timbre de
+     órgano (armónicos 1-2-3-4, como los tiradores 8'-4'-2⅔'-2'): además de
+     sonar "a nota", en parlantes de celular —que casi no reproducen graves—
+     los armónicos dejan reconocer la altura aunque falte la fundamental. */
+  var TONO = null, ondaOrgano = null;
+  function hzDe(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+
+  function tonoIniciar(midi) {
+    tonoParar();
+    var T = { m: midi };
+    TONO = T;
     try {
       var ctx = SB.cantaEngine.ctx();
-      var tocar = function () {
+      var arrancar = function () {
+        if (TONO !== T) return;   // se soltó antes de que el audio despertara
         try {
-          var freq = 440 * Math.pow(2, (midi - 69) / 12);
-          var osc = ctx.createOscillator(), g = ctx.createGain();
-          osc.type = 'sine'; osc.frequency.value = freq;
-          var t0 = ctx.currentTime;
-          g.gain.setValueAtTime(0, t0);
-          g.gain.linearRampToValueAtTime(0.22, t0 + 0.012);
-          g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.24);
+          if (!ondaOrgano) {
+            ondaOrgano = ctx.createPeriodicWave(
+              new Float32Array([0, 0, 0, 0, 0, 0, 0, 0, 0]),
+              new Float32Array([0, 1, 0.7, 0.45, 0.35, 0.15, 0.1, 0, 0.06]));
+          }
+          var osc = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime;
+          osc.setPeriodicWave(ondaOrgano);
+          osc.frequency.setValueAtTime(hzDe(T.m), t);
+          g.gain.setValueAtTime(0, t);
+          g.gain.linearRampToValueAtTime(0.2, t + 0.025);
           osc.connect(g); g.connect(ctx.destination);
-          osc.start(t0); osc.stop(t0 + 0.26);
+          osc.start(t);
+          T.ctx = ctx; T.osc = osc; T.g = g;
         } catch (e) {}
       };
-      // En el celular el contexto suele quedar "suspended" hasta que un
-      // gesto lo despierta; mientras tanto ctx.currentTime está congelado,
-      // así que programar el sonido ANTES de que resume() termine de verdad
-      // lo deja mudo (sin error). Por eso se espera el resume real.
-      if (ctx.state === 'suspended') ctx.resume().then(tocar).catch(function () {});
-      else tocar();
+      // En el celular el contexto suele estar "suspended": mientras tanto
+      // currentTime está congelado y programar ahí deja el sonido mudo. Se
+      // espera a que resume() termine de verdad.
+      if (ctx.state === 'suspended') ctx.resume().then(arrancar).catch(function () {});
+      else arrancar();
+    } catch (e) {}
+  }
+
+  function tonoCambiar(midi) {
+    var T = TONO;
+    if (!T) return;
+    T.m = midi;
+    if (!T.osc) return;           // todavía despertando: arrancará en la nota nueva
+    var t = T.ctx.currentTime;
+    T.osc.frequency.cancelScheduledValues(t);
+    T.osc.frequency.setTargetAtTime(hzDe(midi), t, 0.006);   // salto limpio, sin clic
+  }
+
+  function tonoParar() {
+    var T = TONO;
+    TONO = null;
+    if (!T || !T.osc) return;
+    try {
+      var t = T.ctx.currentTime;
+      T.g.gain.cancelScheduledValues(t);
+      T.g.gain.setValueAtTime(T.g.gain.value, t);
+      T.g.gain.linearRampToValueAtTime(0, t + 0.12);
+      T.osc.stop(t + 0.15);
     } catch (e) {}
   }
 
@@ -1799,7 +1838,7 @@
       S.arrastre = { tipo: hit.zona, nota: hit.nota, px0: px, py0: py,
                      s0: hit.nota.s, e0: hit.nota.e, m0: hit.nota.m, movio: false,
                      ultimoSonido: hit.nota.m };
-      if (hit.zona === 'mover') sonarNota(hit.nota.m + G.semis);
+      tonoIniciar(hit.nota.m + G.semis);   // suena mientras la sostienes (también al estirarla)
     } else {
       // en el vacío: nace una plataforma nueva donde tocaste
       var t = Math.max(0, G.tOf(px));
@@ -1811,7 +1850,7 @@
       S.arrastre = { tipo: 'fin', nota: n, px0: px, py0: py,
                      s0: n.s, e0: n.e, m0: n.m, movio: true, nueva: true,
                      ultimoSonido: m };
-      sonarNota(m + G.semis);
+      tonoIniciar(m + G.semis);
     }
     q('#kaEdDel').disabled = false;
     try { cv.setPointerCapture(ev.pointerId); } catch (e) {}
@@ -1836,9 +1875,8 @@
       // el alto se pega al semitono: una plataforma a mano se pone en una nota,
       // no en 45.3
       A.nota.m = Math.round(G.mOf(py));
-      // sonar solo cuando cambia de semitono (no en cada pixel): asi se
-      // reconoce por oido la nota, como al deslizar por un teclado
-      if (A.nota.m !== A.ultimoSonido) { A.ultimoSonido = A.nota.m; sonarNota(A.nota.m + G.semis); }
+      // el tono sigue a la plataforma semitono a semitono, como deslizar por un teclado
+      if (A.nota.m !== A.ultimoSonido) { A.ultimoSonido = A.nota.m; tonoCambiar(A.nota.m + G.semis); }
     } else if (A.tipo === 'inicio') {
       A.nota.s = Math.max(0, Math.min(A.e0 - MIN, A.s0 + dt));
     } else {
@@ -1849,6 +1887,7 @@
   }
 
   function edPointerUp(ev) {
+    tonoParar();
     var A = S.arrastre;
     if (!S.editando || !A) return;
     S.arrastre = null;
@@ -1887,6 +1926,7 @@
   }
 
   function setEditando(on) {
+    tonoParar();
     S.editando = on;
     S.selNota = null; S.arrastre = null;
     var bar = q('#kaEditBar'), btn = q('#kaEdit');
@@ -2142,6 +2182,7 @@
   }
 
   function leave() {
+    tonoParar();
     S.mountSeq = (S.mountSeq || 0) + 1; // invalida cargas en curso
     if (S.raf) cancelAnimationFrame(S.raf);
     S.raf = 0;

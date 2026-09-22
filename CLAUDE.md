@@ -96,7 +96,7 @@ personal; su `index.html` reusa `app/core/` y `app/tools/canta/*` **de este repo
 `SB_CANTA_ALLOW` en el `index.html` de `goyogramadors/canta`. Detalle en `app/ARQUITECTURA.md` →
 "Canta para alumnos".
 
-**Editor de plataformas:** rango de ~3 octavas al editar, tono de referencia al tomar/mover una
+**Editor de plataformas:** rango de ~3 octavas al editar, tono de órgano sostenido mientras se toma/mueve una
 plataforma, y botón **"Publicar para todos"** (solo sitio personal, usa el token de Ajustes) que
 escribe las plataformas directo en el `canta.json` del paquete — así las ven también los alumnos.
 
