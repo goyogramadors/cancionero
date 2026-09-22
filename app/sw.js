@@ -6,7 +6,7 @@
    caché, así los cambios llegan en la siguiente carga sin quedar atascado
    en una versión vieja. Igual conviene subir CACHE en cada release.
    ============================================================ */
-const CACHE = 'cancionero-v23';
+const CACHE = 'cancionero-v24';
 const SHELL = [
   'index.html',
   'css/base.css',
@@ -34,7 +34,11 @@ const SHELL = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // cache:'reload' = pedir al servidor, NO a la caché HTTP del navegador:
+  // GitHub Pages manda max-age=600, y sin esto un SW nuevo se llenaba con
+  // los archivos VIEJOS que el navegador tenía guardados por 10 minutos.
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' }))))
+    .then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', (e) => {
   e.waitUntil(
@@ -52,7 +56,7 @@ self.addEventListener('fetch', (e) => {
   // (el caché queda solo como respaldo offline).
   if (url.pathname.includes('canta-media/')) {
     e.respondWith(
-      fetch(e.request).then((res) => {
+      fetch(e.request, { cache: 'no-cache' }).then((res) => {
         if (res && res.ok) {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
@@ -64,7 +68,7 @@ self.addEventListener('fetch', (e) => {
   }
   e.respondWith(
     caches.match(e.request).then((hit) => {
-      const network = fetch(e.request).then((res) => {
+      const network = fetch(e.request, { cache: 'no-cache' }).then((res) => {
         if (res && res.ok) {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
