@@ -232,6 +232,13 @@ refresca en la carga siguiente).
   reescriben `app/canta-media/<id>/canta.json` (notes/f0/detector y `melodias[detector].notes`,
   igual que `setMelodia()`) y se borra la copia local. Solo aparece en el sitio del dueño
   (`!SB_CANTA_STUDENT` y con `core/github.js` cargado).
+- **Editor de plataformas — selección múltiple:** `S.sel` es la lista de elegidas (`S.selNota` = la
+  última, la que muestra agarraderas cuando hay una sola). Ctrl/⌘+clic o el modo `S.multiSel`
+  (botón "Varias", para pantallas táctiles) suma/quita; con más de una, `edPointerDown` arma un
+  arrastre `tipo:'grupo'` que aplica el mismo Δt (frenado para que la primera no pase de 0) y el
+  mismo Δ de semitonos enteros a todas, **sin tono de órgano**. Copiar guarda en `PORTAPAPELES`
+  (memoria de la página) las elegidas relativas a la primera; Pegar las crea desde
+  `E().position()` y las deja elegidas. Todo pasa por `empujarDeshacer()`.
 - **Token en varios dispositivos:** el token vive en `localStorage` (por dispositivo) y el repo es
   público, así que no puede ir en claro. Ajustes → "Usar el token en otros dispositivos" guarda la
   configuración completa en `data/token.enc.json`, cifrada con AES-GCM-256 y clave derivada de una
