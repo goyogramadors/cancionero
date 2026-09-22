@@ -76,7 +76,7 @@
     const c = cfg(); assertCfg(c);
     const url = fileUrl(c, p) + '?ref=' + encodeURIComponent(branch(c));
     const res = await fetch(url, { headers: headers(c), cache: 'no-store' });
-    if (res.status === 404) throw new Error('no está en el repo (' + p + ')');
+    if (res.status === 404) { const e = new Error('no está en el repo (' + p + ')'); e.notFound = true; throw e; }
     if (!res.ok) throw new Error('GitHub ' + res.status + ' — ' + (await res.text()).slice(0, 140));
     const data = await res.json();
     if (data.content) return { text: b64dec(data.content), sha: data.sha };
@@ -95,5 +95,65 @@
     return await res.json();
   }
 
-  SB.github = { cfg, setCfg, pull, push, getFile, putFile, configured() { const c = cfg(); return !!(c.owner && c.repo && c.token); } };
+  /* ---------- token cifrado en el repo (para usarlo en otros dispositivos) ----------
+     El repo es público: el token NO puede ir en claro. Se guarda la
+     configuración completa cifrada con AES-GCM, con clave derivada de una
+     contraseña (PBKDF2-SHA256). Quien tenga el archivo puede probar
+     contraseñas sin límite, así que la seguridad depende del largo de la
+     contraseña (por eso se exige un mínimo). */
+  const VAULT_PATH = 'data/token.enc.json';
+  const VAULT_ITER = 600000;          // PBKDF2-SHA256, recomendación OWASP
+  const VAULT_MIN = 16;               // largo mínimo de la contraseña
+  const bytesB64 = (u8) => btoa(String.fromCharCode.apply(null, u8));
+  const b64Bytes = (s) => Uint8Array.from(atob(s), (ch) => ch.charCodeAt(0));
+
+  async function vaultKey(password, salt, iter) {
+    const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', salt: salt, iterations: iter },
+      base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  }
+
+  // Cifra la configuración de ESTE dispositivo y la sube al repo.
+  async function sealCfg(password) {
+    const c = cfg(); assertCfg(c);
+    if (!password || password.length < VAULT_MIN) throw new Error('la contraseña debe tener al menos ' + VAULT_MIN + ' caracteres');
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const key = await vaultKey(password, salt, VAULT_ITER);
+    const plain = new TextEncoder().encode(JSON.stringify({ owner: c.owner, repo: c.repo, branch: branch(c), path: path(c), token: c.token }));
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, plain));
+    const blob = { v: 1, kdf: 'PBKDF2-SHA256', iter: VAULT_ITER, salt: bytesB64(salt), iv: bytesB64(iv), ct: bytesB64(ct) };
+    let sha = null;
+    try { sha = (await getFile(VAULT_PATH)).sha; } catch (e) { if (!e.notFound) throw e; }
+    return putFile(VAULT_PATH, JSON.stringify(blob, null, 2) + '\n', sha, 'ajustes: guarda el token cifrado (para otros dispositivos)');
+  }
+
+  // En un dispositivo nuevo: baja el archivo cifrado SIN token (el repo es
+  // público) y lo descifra con la contraseña. Si resulta, deja la config lista.
+  async function unsealCfg(password, owner, repo, br) {
+    if (!owner || !repo) throw new Error('falta owner/repo');
+    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${VAULT_PATH}?ref=${encodeURIComponent(br || 'main')}`;
+    const res = await fetch(url, { headers: { Accept: 'application/vnd.github.raw' }, cache: 'no-store' });
+    if (res.status === 404) throw new Error('todavía no hay un token cifrado en el repo (guárdalo primero desde un dispositivo que ya lo tenga)');
+    if (!res.ok) throw new Error('GitHub ' + res.status + ' al leer el token cifrado');
+    const blob = JSON.parse(await res.text());
+    const key = await vaultKey(password, b64Bytes(blob.salt), blob.iter);
+    let plain;
+    try { plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64Bytes(blob.iv) }, key, b64Bytes(blob.ct)); }
+    catch (e) { throw new Error('contraseña incorrecta'); }
+    const c = JSON.parse(new TextDecoder().decode(plain));
+    setCfg(c);
+    return c;
+  }
+
+  // owner/repo deducidos de la URL de GitHub Pages (usuario.github.io/repo/...)
+  function repoDeUrl() {
+    const h = location.hostname;
+    if (!/\.github\.io$/.test(h)) return null;
+    const seg = location.pathname.split('/').filter(Boolean)[0];
+    return seg ? { owner: h.split('.')[0], repo: seg } : null;
+  }
+
+  SB.github = { cfg, setCfg, pull, push, getFile, putFile, sealCfg, unsealCfg, repoDeUrl, VAULT_MIN,
+    configured() { const c = cfg(); return !!(c.owner && c.repo && c.token); } };
 })();

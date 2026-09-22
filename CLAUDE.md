@@ -57,6 +57,9 @@ python -m http.server 8000   # abrir http://localhost:8000
 - **Persistencia:** ediciones del usuario en `localStorage`; sync opcional al repo
   (`data/user-songs.json`) vía `core/github.js` + herramienta Ajustes (necesita un token fino con
   Contents: Read and write). La forma del dato no cambia entre local y repo.
+- **El token NUNCA va en claro al repo (es público).** Para llevarlo a otros dispositivos existe
+  `data/token.enc.json` (AES-GCM + PBKDF2 con contraseña del usuario, ver `app/ARQUITECTURA.md`).
+  No me pidas ni pegues el token en el chat.
 
 ## Git
 - Sincroniza siempre: `git pull` al empezar; `git add <archivos>`, `commit`, `push` al terminar.

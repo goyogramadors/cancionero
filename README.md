@@ -18,6 +18,10 @@ para compartirlas entre dispositivos, usa **Ajustes → Sincronizar con GitHub**
    repo (`cancionero`), pega el token, **Guardar**.
 3. **Subir al repo** guarda tus canciones en `data/user-songs.json` (un commit). En otro
    dispositivo, **Traer del repo** las baja. El token vive solo en cada dispositivo.
+4. **Para no pegar el token en cada dispositivo:** en Ajustes → *Usar el token en otros
+   dispositivos*, escribe una frase larga (16+ caracteres) y **Cifrar y guardar en el repo**. En un
+   dispositivo nuevo: Ajustes → misma frase → **Desbloquear en este dispositivo**. El token queda
+   cifrado en `data/token.enc.json` (público, por eso la frase debe ser larga).
 
 ## Canta — karaoke con afinación en vivo
 

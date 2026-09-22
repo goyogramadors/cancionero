@@ -232,3 +232,9 @@ refresca en la carga siguiente).
   reescriben `app/canta-media/<id>/canta.json` (notes/f0/detector y `melodias[detector].notes`,
   igual que `setMelodia()`) y se borra la copia local. Solo aparece en el sitio del dueño
   (`!SB_CANTA_STUDENT` y con `core/github.js` cargado).
+- **Token en varios dispositivos:** el token vive en `localStorage` (por dispositivo) y el repo es
+  público, así que no puede ir en claro. Ajustes → "Usar el token en otros dispositivos" guarda la
+  configuración completa en `data/token.enc.json`, cifrada con AES-GCM-256 y clave derivada de una
+  contraseña (PBKDF2-SHA256, 600.000 iteraciones, mínimo 16 caracteres). En un dispositivo nuevo,
+  "Desbloquear" lee ese archivo **sin token** (API pública) y lo descifra localmente. La contraseña
+  nunca sale del navegador; la seguridad depende de su largo, porque el archivo es público.
