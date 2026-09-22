@@ -585,6 +585,7 @@
       '<button class="mini-app-btn" id="kaEdDel" disabled>Borrar</button>' +
       '<button class="mini-app-btn" id="kaEdUndo" disabled>Deshacer</button>' +
       '<button class="mini-app-btn" id="kaEdReset">Volver a la original</button>' +
+      (puedePublicar() ? '<button class="mini-app-btn" id="kaEdPub">Publicar para todos</button>' : '') +
       '<button class="mini-app-btn" id="kaEdDone">Listo</button>' +
       '</div>' +
       '<p class="set-status" id="kaEdMsg"></p>' +
@@ -732,6 +733,7 @@
       edMsg('Volví a la melodía original: ' + S.notes.length + ' plataformas.');
       SB.canta.redibujar();
     });
+    if (q('#kaEdPub')) q('#kaEdPub').addEventListener('click', publicarPlataformas);
     var cvEd = S.els.canvas;
     cvEd.addEventListener('pointerdown', edPointerDown);
     cvEd.addEventListener('pointermove', edPointerMove);
@@ -1607,6 +1609,53 @@
     if (k) { try { localStorage.removeItem(k); } catch (e) {} }
   }
 
+  // Publicar escribe las plataformas en el canta.json del paquete en el repo:
+  // pasan a ser las de TODOS (también el sitio de alumnos, que carga estos
+  // mismos paquetes). Solo en el sitio del dueño, que es el que trae GitHub.
+  function puedePublicar() { return !STUDENT && !!SB.github; }
+
+  async function publicarPlataformas() {
+    var btn = q('#kaEdPub'), pkg = S.pkg;
+    if (!pkg || !pkg.id) return;
+    if (!SB.github.configured()) {
+      edMsg('Para publicar, primero pega tu token en Ajustes → Sincronizar con GitHub.');
+      return;
+    }
+    if (!confirm('¿Publicar estas ' + S.notes.length + ' plataformas en "' + pkg.title + '"?\n\n' +
+                 'Las verán todos los que la canten, incluido el sitio de alumnos.')) return;
+    btn.disabled = true;
+    edMsg('Publicando…');
+    try {
+      var ruta = 'app/canta-media/' + pkg.id + '/canta.json';
+      var f = await SB.github.getFile(ruta);
+      var json = JSON.parse(f.text);
+      var det = S.melodia;
+      var notas = S.notes.map(function (n) {
+        return { s: +n.s.toFixed(3), e: +n.e.toFixed(3), m: +n.m.toFixed(1) };
+      });
+      // igual que setMelodia(): notes/f0/detector de arriba reflejan la
+      // melodía elegida; la del otro detector queda intacta
+      if (json.melodias && json.melodias[det]) {
+        json.melodias[det].notes = notas;
+        json.detector = det;
+        json.f0 = json.melodias[det].f0;
+      }
+      json.notes = notas;
+      await SB.github.putFile(ruta, JSON.stringify(json), f.sha,
+        'canta: publica plataformas de "' + pkg.title + '" (desde la app)');
+      // lo publicado pasa a ser la "original": la copia local ya sobra, y si
+      // quedara, taparía cualquier cambio futuro del paquete en este aparato
+      if (pkg.melodias && pkg.melodias[det]) pkg.melodias[det].notes = notas;
+      pkg.notes = notas; pkg.detector = det;
+      olvidarNotas();
+      S.notesEditadas = false;
+      edMsg('Publicado: ' + notas.length + ' plataformas. Se ve para todos en 1–2 minutos.');
+    } catch (e) {
+      edMsg('No se pudo publicar: ' + e.message);
+    }
+    btn.disabled = false;
+  }
+
   function edMsg(t) { var e = q('#kaEdMsg'); if (e) e.textContent = t || ''; }
 
   // Geometría: las mismas cuentas que draw(), para que lo que se toca coincida
@@ -1853,7 +1902,8 @@
       S.edRango = rangoEdicion();   // congelar antes de tocar nada
       S.edPila = [];
       q('#kaEdUndo').disabled = true;
-      edMsg(S.notes.length + ' plataformas · los cambios quedan en este dispositivo');
+      edMsg(S.notes.length + ' plataformas · los cambios quedan en este dispositivo' +
+            (puedePublicar() ? ' hasta que los publiques' : ''));
     } else {
       S.edRango = null;
       edMsg('');

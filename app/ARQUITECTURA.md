@@ -225,3 +225,10 @@ refresca en la carga siguiente).
   `tools/settings/`. Requiere un token fino con **Contents: Read and write**. Manual por ahora
   (botones Traer/Subir); el `store` no cambia su forma, así que evolucionar a per-archivo o
   auto-sync no toca las herramientas.
+- **Publicar plataformas de Canta:** las plataformas corregidas a mano viven en `localStorage`
+  (por dispositivo). "Traer/Subir" las lleva a `data/user-songs.json`, pero eso solo lo ven los
+  aparatos con el mismo token. Para que las vea **cualquiera** (incluido el sitio de alumnos), el
+  editor tiene **"Publicar para todos"**: con el mismo token de Ajustes, `SB.github.getFile`/`putFile`
+  reescriben `app/canta-media/<id>/canta.json` (notes/f0/detector y `melodias[detector].notes`,
+  igual que `setMelodia()`) y se borra la copia local. Solo aparece en el sitio del dueño
+  (`!SB_CANTA_STUDENT` y con `core/github.js` cargado).
