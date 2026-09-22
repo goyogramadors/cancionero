@@ -32,6 +32,7 @@
 
   var S = {
     view: null, ctx: null, screen: null,
+    sel: [], multiSel: false,   // editor: plataformas elegidas (varias con Ctrl) y modo selección múltiple
     cfg: null, raf: 0, els: null, colors: null,
     // partido en curso
     notes: null, finPtr: 0, lineIdx: -1, trace: [],
@@ -549,7 +550,7 @@
     S.tomaId = null; S.tomaCurva = null;
     E().setMine(null, 0);
     S.pkg = pkg;
-    S.editando = false; S.selNota = null; S.arrastre = null; S.edPila = [];
+    S.editando = false; S.selNota = null; S.sel = []; S.arrastre = null; S.edPila = [];
     S.melodia = pkg.detector || 'pyin';
     // respeta las plataformas que el usuario haya corregido a mano
     cargarNotasDe({ notes: pkg.notes, f0: pkg.f0 });
@@ -580,10 +581,15 @@
       '<div class="ka-edit" id="kaEditBar" hidden>' +
       '<div class="ka-edit-tips">' +
       '<b>Arrastra</b> una plataforma para moverla · <b>tira de los extremos</b> para alargarla · ' +
-      '<b>arrastra en el vacío</b> para crear una · <b>toca</b> para elegir' +
+      '<b>arrastra en el vacío</b> para crear una · <b>toca</b> para elegir · ' +
+      '<b>Ctrl+clic</b> (o "Varias") para elegir varias y moverlas juntas (sin sonido) · ' +
+      '<b>Ctrl+C / Ctrl+V</b> copia y pega en el cabezal (muévelo con la barra de posición)' +
       '</div>' +
       '<div class="ka-edit-btns">' +
       '<button class="mini-app-btn" id="kaEdDel" disabled>Borrar</button>' +
+      '<button class="mini-app-btn" id="kaEdMulti" aria-pressed="false" title="Tocar suma o quita plataformas de la selección (como Ctrl+clic)">Varias</button>' +
+      '<button class="mini-app-btn" id="kaEdCopy" disabled>Copiar</button>' +
+      '<button class="mini-app-btn" id="kaEdPaste" disabled>Pegar</button>' +
       '<button class="mini-app-btn" id="kaEdUndo" disabled>Deshacer</button>' +
       '<button class="mini-app-btn" id="kaEdReset">Volver a la original</button>' +
       (puedePublicar() ? '<button class="mini-app-btn" id="kaEdPub">Publicar para todos</button>' : '') +
@@ -725,6 +731,14 @@
     q('#kaEdit').addEventListener('click', function () { setEditando(!S.editando); });
     q('#kaEdDone').addEventListener('click', function () { setEditando(false); });
     q('#kaEdDel').addEventListener('click', function () { borrarSel(false); });
+    q('#kaEdMulti').addEventListener('click', function () {
+      S.multiSel = !S.multiSel;
+      this.setAttribute('aria-pressed', S.multiSel ? 'true' : 'false');
+      this.classList.toggle('on', S.multiSel);
+      edMsg(S.multiSel ? 'Selección múltiple: cada toque suma o quita una plataforma.' : selMsg());
+    });
+    q('#kaEdCopy').addEventListener('click', copiarSel);
+    q('#kaEdPaste').addEventListener('click', pegar);
     q('#kaEdUndo').addEventListener('click', deshacer);
     q('#kaEdReset').addEventListener('click', function () {
       empujarDeshacer();
@@ -745,6 +759,8 @@
       if (e.key === 'Delete' || e.key === 'Backspace') { borrarSel(false); e.preventDefault(); }
       else if (e.key === 'Escape') setEditando(false);
       else if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey)) { deshacer(); e.preventDefault(); }
+      else if ((e.key === 'c' || e.key === 'C') && (e.ctrlKey || e.metaKey)) { if (copiarSel()) e.preventDefault(); }
+      else if ((e.key === 'v' || e.key === 'V') && (e.ctrlKey || e.metaKey)) { if (pegar()) e.preventDefault(); }
     });
 
     var grab = q('#kaGrabar');
@@ -1022,7 +1038,7 @@
     }).sort(function (a, b) { return a.s - b.s; });
     S.notesEditadas = !!editadas;
     S.f0 = m && m.f0 && m.f0.v && m.f0.v.length ? m.f0 : null;
-    S.finPtr = 0; S.trace = []; S.score = 0; S.streak = 0; S.selNota = null;
+    S.finPtr = 0; S.trace = []; S.score = 0; S.streak = 0; S.selNota = null; S.sel = [];
     return S.notes.length;
   }
 
@@ -1798,8 +1814,8 @@
     // La elegida manda: si acabas de seleccionar una plataforma y vuelves a
     // tocarla, sigues trabajando sobre ella aunque haya otras debajo. Sin esto
     // no se podia estirar una plataforma larga que cruzara por encima de otras.
-    if (S.selNota && tocaA(S.selNota, px, py, G) >= 0) {
-      return { nota: S.selNota, zona: zonaDe(S.selNota, px, G) };
+    for (var k = S.sel.length - 1; k >= 0; k--) {
+      if (tocaA(S.sel[k], px, py, G) >= 0) return { nota: S.sel[k], zona: zonaDe(S.sel[k], px, G) };
     }
     var mejor = null, mejorDy = Infinity;
     for (var i = 0; i < S.notes.length; i++) {
@@ -1826,19 +1842,87 @@
     S.finPtr = 0;
   }
 
+  /* ---------- selección (una o varias) y copiar/pegar ---------- */
+  var PORTAPAPELES = null;   // de este módulo: sobrevive al cambiar de canción
+  function enSel(n) { return S.sel.indexOf(n) >= 0; }
+  function selSolo(n) { S.sel = n ? [n] : []; S.selNota = n || null; selBotones(); }
+  function selBotones() {
+    var d = q('#kaEdDel'), c = q('#kaEdCopy'), p = q('#kaEdPaste');
+    if (d) d.disabled = !S.sel.length;
+    if (c) c.disabled = !S.sel.length;
+    if (p) p.disabled = !PORTAPAPELES;
+  }
+  function selMsg() {
+    return S.sel.length > 1
+      ? S.sel.length + ' plataformas elegidas · arrastra una para mover todas juntas'
+      : S.notes.length + ' plataformas';
+  }
+
+  // Copia la selección con tiempos RELATIVOS a su primera nota: se puede pegar
+  // en otro punto de la canción (o en otra canción) conservando la forma.
+  function copiarSel() {
+    if (!S.sel.length) return false;
+    var t0 = Math.min.apply(null, S.sel.map(function (n) { return n.s; }));
+    PORTAPAPELES = S.sel.map(function (n) { return { ds: n.s - t0, dur: n.e - n.s, m: n.m }; })
+      .sort(function (a, b) { return a.ds - b.ds; });
+    selBotones();
+    edMsg('Copié ' + PORTAPAPELES.length + ' plataforma' + (PORTAPAPELES.length === 1 ? '' : 's') +
+          ' · mueve el cabezal a donde quieras y pega (Ctrl+V o "Pegar")');
+    return true;
+  }
+
+  // Pega en el cabezal (la línea fija; se mueve con la barra de posición). Lo
+  // pegado queda elegido, listo para arrastrarlo en bloque.
+  function pegar() {
+    if (!PORTAPAPELES || !S.editando) return false;
+    empujarDeshacer();
+    var t0 = Math.max(0, E().position());
+    var nuevas = PORTAPAPELES.map(function (c) { return notaNueva(t0 + c.ds, t0 + c.ds + c.dur, c.m); });
+    S.notes = S.notes.concat(nuevas);
+    ordenarNotas();
+    S.sel = nuevas.slice(); S.selNota = nuevas[nuevas.length - 1];
+    guardarNotas();
+    resetRunFrom(E().position() - S.cfg.latency);
+    selBotones();
+    edMsg('Pegué ' + nuevas.length + ' plataforma' + (nuevas.length === 1 ? '' : 's') +
+          ' en el cabezal · quedaron elegidas: arrástralas para ubicarlas');
+    SB.canta.redibujar();
+    return true;
+  }
+
   function edPointerDown(ev) {
     if (!S.editando) return;
     var cv = S.els.canvas, r = cv.getBoundingClientRect();
     var px = ev.clientX - r.left, py = ev.clientY - r.top;
     var G = geo();
     var hit = notaEn(px, py, G);
+    var multi = ev.ctrlKey || ev.metaKey || S.multiSel;
+    if (multi && !hit) { ev.preventDefault(); return; }   // Ctrl en el vacío: no crea ni suelta nada
+    if (multi && enSel(hit.nota)) {
+      // Ctrl+clic sobre una elegida: la saca de la selección (sin arrastre)
+      S.sel.splice(S.sel.indexOf(hit.nota), 1);
+      S.selNota = S.sel[S.sel.length - 1] || null;
+      selBotones(); edMsg(selMsg()); ev.preventDefault(); SB.canta.redibujar();
+      return;
+    }
     empujarDeshacer();
     if (hit) {
-      S.selNota = hit.nota;
-      S.arrastre = { tipo: hit.zona, nota: hit.nota, px0: px, py0: py,
-                     s0: hit.nota.s, e0: hit.nota.e, m0: hit.nota.m, movio: false,
-                     ultimoSonido: hit.nota.m };
-      tonoIniciar(hit.nota.m + G.semis);   // suena mientras la sostienes (también al estirarla)
+      if (multi) { S.sel.push(hit.nota); S.selNota = hit.nota; selBotones(); }
+      else if (!(enSel(hit.nota) && S.sel.length > 1)) selSolo(hit.nota);   // tomar una de un grupo mueve el grupo
+      else S.selNota = hit.nota;
+      if (S.sel.length > 1) {
+        // varias: se mueven en bloque (tiempo y altura), sin sonido
+        S.arrastre = { tipo: 'grupo', px0: px, py0: py, movio: false,
+                       soloEsta: multi ? null : hit.nota,   // tocar sin arrastrar = quedarse solo con esa
+                       minS: Math.min.apply(null, S.sel.map(function (n) { return n.s; })),
+                       orig: S.sel.map(function (n) { return { n: n, s: n.s, e: n.e, m: n.m }; }) };
+      } else {
+        S.arrastre = { tipo: hit.zona, nota: hit.nota, px0: px, py0: py,
+                       s0: hit.nota.s, e0: hit.nota.e, m0: hit.nota.m, movio: false,
+                       ultimoSonido: hit.nota.m };
+        tonoIniciar(hit.nota.m + G.semis);   // suena mientras la sostienes (también al estirarla)
+      }
+      edMsg(selMsg());
     } else {
       // en el vacío: nace una plataforma nueva donde tocaste
       var t = Math.max(0, G.tOf(px));
@@ -1846,7 +1930,7 @@
       var n = notaNueva(t, t + 0.12, m);
       S.notes.push(n);
       ordenarNotas();
-      S.selNota = n;
+      selSolo(n);
       S.arrastre = { tipo: 'fin', nota: n, px0: px, py0: py,
                      s0: n.s, e0: n.e, m0: n.m, movio: true, nueva: true,
                      ultimoSonido: m };
@@ -1868,7 +1952,14 @@
     if (Math.abs(px - A.px0) > 3 || Math.abs(py - A.py0) > 3) A.movio = true;
     var MIN = 0.06;   // s: por debajo de esto la plataforma no se puede cantar
 
-    if (A.tipo === 'mover') {
+    if (A.tipo === 'grupo') {
+      // mismo corrimiento para todas; el tiempo se frena en 0 para la primera,
+      // sin deformar el bloque. La altura sube/baja en semitonos enteros, así
+      // los intervalos entre ellas no cambian.
+      var dtg = Math.max(dt, -A.minS);
+      var dm = Math.round(G.mOf(py) - G.mOf(A.py0));
+      A.orig.forEach(function (o) { o.n.s = o.s + dtg; o.n.e = o.e + dtg; o.n.m = o.m + dm; });
+    } else if (A.tipo === 'mover') {
       var dur = A.e0 - A.s0;
       A.nota.s = Math.max(0, A.s0 + dt);
       A.nota.e = A.nota.s + dur;
@@ -1893,22 +1984,25 @@
     S.arrastre = null;
     // un toque sin arrastre sobre el vacío no debe dejar una plataforma diminuta
     if (A.nueva && !A.movio) borrarSel(true);
+    else if (A.tipo === 'grupo' && !A.movio && A.soloEsta) selSolo(A.soloEsta);
     else { ordenarNotas(); guardarNotas(); }
     resetRunFrom(E().position() - S.cfg.latency);
-    edMsg(S.notes.length + ' plataformas');
+    edMsg(selMsg());
     try { S.els.canvas.releasePointerCapture(ev.pointerId); } catch (e) {}
     SB.canta.redibujar();
   }
 
   function borrarSel(silencioso) {
-    if (!S.selNota) return;
+    if (!S.sel.length) return;
     if (!silencioso) empujarDeshacer();
-    var i = S.notes.indexOf(S.selNota);
-    if (i >= 0) S.notes.splice(i, 1);
-    S.selNota = null;
-    q('#kaEdDel').disabled = true;
+    var n = S.sel.length, fuera = S.sel.slice();
+    S.notes = S.notes.filter(function (x) { return fuera.indexOf(x) < 0; });
+    selSolo(null);
     ordenarNotas();
-    if (!silencioso) { guardarNotas(); edMsg(S.notes.length + ' plataformas'); }
+    if (!silencioso) {
+      guardarNotas();
+      edMsg((n > 1 ? 'Borré ' + n + ' · ' : '') + S.notes.length + ' plataformas');
+    }
     SB.canta.redibujar();
   }
 
@@ -1916,8 +2010,7 @@
     if (!S.edPila || !S.edPila.length) return;
     var prev = S.edPila.pop();
     S.notes = prev.map(function (n) { return notaNueva(n.s, n.e, n.m); });
-    S.selNota = null;
-    q('#kaEdDel').disabled = true;
+    selSolo(null);
     q('#kaEdUndo').disabled = !S.edPila.length;
     ordenarNotas(); guardarNotas();
     resetRunFrom(E().position() - S.cfg.latency);
@@ -1928,7 +2021,9 @@
   function setEditando(on) {
     tonoParar();
     S.editando = on;
-    S.selNota = null; S.arrastre = null;
+    S.arrastre = null; S.multiSel = false;
+    var bm = q('#kaEdMulti');
+    if (bm) { bm.setAttribute('aria-pressed', 'false'); bm.classList.remove('on'); }
     var bar = q('#kaEditBar'), btn = q('#kaEdit');
     if (bar) bar.hidden = !on;
     if (btn) {
@@ -1936,7 +2031,7 @@
       btn.classList.toggle('on', on);
     }
     S.els.canvas.classList.toggle('editando', on);
-    q('#kaEdDel').disabled = true;
+    selSolo(null);   // también habilita "Pegar" si hay algo copiado
     if (on) {
       E().pause(); updatePlayBtn();
       S.edRango = rangoEdicion();   // congelar antes de tocar nada
@@ -2033,14 +2128,14 @@
       // en edición: contorno a todas y agarraderas a la elegida, para que se
       // vea dónde tirar sin tener que adivinar
       if (S.editando) {
-        var sel = (n === S.selNota);
+        var sel = enSel(n);
         g.strokeStyle = sel ? C.ink : C.mut;
         g.lineWidth = sel ? 2 : 1;
         g.globalAlpha = sel ? 1 : 0.5;
         rounded(g, x1, ym, Math.max(3, x2 - x1), barH, barH / 2);
         g.stroke();
         g.globalAlpha = 1;
-        if (sel) {
+        if (sel && S.sel.length === 1) {   // varias elegidas se mueven, no se estiran
           g.fillStyle = C.ink;
           var yc = ym + barH / 2;
           [x1, x2].forEach(function (xx) {
@@ -2261,6 +2356,7 @@
         notas: S.notes ? S.notes.length : 0,
         editando: !!S.editando, notasEditadas: !!S.notesEditadas,
         arrastre: S.arrastre ? S.arrastre.tipo + (S.arrastre.nueva ? '/nueva' : '') : null,
+        selCount: S.sel.length, copiadas: PORTAPAPELES ? PORTAPAPELES.length : 0,
         selDur: S.selNota ? +(S.selNota.e - S.selNota.s).toFixed(3) : null,
         selMidi: S.selNota ? S.selNota.m : null,
         selIni: S.selNota ? +S.selNota.s.toFixed(3) : null,
@@ -2270,6 +2366,15 @@
           var G = geo();
           return { x1: Math.round(G.xOf(S.selNota.s)), x2: Math.round(G.xOf(S.selNota.e)),
                    y: Math.round(G.yOf(S.selNota.m + G.semis)) };
+        })(),
+        // todas las elegidas (selección múltiple) + cuántos px mide un semitono
+        selCajas: (function () {
+          if (S.screen !== 'play' || !S.sel.length) return [];
+          var G = geo();
+          return S.sel.map(function (n) {
+            return { x1: Math.round(G.xOf(n.s)), x2: Math.round(G.xOf(n.e)), y: Math.round(G.yOf(n.m + G.semis)),
+                     s: +n.s.toFixed(3), m: n.m, pxSemi: +(G.H / G.span).toFixed(2) };
+          });
         })(),
         grabando: S.grabando, tomaTrace: S.tomaTrace.length,
         tramos: (S.tomaTramos || []).length, tramoAbierto: !!S.tramo,

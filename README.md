@@ -76,6 +76,13 @@ quede **para todos** (también en el sitio de alumnos), en tu sitio personal apr
 todos**: escribe la corrección directo en el paquete del repo y se ve en 1–2 minutos. Requiere el
 token de **Ajustes → Sincronizar con GitHub** (el mismo de arriba).
 
+Varias a la vez: **Ctrl+clic** suma o quita plataformas de la selección (en el celular, activa el
+botón **Varias** y toca). Arrastrar una de las elegidas mueve **todas juntas** (en tiempo y en
+semitonos enteros, sin sonido); tocar una sin arrastrar deja elegida solo esa. **Ctrl+C** copia las
+elegidas y **Ctrl+V** las pega a partir del cabezal (ubícalo antes con la barra de posición); lo
+pegado queda elegido para arrastrarlo en bloque. También hay botones **Copiar/Pegar**, **Supr**
+borra las elegidas y **Ctrl+Z** deshace.
+
 ## Estado actual (2026-08-08)
 
 - **Construcción iniciada (Fase 1 lista).** La app real vive en `app/` — arquitectura extensible,

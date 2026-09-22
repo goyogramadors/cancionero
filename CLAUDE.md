@@ -99,6 +99,8 @@ personal; su `index.html` reusa `app/core/` y `app/tools/canta/*` **de este repo
 **Editor de plataformas:** rango de ~3 octavas al editar, tono de órgano sostenido mientras se toma/mueve una
 plataforma, y botón **"Publicar para todos"** (solo sitio personal, usa el token de Ajustes) que
 escribe las plataformas directo en el `canta.json` del paquete — así las ven también los alumnos.
+Selección múltiple (Ctrl+clic o botón "Varias") para mover varias juntas sin sonido, y Ctrl+C/Ctrl+V
+(o botones Copiar/Pegar) que pegan en el cabezal.
 
 ### Pendiente / ideas
 - **Parser de pegado inteligente**: pegar letra+acordes y reconocerlos solos (se pospuso; el usuario
