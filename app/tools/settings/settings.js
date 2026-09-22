@@ -65,6 +65,19 @@
           </div>
           <span class="set-status" id="syncStatus"></span>
         </section>
+
+        <section class="set-block">
+          <h2>Usar el token en otros dispositivos</h2>
+          <p class="ed-note">Guarda el token <b>cifrado con una contraseña</b> en el repo. En otro dispositivo basta con escribir la contraseña. El archivo cifrado es público: usa una <b>frase larga</b> (al menos ${SB.github.VAULT_MIN} caracteres, p.ej. cuatro palabras que no vayan juntas), porque cualquiera puede intentar adivinarla.</p>
+          <div class="set-grid">
+            <label class="wide">Contraseña <input id="vaultPass" type="password" autocomplete="new-password" placeholder="una frase larga"></label>
+          </div>
+          <div class="set-row">
+            <button class="mini-x" id="btnUnseal">Desbloquear en este dispositivo</button>
+            <button class="mini-x" id="btnSeal">Cifrar y guardar en el repo</button>
+          </div>
+          <span class="set-status" id="vaultStatus"></span>
+        </section>
       </div>`;
 
     view.querySelector('#setBack').addEventListener('click', () => location.hash = '#/songbook');
@@ -134,6 +147,37 @@
         status(ss, 'Subido' + (nCanta ? ' (con ' + nCanta + ' ajuste(s) de Canta)' : '')
           + '. Commit ' + (res.commit && res.commit.sha ? res.commit.sha.slice(0, 7) : 'ok') + '.');
       } catch (err) { status(ss, 'Error al subir: ' + err.message, false); }
+    });
+
+    // token cifrado: guardar desde un dispositivo que lo tiene / desbloquear en uno nuevo
+    const vs = view.querySelector('#vaultStatus');
+    const pass = view.querySelector('#vaultPass');
+    view.querySelector('#btnSeal').addEventListener('click', async () => {
+      SB.github.setCfg(readCfg());
+      if (!SB.github.configured()) { status(vs, 'Primero completa owner, repo y token arriba.', false); return; }
+      if (pass.value.length < SB.github.VAULT_MIN) { status(vs, 'La contraseña debe tener al menos ' + SB.github.VAULT_MIN + ' caracteres.', false); return; }
+      const rep = prompt('Repite la contraseña para confirmar:');
+      if (rep === null) return;
+      if (rep !== pass.value) { status(vs, 'Las contraseñas no coinciden.', false); return; }
+      status(vs, 'Cifrando y subiendo…');
+      try {
+        await SB.github.sealCfg(pass.value);
+        pass.value = '';
+        status(vs, 'Listo: token cifrado guardado en el repo. En otro dispositivo, entra a Ajustes y desbloquéalo con la contraseña.');
+      } catch (err) { status(vs, 'No se pudo guardar: ' + err.message, false); }
+    });
+    view.querySelector('#btnUnseal').addEventListener('click', async () => {
+      const f = readCfg(), url = SB.github.repoDeUrl() || {};
+      const owner = f.owner || url.owner, repo = f.repo || url.repo;
+      if (!owner || !repo) { status(vs, 'Escribe owner y repo arriba (no los pude deducir de la dirección).', false); return; }
+      if (!pass.value) { status(vs, 'Escribe la contraseña.', false); return; }
+      status(vs, 'Desbloqueando…');
+      try {
+        await SB.github.unsealCfg(pass.value, owner, repo, f.branch);
+        pass.value = '';
+        status(vs, 'Listo: token desbloqueado en este dispositivo. Recargando…');
+        setTimeout(() => location.reload(), 700);
+      } catch (err) { status(vs, 'No se pudo desbloquear: ' + err.message, false); }
     });
   }
 
