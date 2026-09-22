@@ -24,11 +24,17 @@
   function b64enc(str) { return btoa(unescape(encodeURIComponent(str))); }
   function b64dec(b64) { return decodeURIComponent(escape(atob(b64.replace(/\n/g, '')))); }
   function assertCfg(c) { if (!c.owner || !c.repo || !c.token) throw new Error('Falta configurar owner, repo y token.'); }
+  // Error legible: los 401/403 de GitHub casi siempre son del token, no de la app.
+  async function errGithub(res) {
+    if (res.status === 401) return new Error('GitHub rechazó el token (401): está mal copiado, vencido o revocado.');
+    if (res.status === 403) return new Error('el token no tiene permiso de escritura sobre este repo (403). En GitHub, edita el token y deja Contents en "Read and write" y el repo incluido en "Repository access".');
+    return new Error('GitHub ' + res.status + ' — ' + (await res.text()).slice(0, 160));
+  }
 
   async function currentSha(c) {
     const res = await fetch(getUrl(c), { headers: headers(c) });
     if (res.status === 404) return null;
-    if (!res.ok) throw new Error('GitHub ' + res.status + ' — ' + (await res.text()).slice(0, 140));
+    if (!res.ok) throw await errGithub(res);
     return (await res.json()).sha;
   }
 
@@ -37,7 +43,7 @@
     const c = cfg(); assertCfg(c);
     const res = await fetch(getUrl(c), { headers: headers(c) });
     if (res.status === 404) return { songs: {}, empty: true };
-    if (!res.ok) throw new Error('GitHub ' + res.status + ' — ' + (await res.text()).slice(0, 140));
+    if (!res.ok) throw await errGithub(res);
     const data = await res.json();
     const parsed = JSON.parse(b64dec(data.content));
     // Un archivo viejo es el objeto de canciones pelado; uno nuevo trae
@@ -63,7 +69,7 @@
     };
     if (sha) body.sha = sha;
     const res = await fetch(putUrl(c), { method: 'PUT', headers: headers(c), body: JSON.stringify(body) });
-    if (!res.ok) throw new Error('GitHub ' + res.status + ' — ' + (await res.text()).slice(0, 180));
+    if (!res.ok) throw await errGithub(res);
     return await res.json();
   }
 
@@ -77,7 +83,7 @@
     const url = fileUrl(c, p) + '?ref=' + encodeURIComponent(branch(c));
     const res = await fetch(url, { headers: headers(c), cache: 'no-store' });
     if (res.status === 404) { const e = new Error('no está en el repo (' + p + ')'); e.notFound = true; throw e; }
-    if (!res.ok) throw new Error('GitHub ' + res.status + ' — ' + (await res.text()).slice(0, 140));
+    if (!res.ok) throw await errGithub(res);
     const data = await res.json();
     if (data.content) return { text: b64dec(data.content), sha: data.sha };
     // sobre 1 MB la API no manda el contenido en línea: se pide crudo
@@ -91,7 +97,7 @@
     if (sha) body.sha = sha;
     const res = await fetch(fileUrl(c, p), { method: 'PUT', headers: headers(c), body: JSON.stringify(body) });
     if (res.status === 409) throw new Error('el archivo cambió en el repo mientras editabas; recarga y vuelve a intentar');
-    if (!res.ok) throw new Error('GitHub ' + res.status + ' — ' + (await res.text()).slice(0, 180));
+    if (!res.ok) throw await errGithub(res);
     return await res.json();
   }
 
