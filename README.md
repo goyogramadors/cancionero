@@ -64,6 +64,14 @@ de `/cancionero/`, así que no hay riesgo de que alguien le corte el último tra
 caiga en el cancionero personal. Se instala igual (PWA, offline). Detalle de por qué es un repo
 aparte y cómo agregar o sacar ejercicios en `app/ARQUITECTURA.md` → "Canta para alumnos".
 
+### Corregir la melodía (plataformas)
+
+En la pantalla de cantar, **Editar plataformas** abre el editor (rango de ~3 octavas, suena la nota
+al tomar o mover una plataforma). Lo que corriges queda guardado **en ese dispositivo**. Para que
+quede **para todos** (también en el sitio de alumnos), en tu sitio personal aprieta **Publicar para
+todos**: escribe la corrección directo en el paquete del repo y se ve en 1–2 minutos. Requiere el
+token de **Ajustes → Sincronizar con GitHub** (el mismo de arriba).
+
 ## Estado actual (2026-08-08)
 
 - **Construcción iniciada (Fase 1 lista).** La app real vive en `app/` — arquitectura extensible,

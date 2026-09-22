@@ -67,5 +67,33 @@
     return await res.json();
   }
 
-  SB.github = { cfg, setCfg, pull, push, configured() { const c = cfg(); return !!(c.owner && c.repo && c.token); } };
+  // Leer/escribir un archivo cualquiera del repo (p.ej. el canta.json de un
+  // paquete, para publicar plataformas corregidas desde la app).
+  function fileUrl(c, p) {
+    return `https://api.github.com/repos/${c.owner}/${c.repo}/contents/${p.split('/').map(encodeURIComponent).join('/')}`;
+  }
+  async function getFile(p) {
+    const c = cfg(); assertCfg(c);
+    const url = fileUrl(c, p) + '?ref=' + encodeURIComponent(branch(c));
+    const res = await fetch(url, { headers: headers(c), cache: 'no-store' });
+    if (res.status === 404) throw new Error('no está en el repo (' + p + ')');
+    if (!res.ok) throw new Error('GitHub ' + res.status + ' — ' + (await res.text()).slice(0, 140));
+    const data = await res.json();
+    if (data.content) return { text: b64dec(data.content), sha: data.sha };
+    // sobre 1 MB la API no manda el contenido en línea: se pide crudo
+    const raw = await fetch(url, { headers: Object.assign(headers(c), { Accept: 'application/vnd.github.raw' }), cache: 'no-store' });
+    if (!raw.ok) throw new Error('GitHub ' + raw.status + ' al leer ' + p);
+    return { text: await raw.text(), sha: data.sha };
+  }
+  async function putFile(p, text, sha, message) {
+    const c = cfg(); assertCfg(c);
+    const body = { message: message, content: b64enc(text), branch: branch(c) };
+    if (sha) body.sha = sha;
+    const res = await fetch(fileUrl(c, p), { method: 'PUT', headers: headers(c), body: JSON.stringify(body) });
+    if (res.status === 409) throw new Error('el archivo cambió en el repo mientras editabas; recarga y vuelve a intentar');
+    if (!res.ok) throw new Error('GitHub ' + res.status + ' — ' + (await res.text()).slice(0, 180));
+    return await res.json();
+  }
+
+  SB.github = { cfg, setCfg, pull, push, getFile, putFile, configured() { const c = cfg(); return !!(c.owner && c.repo && c.token); } };
 })();
