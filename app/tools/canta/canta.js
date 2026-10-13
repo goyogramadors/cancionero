@@ -1932,7 +1932,7 @@
       ordenarNotas();
       selSolo(n);
       S.arrastre = { tipo: 'fin', nota: n, px0: px, py0: py,
-                     s0: n.s, e0: n.e, m0: n.m, movio: true, nueva: true,
+                     s0: n.s, e0: n.e, m0: n.m, movio: false, nueva: true,
                      ultimoSonido: m };
       tonoIniciar(m + G.semis);
     }
@@ -1981,9 +1981,18 @@
     tonoParar();
     var A = S.arrastre;
     if (!S.editando || !A) return;
+    // el navegador agrupa los pointermove por cuadro: aplica la posición final,
+    // o un arrastre corto y rápido se toma por un toque
+    if (ev.type === 'pointerup') edPointerMove(ev);
     S.arrastre = null;
     // un toque sin arrastre sobre el vacío no debe dejar una plataforma diminuta
-    if (A.nueva && !A.movio) borrarSel(true);
+    if (A.nueva && !A.movio) {
+      // tocar el vacío sin arrastrar no crea nada (solo suelta la selección):
+      // se crea arrastrando. Se descarta también el paso de deshacer.
+      borrarSel(true);
+      if (S.edPila && S.edPila.length) S.edPila.pop();
+      var bu = q('#kaEdUndo'); if (bu) bu.disabled = !(S.edPila && S.edPila.length);
+    }
     else if (A.tipo === 'grupo' && !A.movio && A.soloEsta) selSolo(A.soloEsta);
     else { ordenarNotas(); guardarNotas(); }
     resetRunFrom(E().position() - S.cfg.latency);
