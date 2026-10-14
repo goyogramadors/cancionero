@@ -83,6 +83,9 @@ elegidas y **Ctrl+V** las pega a partir del cabezal (ubícalo antes con la barra
 pegado queda elegido para arrastrarlo en bloque. También hay botones **Copiar/Pegar**, **Supr**
 borra las elegidas y **Ctrl+Z** deshace.
 
+Una plataforma nueva se crea **arrastrando** en el vacío; un toque suelto en el vacío no crea nada,
+solo suelta la selección.
+
 ## Estado actual (2026-08-08)
 
 - **Construcción iniciada (Fase 1 lista).** La app real vive en `app/` — arquitectura extensible,
