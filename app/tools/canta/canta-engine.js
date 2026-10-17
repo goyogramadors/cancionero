@@ -525,7 +525,9 @@
     opts = opts || {};
     var nClics = opts.clics || 8;
     var paso = opts.intervalo || 0.8;
-    var preparacion = opts.preparacion != null ? opts.preparacion : 1.2;
+    // 3 s de cuenta regresiva: entre apretar "Iniciar" y estar listo para la
+    // primera palmada siempre pasa un momento
+    var preparacion = opts.preparacion != null ? opts.preparacion : 3;
     var stream = opts.stream;
     if (!stream) return Promise.reject(new Error('sin micrófono'));
 
@@ -564,7 +566,7 @@
       var avisar = opts.onTick;
       var timer = avisar && setInterval(function () {
         var n = Math.floor((c.currentTime - t0) / paso) + 1;
-        avisar(Math.max(0, Math.min(nClics, n)), nClics);
+        avisar(Math.max(0, Math.min(nClics, n)), nClics, t0 - c.currentTime);
       }, 60);
       setTimeout(function () {
         if (timer) clearInterval(timer);

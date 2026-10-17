@@ -678,25 +678,40 @@
       if (!calBox.hidden) { calCerrar(); return; }
       calBox.hidden = false; calUsar.hidden = true; calMedida = null;
       calNum.textContent = '—';
-      calTxt.textContent = S.micMode === 'mic'
-        ? 'Van a sonar 8 clics. Da una palmada justo con cada uno, cerca del micrófono.'
-        : 'Necesito el micrófono: pon "Escucha" en Mic y vuelve.';
-      calGo.disabled = S.micMode !== 'mic';
+      calTxt.textContent = 'Van a sonar 8 clics. Da una palmada justo con cada uno, cerca del micrófono.';
+      calGo.disabled = false;
     });
     q('#kaCalCerrar').addEventListener('click', calCerrar);
 
     calGo.addEventListener('click', async function () {
-      var stream = SB.cantaPitch.stream();
-      if (!stream) { calTxt.textContent = 'No encuentro el micrófono. Pon "Escucha" en Mic.'; return; }
+      // Micrófono PROPIO y crudo, sin cancelación de eco: la del canto atenúa
+      // todo lo que entra mientras suena el parlante, y las palmadas caen justo
+      // encima de cada clic. En el computador se las comía; en el celular no.
+      if (calGo.disabled) return;
+      calGo.disabled = true; // antes del await: un doble clic lanzaba dos pruebas superpuestas
+      var stream = null;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+        });
+      } catch (e) {
+        calTxt.textContent = 'No pude abrir el micrófono: ' + e.message;
+        calGo.disabled = false;
+        return;
+      }
       E().pause(); updatePlayBtn();
       calGo.disabled = true; calUsar.hidden = true; calMedida = null;
-      calTxt.textContent = 'Prepárate…';
       try {
         var r = await E().pruebaLatencia({
           stream: stream, clics: 8, intervalo: 0.8,
-          onTick: function (n, total) {
-            calNum.textContent = n > 0 ? n + ' / ' + total : '…';
-            if (n > 0) calTxt.textContent = '¡Palmada con cada clic!';
+          onTick: function (n, total, faltan) {
+            if (n > 0) {
+              calNum.textContent = n + ' / ' + total;
+              calTxt.textContent = '¡Palmada con cada clic!';
+            } else {
+              calNum.textContent = String(Math.max(1, Math.ceil(faltan)));
+              calTxt.textContent = 'Prepárate: la primera palmada va con el primer clic.';
+            }
           }
         });
         calNum.textContent = '—';
@@ -717,6 +732,7 @@
       } catch (e) {
         calTxt.textContent = 'No pude hacer la prueba: ' + e.message;
       }
+      stream.getTracks().forEach(function (t) { t.stop(); });
       calGo.disabled = false;
     });
 
