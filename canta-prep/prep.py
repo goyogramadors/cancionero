@@ -866,18 +866,21 @@ def main():
 
         # Letra de referencia (LRCLIB): si aparece, trae ademas el titulo y el
         # artista reales, que el titulo de YouTube suele traer sucios.
-        ref = None
+        refs, ref = [], None
         if not args.sin_letra:
             import letra_web
             consulta = (args.title + (' - ' + args.artist if args.artist else '')
                         if args.title else meta['title'])
-            ref = letra_web.buscar(consulta, duracion)
-            if ref:
-                print('      letra de referencia: LRCLIB, %s, %d lineas (%s - %s)'
-                      % ('sincronizada' if ref['sincronizada'] else 'sin tiempos',
-                         len(ref['versos']), ref['track'], ref['artist']))
+            refs = letra_web.buscar(consulta, duracion)
+            if refs:
+                print('      letra de referencia: %d candidata(s) en LRCLIB; se elige la que '
+                      'mas calce con lo que oiga Whisper' % len(refs))
             else:
                 print('      letra de referencia: no encontrada; la letra sera la que oiga Whisper.')
+            # El titulo/artista de LRCLIB se usa de entrada solo si la candidata es
+            # de la misma duracion (casi seguro la misma grabacion)
+            if refs and refs[0]['cob_min'] == letra_web.MIN_COBERTURA:
+                ref = refs[0]
 
         titulo = args.title or (ref and ref['track']) or meta['title']
         if args.artist is not None:
@@ -913,15 +916,20 @@ def main():
             with Etapa(3, 6, 'Transcribiendo letra (Whisper %s)' % args.model):
                 lines, lang = transcribir(vocals_wav, args.model, args.language)
                 print('      lineas de letra: %d' % len(lines))
-                if ref:
-                    alineadas, cob = letra_web.alinear(ref['versos'], lines, duracion)
-                    if cob >= letra_web.MIN_COBERTURA:
+                if refs:
+                    elegida, alineadas, cob = letra_web.elegir(refs, lines, duracion)
+                    if elegida:
                         lines, fuente_letra = alineadas, 'lrclib'
-                        print('      letra alineada con LRCLIB: %d lineas, Whisper confirmo el '
-                              '%.0f%% de las palabras' % (len(lines), cob * 100))
+                        if not args.title:
+                            titulo = elegida['track'] or titulo
+                        if args.artist is None:
+                            artista = elegida['artist'] or artista
+                        print('      letra alineada con LRCLIB (%s - %s): %d lineas, Whisper '
+                              'confirmo el %.0f%% de las palabras'
+                              % (elegida['track'], elegida['artist'], len(lines), cob * 100))
                     else:
-                        print('      AVISO: Whisper solo confirmo el %.0f%% de la letra de '
-                              'LRCLIB (otra version?); se usa la de Whisper.' % (cob * 100))
+                        print('      AVISO: ninguna letra de LRCLIB calza (la mejor: %.0f%%); '
+                              'se usa la de Whisper.' % (cob * 100))
                 if not lines:
                     print('      AVISO: no se detecto letra; el paquete queda sin lines.')
 
