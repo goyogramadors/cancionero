@@ -857,8 +857,26 @@ def main():
             duracion = duracion_wav(wav)
             print('      duracion: %.1f s' % duracion)
 
-        titulo = args.title or meta['title']
-        artista = args.artist if args.artist is not None else meta['artist']
+        # Letra de referencia (LRCLIB): si aparece, trae ademas el titulo y el
+        # artista reales, que el titulo de YouTube suele traer sucios.
+        ref = None
+        if not args.sin_letra:
+            import letra_web
+            consulta = (args.title + (' - ' + args.artist if args.artist else '')
+                        if args.title else meta['title'])
+            ref = letra_web.buscar(consulta, duracion)
+            if ref:
+                print('      letra de referencia: LRCLIB, %s, %d lineas (%s - %s)'
+                      % ('sincronizada' if ref['sincronizada'] else 'sin tiempos',
+                         len(ref['versos']), ref['track'], ref['artist']))
+            else:
+                print('      letra de referencia: no encontrada; la letra sera la que oiga Whisper.')
+
+        titulo = args.title or (ref and ref['track']) or meta['title']
+        if args.artist is not None:
+            artista = args.artist
+        else:
+            artista = (ref and ref['artist']) or meta['artist']
         ident = slugificar(titulo)
         print('Cancion: %s%s  (id: %s)' % (titulo, ' - ' + artista if artista else '', ident))
 
@@ -878,6 +896,7 @@ def main():
                 vocals_wav, music_wav = separar_voz(wav, workdir)
             melodia_desde = vocals_wav
 
+        fuente_letra = None if args.sin_letra else 'whisper'
         if args.sin_letra:
             # Un vocalizo o un ejercicio de afinacion no tiene palabras: dejar que
             # Whisper lo intente solo produce letra inventada, ademas de tardar.
@@ -887,6 +906,15 @@ def main():
             with Etapa(3, 6, 'Transcribiendo letra (Whisper %s)' % args.model):
                 lines, lang = transcribir(vocals_wav, args.model, args.language)
                 print('      lineas de letra: %d' % len(lines))
+                if ref:
+                    alineadas, cob = letra_web.alinear(ref['versos'], lines, duracion)
+                    if cob >= letra_web.MIN_COBERTURA:
+                        lines, fuente_letra = alineadas, 'lrclib'
+                        print('      letra alineada con LRCLIB: %d lineas, Whisper confirmo el '
+                              '%.0f%% de las palabras' % (len(lines), cob * 100))
+                    else:
+                        print('      AVISO: Whisper solo confirmo el %.0f%% de la letra de '
+                              'LRCLIB (otra version?); se usa la de Whisper.' % (cob * 100))
                 if not lines:
                     print('      AVISO: no se detecto letra; el paquete queda sin lines.')
 
@@ -915,6 +943,7 @@ def main():
                 'duration': round(duracion, 2),
                 'key': tonalidad,
                 'lang': lang,
+                'letra_fuente': fuente_letra,   # 'lrclib' | 'whisper' | None
                 'files': {'vocals': 'vocals.m4a', 'music': 'music.m4a'},
                 # marca el paquete como ejercicio: su pista de voz es muda y la
                 # melodia sale del instrumental. --remelodia necesita saberlo o

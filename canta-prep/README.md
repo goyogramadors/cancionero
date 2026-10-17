@@ -92,6 +92,27 @@ archivo). Otras opciones:
 - `--out <carpeta>` — dónde dejar el paquete (default `../app/canta-media`).
 - `--keep-work` — conserva la carpeta temporal de trabajo (para depurar).
 
+### Letra de referencia automática (LRCLIB)
+
+Antes de transcribir, el preparador busca la letra en **LRCLIB** (lrclib.net,
+una base abierta de letras con API pública) usando el título del video, y se
+queda con la versión que **dura lo mismo** que el audio (±8 s), prefiriendo la
+sincronizada. Si la encuentra:
+
+- el **texto y los cortes de línea** salen de esa letra (Whisper ya no
+  inventa palabras), y los **tiempos** salen de lo que Whisper oyó en nuestro
+  audio — con el mismo alineador de `ajustar-letra`;
+- el **título y el artista** salen de LRCLIB, no del título sucio del video.
+
+Si Whisper confirma menos del 25 % de las palabras (otra versión de la
+canción), se descarta y queda la transcripción de Whisper. Sin red o sin
+resultado, todo sigue como antes. El `canta.json` anota de dónde salió la
+letra en `letra_fuente` (`lrclib` o `whisper`).
+
+¿Por qué no letras.com? Bloquea el acceso automatizado (HTTP 403), y no
+corresponde saltarse ese bloqueo. Si LRCLIB no tiene la canción, pega la letra
+de donde quieras con `ajustar-letra` (abajo).
+
 ### Corregir la letra a mano
 
 Whisper acierta los **tiempos** pero se equivoca en las **palabras**, sobre todo
