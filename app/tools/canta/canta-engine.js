@@ -146,6 +146,22 @@
 
   /* ================= carga de paquetes ================= */
   // Safari < 14 (iPhone viejo) no tiene Blob.arrayBuffer()/text() y su
+  // Una toma es UN micrófono: se escucha al centro. Algunos drivers (Realtek
+  // por el jack del notebook) la entregan como estéreo con la voz solo en un
+  // canal y el otro vacío, y se oía por un solo lado del audífono. Si un canal
+  // casi no tiene señal se usa el otro; si los dos la tienen, se promedian.
+  // Un buffer mono, Web Audio lo reparte igual a los dos lados.
+  function monoCentrado(buf) {
+    if (buf.numberOfChannels < 2) return buf;
+    var L = buf.getChannelData(0), R = buf.getChannelData(1), eL = 0, eR = 0, i;
+    for (i = 0; i < L.length; i += 16) { eL += L[i] * L[i]; eR += R[i] * R[i]; }
+    var out = ctx().createBuffer(1, buf.length, buf.sampleRate), m = out.getChannelData(0);
+    if (eR < eL * 0.05) m.set(L);
+    else if (eL < eR * 0.05) m.set(R);
+    else for (i = 0; i < m.length; i++) m[i] = 0.5 * (L[i] + R[i]);
+    return out;
+  }
+
   // decodeAudioData solo acepta callbacks (sin promesa).
   function leerBlob(blob, como) {
     // navegadores modernos: el camino nativo de siempre
@@ -806,13 +822,13 @@
     takePut: takePut, takeList: takeList, takeGet: takeGet, takeDelete: takeDelete,
     decodeBlob: decodeBlob, alinearToma: alinearToma,
     recSoportado: recSoportado, recStart: recStart, recStop: recStop, recActivo: recActivo,
-    pruebaLatencia: pruebaLatencia, _analizarGolpes: analizarGolpes,
+    pruebaLatencia: pruebaLatencia, _analizarGolpes: analizarGolpes, _monoCentrado: monoCentrado,
     // Monta (o quita) la voz grabada como tercera pista. offset en segundos:
     // positivo = la toma se adelanta, para descontar la latencia de captura.
     setMine: function (buffer, offset) {
       var sonaba = St.playing, pos = position();
       if (sonaba) pause();
-      St.mine = buffer || null;
+      St.mine = buffer ? monoCentrado(buffer) : null;
       St.mineOff = offset || 0;
       if (sonaba) play(pos);
     },
