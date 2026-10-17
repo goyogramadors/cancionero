@@ -534,8 +534,7 @@
       if (!cur || cur.id !== id) {
         if (id === 'demo-estrellita') E().buildDemo();
         else {
-          try { await E().loadSaved(id); }
-          catch (e) { await E().loadFromServer(id); }
+          await E().loadFresh(id);
         }
       }
       if (mySeq !== S.mountSeq) return;

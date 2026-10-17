@@ -253,6 +253,29 @@
     return usePackage(rec.json, rec.vocals, rec.music);
   }
 
+  // Abre una canción con la versión MÁS NUEVA. Antes se prefería la copia del
+  // navegador y, como la primera carga la guarda, una canción ya abierta nunca
+  // volvía a pedir la del servidor: un paquete republicado (melodía corregida,
+  // mejor calidad) no llegaba jamás. Ahora se pregunta al servidor (solo el
+  // canta.json, que es liviano); si no cambió se reusa el audio guardado, y sin
+  // red —o si es una carpeta importada que el servidor no tiene— vale la copia.
+  async function loadFresh(id) {
+    var rec = null, json = null;
+    try { rec = await idbGet(id); } catch (e) {}
+    try {
+      var r = await fetch(MEDIA_BASE + id + '/canta.json', { cache: 'no-cache' });
+      if (r.ok) json = await r.json();
+    } catch (e) { /* sin red: vale la copia */ }
+    if (json && validPkg(json)) {
+      if (rec && JSON.stringify(rec.json) === JSON.stringify(json)) {
+        return usePackage(rec.json, rec.vocals, rec.music);
+      }
+      return loadFromServer(id);
+    }
+    if (rec) return usePackage(rec.json, rec.vocals, rec.music);
+    throw new Error('No se encontró el paquete "' + id + '"');
+  }
+
   // files: lista de File con webkitRelativePath (input) o [{name, file}] plano
   // Devuelve los paquetes válidos encontrados y los guarda en IndexedDB.
   async function importFiles(fileList) {
@@ -762,6 +785,7 @@
     },
     loadFromServer: loadFromServer,
     loadSaved: loadSaved,
+    loadFresh: loadFresh,
     importFiles: importFiles,
     importDirHandle: importDirHandle,
     deleteSaved: idbDelete,
