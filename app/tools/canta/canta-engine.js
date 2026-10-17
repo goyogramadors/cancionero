@@ -145,9 +145,23 @@
   }
 
   /* ================= carga de paquetes ================= */
-  async function decodeBlob(blob) {
-    var ab = await blob.arrayBuffer();
-    return await ctx().decodeAudioData(ab);
+  // Safari < 14 (iPhone viejo) no tiene Blob.arrayBuffer()/text() y su
+  // decodeAudioData solo acepta callbacks (sin promesa).
+  function leerBlob(blob, como) {
+    return new Promise(function (res, rej) {
+      var fr = new FileReader();
+      fr.onload = function () { res(fr.result); };
+      fr.onerror = function () { rej(fr.error); };
+      if (como === 'text') fr.readAsText(blob); else fr.readAsArrayBuffer(blob);
+    });
+  }
+  function decodeBlob(blob) {
+    return leerBlob(blob).then(function (ab) {
+      return new Promise(function (res, rej) {
+        var p = ctx().decodeAudioData(ab, res, rej);
+        if (p && p.then) p.then(res, rej);
+      });
+    });
   }
 
   // Recompone una toma en el tiempo de la CANCION.
@@ -255,7 +269,7 @@
       var files = byDir[d];
       if (!files['canta.json']) continue;
       try {
-        var json = JSON.parse(await files['canta.json'].text());
+        var json = JSON.parse(await leerBlob(files['canta.json'], 'text'));
         if (!validPkg(json)) continue; // no persistir paquetes corruptos
         var v = files[json.files.vocals], m = files[json.files.music];
         if (!v || !m) continue;
