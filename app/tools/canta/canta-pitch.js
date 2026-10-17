@@ -219,9 +219,14 @@
       // Cancelación de eco: SÍ con parlantes (si no, la app se escucha a sí
       // misma), pero NO con audífonos — el cancelador atenúa el micrófono cada
       // vez que suena la música, y eso corta la voz a pedazos.
+      // En iPhone/iPad la cancelación de eco activa el modo de llamada de iOS:
+      // la reproducción se comprime y suena saturada. Ahí va siempre apagada
+      // (con parlante, la música se cuela al micrófono: mejor audífonos).
       opts = opts || {};
+      var esIOS = /iP(hone|ad|od)/.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
       var audio = {
-        echoCancellation: !opts.audifonos,
+        echoCancellation: !opts.audifonos && !esIOS,
         noiseSuppression: false,
         autoGainControl: false,
         channelCount: 1
