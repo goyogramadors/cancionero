@@ -877,18 +877,20 @@ def main():
                       'mas calce con lo que oiga Whisper' % len(refs))
             else:
                 print('      letra de referencia: no encontrada; la letra sera la que oiga Whisper.')
-            # El titulo/artista de LRCLIB se usa de entrada solo si la candidata es
-            # de la misma duracion (casi seguro la misma grabacion)
-            if refs and refs[0]['cob_min'] == letra_web.MIN_COBERTURA:
-                ref = refs[0]
 
-        titulo = args.title or (ref and ref['track']) or meta['title']
+        # Titulo y artista: de entrada, los del video ("Artista - Cancion" es la
+        # convencion de YouTube; el uploader casi nunca es el artista). Los de
+        # LRCLIB se adoptan recien cuando su letra CALZO con lo cantado: antes se
+        # tomaban de la primera candidata y "Manu Chao - La Despedida" quedo como
+        # "Manu Chao" de Les Wampas, otra cancion con ese nombre.
+        titulo, artista = meta['title'], meta['artist']
+        if args.url:
+            import letra_web as _lw
+            cancion, interprete = _lw.separar_titulo(meta['title'])
+            titulo, artista = cancion, interprete or artista
+        titulo = args.title or titulo
         if args.artist is not None:
             artista = args.artist
-        else:
-            artista = (ref and ref['artist']) or meta['artist']
-        ident = slugificar(titulo)
-        print('Cancion: %s%s  (id: %s)' % (titulo, ' - ' + artista if artista else '', ident))
 
         if args.ejercicio:
             # Un vocalizo es el piano tocando la secuencia para que TU cantes
@@ -932,6 +934,10 @@ def main():
                               'se usa la de Whisper.' % (cob * 100))
                 if not lines:
                     print('      AVISO: no se detecto letra; el paquete queda sin lines.')
+
+        # recien aqui el titulo es definitivo (puede venir de la letra que calzo)
+        ident = slugificar(titulo)
+        print('Cancion: %s%s  (id: %s)' % (titulo, ' - ' + artista if artista else '', ident))
 
         with Etapa(4, 6, 'Extrayendo melodia (pyin y crepe)'):
             # En un ejercicio no hay separacion, asi que tampoco hay con que

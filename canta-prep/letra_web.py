@@ -34,6 +34,16 @@ RUIDO = re.compile(r'\[[^\]]*\]|\([^)]*\)|\|.*$|\b(letra|lyrics?|video oficial|'
 LRC = re.compile(r'\[(\d+):(\d+(?:\.\d+)?)\]')
 
 
+def separar_titulo(titulo):
+    """'Manu Chao - La Despedida (HQ)' -> ('La Despedida', 'Manu Chao').
+    Convencion de YouTube: "Artista - Cancion". Sin guion: (titulo limpio, None)."""
+    limpio = re.sub(r'\s+', ' ', RUIDO.sub(' ', titulo)).strip(' -–—')
+    partes = [p.strip() for p in re.split(r'\s[-–—]\s', limpio) if p.strip()]
+    if len(partes) >= 2:
+        return partes[1], partes[0]
+    return limpio or titulo, None
+
+
 def candidatos(titulo):
     """'CANCION - Artista [Full HD] | Letra' -> busquedas a probar, en orden."""
     limpio = re.sub(r'\s+', ' ', RUIDO.sub(' ', titulo)).strip(' -–—')
@@ -206,6 +216,9 @@ if __name__ == '__main__':
     c = candidatos('MI CANCION DE PRUEBA - Artista Uno [Full HD] | Letra')
     assert c[0] == {'track_name': 'MI CANCION DE PRUEBA', 'artist_name': 'Artista Uno'}, c
     assert c[-1] == {'q': 'MI CANCION DE PRUEBA - Artista Uno'}, c
+
+    assert separar_titulo('Artista Dos - Mi Cancion (HQ)') == ('Mi Cancion', 'Artista Dos')
+    assert separar_titulo('Solo Titulo [Letra]') == ('Solo Titulo', None)
 
     v = versos_lrc('[00:10.00] uno dos tres\n[00:20.00][00:40.00] coro coro\n[00:30.00] cuatro cinco')
     assert v == ['uno dos tres', 'coro coro', 'cuatro cinco', 'coro coro'], v
