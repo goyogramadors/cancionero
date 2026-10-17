@@ -27,6 +27,8 @@
     tempo: 1, semis: 0,
     vols: { vocals: 0.6, music: 1.0, mine: 1.0 },
     mine: null,           // AudioBuffer de la toma cargada (o null)
+    fx: { comp: 0.5, brillo: 0.4, reverb: 0.25 },   // filtros de estudio de tu voz (0..1)
+    fxNodes: null,
     mineOff: 0,           // s: corrimiento por la latencia de captura
     gains: null, srcs: null,
     playing: false, t0: 0, posPaused: 0,
@@ -702,10 +704,54 @@
     if (St.gains) return;
     var c = ctx();
     St.gains = { vocals: c.createGain(), music: c.createGain(), mine: c.createGain() };
-    ['vocals', 'music', 'mine'].forEach(function (k) {
-      St.gains[k].gain.value = St.vols[k];
-      St.gains[k].connect(c.destination);
-    });
+    ['vocals', 'music', 'mine'].forEach(function (k) { St.gains[k].gain.value = St.vols[k]; });
+    St.gains.vocals.connect(c.destination);
+    St.gains.music.connect(c.destination);
+    St.gains.mine.connect(cadenaVoz(c));   // tu voz pasa por los filtros de estudio
+  }
+
+  // Cadena tipica de voz de estudio, solo para TU grabacion (la cancion no pasa
+  // por aqui): corte de graves -> compresion -> brillo -> reverb.
+  //   corte de graves (fijo, 90 Hz): saca retumbe y golpes del microfono
+  //   compresion: empareja lo fuerte y lo suave; la voz queda pareja y adelante
+  //   brillo: presencia (~3.5 kHz) y aire (~10 kHz), da claridad
+  //   reverb: la sensacion de sala, mezclada con la voz seca
+  function cadenaVoz(c) {
+    var hp = c.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 90; hp.Q.value = 0.7;
+    var comp = c.createDynamicsCompressor();
+    comp.knee.value = 12; comp.attack.value = 0.005; comp.release.value = 0.18;
+    var makeup = c.createGain();
+    var pres = c.createBiquadFilter(); pres.type = 'peaking'; pres.frequency.value = 3500; pres.Q.value = 0.9;
+    var aire = c.createBiquadFilter(); aire.type = 'highshelf'; aire.frequency.value = 10000;
+    var conv = c.createConvolver(), mojado = c.createGain();
+    conv.buffer = impulsoSala(c, 2.2);
+    hp.connect(comp); comp.connect(makeup); makeup.connect(pres); pres.connect(aire);
+    aire.connect(c.destination);                       // seco
+    aire.connect(conv); conv.connect(mojado); mojado.connect(c.destination);   // sala
+    St.fxNodes = { comp: comp, makeup: makeup, pres: pres, aire: aire, mojado: mojado };
+    aplicarFx();
+    return hp;
+  }
+  function aplicarFx() {
+    var n = St.fxNodes, f = St.fx;
+    if (!n) return;
+    n.comp.threshold.value = -6 - 30 * f.comp;       // mas compresion: actua antes...
+    n.comp.ratio.value = 1 + 7 * f.comp;              // ...y aprieta mas
+    n.makeup.gain.value = Math.pow(10, 8 * f.comp / 20);   // recupera el volumen que baja
+    n.pres.gain.value = 5 * f.brillo;                 // hasta +5 dB de presencia
+    n.aire.gain.value = 6 * f.brillo;                 // hasta +6 dB de aire
+    n.mojado.gain.value = 0.7 * f.reverb;
+  }
+  // Respuesta de una sala: ruido que se apaga en ~2 s, con 20 ms de pre-retardo
+  // (asi la voz se escucha primero y la sala despues, como en un estudio).
+  function impulsoSala(c, seg) {
+    var sr = c.sampleRate, n = Math.floor(sr * seg), pre = Math.floor(sr * 0.02);
+    var b = c.createBuffer(2, n, sr);
+    for (var ch = 0; ch < 2; ch++) {
+      var d = b.getChannelData(ch);
+      for (var i = pre; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - (i - pre) / (n - pre), 3);
+    }
+    return b;
   }
 
   function duration() { return St.buffers ? St.buffers.vocals.duration : 0; }
@@ -817,6 +863,8 @@
     position: position, duration: duration,
     tempo: function () { return St.tempo; }, semis: function () { return St.semis; },
     setVol: setVol, vols: function () { return St.vols; },
+    setFx: function (f) { Object.assign(St.fx, f); aplicarFx(); },
+    fx: function () { return St.fx; },
     setOnEnded: function (fn) { St.onEnded = fn; },
     // tomas del usuario
     takePut: takePut, takeList: takeList, takeGet: takeGet, takeDelete: takeDelete,

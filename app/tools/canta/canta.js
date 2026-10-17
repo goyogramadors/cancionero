@@ -58,7 +58,7 @@
 
   /* ---------------- configuración ---------------- */
   function loadCfg() {
-    var d = { volV: 0.6, volM: 1.0, volMine: 1.0, latency: 0.1, octaveFree: true, latin: true,
+    var d = { fx: { comp: 0.5, brillo: 0.4, reverb: 0.25 }, volV: 0.6, volM: 1.0, volMine: 1.0, latency: 0.1, octaveFree: true, latin: true,
               micDev: null, audifonos: false, antiguo: false, grabar: true, nivel: 'recreativo' };
     try { Object.assign(d, JSON.parse(localStorage.getItem(CFGKEY) || '{}')); } catch (e) {}
     return d;
@@ -744,7 +744,13 @@
       '<div class="ctl"><span class="ctl-label">Voz</span><input type="range" id="kaVolV" min="0" max="130" aria-label="Volumen voz"></div>' +
       '<div class="ctl"><span class="ctl-label">Música</span><input type="range" id="kaVolM" min="0" max="130" aria-label="Volumen música"></div>' +
       '<div class="ctl" id="kaMineWrap" hidden><span class="ctl-label" title="Tu propia grabación, para compararte con el original">Mi voz</span>' +
-      '<input type="range" id="kaVolMine" min="0" max="130" aria-label="Volumen de tu voz"></div>' +
+      '<input type="range" id="kaVolMine" min="0" max="130" aria-label="Volumen de tu voz">' +
+      '<span class="ctl-label" title="Empareja lo fuerte y lo suave: la voz queda pareja y más adelante">Compresión</span>' +
+      '<input type="range" id="kaFxComp" min="0" max="100" aria-label="Compresión de tu voz">' +
+      '<span class="ctl-label" title="Realza la presencia y el aire: más claridad">Brillo</span>' +
+      '<input type="range" id="kaFxBri" min="0" max="100" aria-label="Brillo de tu voz">' +
+      '<span class="ctl-label" title="Sensación de sala, como en un estudio">Reverb</span>' +
+      '<input type="range" id="kaFxRev" min="0" max="100" aria-label="Reverb de tu voz"></div>' +
       '<div class="ctl"><span class="ctl-label" title="Cada clic sube o baja medio tono (un semitono); se muestra en tonos">Tono</span><div class="stepper">' +
       '<button id="kaSemD" aria-label="Bajar medio tono">−</button><span class="val" id="kaSem">0</span><button id="kaSemU" aria-label="Subir medio tono">+</button></div></div>' +
       '<div class="ctl"><span class="ctl-label">Velocidad</span><div class="stepper">' +
@@ -806,6 +812,18 @@
     var volMine = q('#kaVolMine');
     volMine.value = Math.round((S.cfg.volMine != null ? S.cfg.volMine : 1) * 100);
     E().setVol('mine', S.cfg.volMine != null ? S.cfg.volMine : 1);
+    // filtros de estudio para tu voz grabada (corte de graves fijo + estos tres)
+    var fx = S.cfg.fx || (S.cfg.fx = { comp: 0.5, brillo: 0.4, reverb: 0.25 });
+    E().setFx(fx);
+    [['#kaFxComp', 'comp'], ['#kaFxBri', 'brillo'], ['#kaFxRev', 'reverb']].forEach(function (par) {
+      var el = q(par[0]);
+      el.value = Math.round((fx[par[1]] != null ? fx[par[1]] : 0) * 100);
+      el.addEventListener('input', function () {
+        fx[par[1]] = +this.value / 100;
+        var cambio = {}; cambio[par[1]] = fx[par[1]];
+        E().setFx(cambio); saveCfg();
+      });
+    });
     volMine.addEventListener('input', function () {
       S.cfg.volMine = +this.value / 100; E().setVol('mine', S.cfg.volMine); saveCfg();
     });
