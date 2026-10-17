@@ -148,6 +148,9 @@
   // Safari < 14 (iPhone viejo) no tiene Blob.arrayBuffer()/text() y su
   // decodeAudioData solo acepta callbacks (sin promesa).
   function leerBlob(blob, como) {
+    // navegadores modernos: el camino nativo de siempre
+    if (como === 'text' && blob.text) return blob.text();
+    if (como !== 'text' && blob.arrayBuffer) return blob.arrayBuffer();
     return new Promise(function (res, rej) {
       var fr = new FileReader();
       fr.onload = function () { res(fr.result); };

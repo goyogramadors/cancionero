@@ -59,7 +59,7 @@
   /* ---------------- configuración ---------------- */
   function loadCfg() {
     var d = { volV: 0.6, volM: 1.0, volMine: 1.0, latency: 0.1, octaveFree: true, latin: true,
-              micDev: null, audifonos: false, grabar: true, nivel: 'recreativo' };
+              micDev: null, audifonos: false, antiguo: false, grabar: true, nivel: 'recreativo' };
     try { Object.assign(d, JSON.parse(localStorage.getItem(CFGKEY) || '{}')); } catch (e) {}
     return d;
   }
@@ -623,6 +623,7 @@
       '<div class="ctl" id="kaMicDevWrap" hidden><span class="ctl-label" title="Si tienes una interfaz de audio conectada, elígela aquí. El navegador usa el micrófono del sistema salvo que le indiques otro">Entrada</span>' +
       '<select id="kaMicDev"></select></div>' +
       '<label class="check" title="Con audífonos se apaga la cancelación de eco del navegador, que atenúa el micrófono cada vez que suena la música y corta tu voz a pedazos"><input type="checkbox" id="kaAudif"> Audífonos</label>' +
+      '<label class="check" title="Para iPhone 6 y otros equipos antiguos: apaga la cancelación de eco del navegador (que en iOS deja la reproducción saturada) y usa un análisis de micrófono más liviano. Si tu equipo es moderno déjalo desmarcado"><input type="checkbox" id="kaAntiguo"> Equipo antiguo</label>' +
       '<label class="check" title="Guarda lo que cantas para poder escucharte después y compararte con el original. Las grabaciones quedan solo en este dispositivo"><input type="checkbox" id="kaGrabar"> Grabar mi voz</label>' +
       '<div class="ctl"><span class="ctl-label" title="Recreativo: sostener el tono un momento gana la plataforma entera. Avanzado: tramos verdes y rojos, con más margen. Estricto: tramos verdes y rojos, afinación justa">Nivel</span><div class="seg" id="kaNivelSeg">' +
       '<button data-n="recreativo">Recreativo</button><button data-n="avanzado">Avanzado</button><button data-n="estricto">Estricto</button></div></div>' +
@@ -847,6 +848,16 @@
         if (b) setMelodia(b.dataset.d);
       });
     }
+
+    var ant = q('#kaAntiguo');
+    ant.checked = !!S.cfg.antiguo;
+    ant.addEventListener('change', function () {
+      S.cfg.antiguo = ant.checked; saveCfg();
+      if (S.micMode === 'mic') setMicMode('mic', true);
+      status(ant.checked
+        ? 'Modo equipo antiguo: sin cancelación de eco del navegador, análisis liviano. Con parlantes la música se cuela al micrófono: mejor audífonos.'
+        : 'Modo normal.');
+    });
 
     // cambiar de micrófono o de audífonos obliga a reabrir el stream
     var aud = q('#kaAudif');
@@ -1115,9 +1126,12 @@
       });
     }
     SB.cantaPitch.start(E().ctx(), mode, onPitchSample, {
-      deviceId: S.cfg.micDev, audifonos: !!S.cfg.audifonos
+      deviceId: S.cfg.micDev, audifonos: !!S.cfg.audifonos, antiguo: !!S.cfg.antiguo
     }).then(function () {
       if (mode === 'mic') poblarMicrofonos();
+      var inf = S.cfg.antiguo && mode === 'mic' ? SB.cantaPitch.info() : null;
+      if (inf) status('Equipo antiguo · eco del navegador: ' + (inf.eco ? 'SÍ' : 'no') +
+        ' · audio ' + inf.hz + ' Hz · mic ' + (inf.micHz || '?') + ' Hz');
     }).catch(function (e) {
       S.micMode = 'off'; setMicMode('off');
       status('No pude usar el micrófono: ' + e.message);
