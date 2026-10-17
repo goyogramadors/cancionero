@@ -76,14 +76,19 @@ OCT_VENTANA = 87            # frames (~1 s) de referencia para corregir octavas
 OCT_MEJORA = 3.0            # semitonos: solo se mueve +-12 si acerca mucho al
                             # contorno local (evita "corregir" saltos reales)
 
-TOL_NOTA = 1.3              # semitonos: mientras el contorno no se aleje mas que
+TOL_NOTA = 0.7              # semitonos: mientras el contorno no se aleje mas que
                             # esto de la mediana de la nota, sigue siendo la misma
-                            # nota (el vibrato de +-0.7 y el ataque caben dentro)
-FRAMES_SALIDA = 9           # frames (105 ms) seguidos fuera de tolerancia para
-                            # considerar que hubo cambio de nota y no vibrato:
-                            # un vibrato de 5.5 Hz vuelve al centro en ~90 ms
-SALTO_NOTA = 1.5            # semitonos: ademas, la mediana del tramo nuevo tiene
-                            # que estar a mas de esto del centro anterior
+                            # nota. Con 1.3 un paso de semitono o de tono quedaba
+                            # dentro y dos notas se fundian en una plataforma
+FRAMES_SALIDA = 12          # frames (140 ms) seguidos fuera de tolerancia para
+                            # considerar que hubo cambio de nota y no vibrato
+                            # (un vibrato de 5.5 Hz vuelve al centro en ~90 ms).
+                            # Con 9 la tolerancia mas estrecha picaba las notas
+SALTO_NOTA = 0.7            # semitonos: ademas, la mediana del tramo nuevo tiene
+                            # que estar a mas de esto del centro anterior.
+                            # Medido en 3 canciones: la curva lejos de su
+                            # plataforma bajo de 14-24% a 2-7% del tiempo, sin
+                            # mas notas cortas ni menos cobertura
 FRAMES_ATAQUE = 4           # frames (46 ms) iniciales que no cuentan para el tono
                             # de la nota: ahi vive el portamento de entrada
 HUECO_CORTE = 0.15          # s sin voz que cortan una nota. Con 0.06 cualquier
@@ -374,42 +379,41 @@ def _pitch_crepe(y, sr):
 
 
 def _pegar_octavas_sueltas(notas):
-    """Baja (o sube) una octava las notas que quedaron descolgadas de su frase.
+    """Pliega una octava las notas que el detector tomo en el registro equivocado.
 
-    _corregir_octavas ya limpia la curva, pero trabaja sobre los frames validos
-    seguidos, que pueden venir de frases distintas separadas por silencios. A
-    nivel de NOTA el contexto es mas honesto: se compara cada nota con la
-    mediana de las que la rodean en el tiempo. Si esta a una octava de ese
-    contexto y plegarla la acerca de verdad, se pliega. Un salto de octava
-    cantado a proposito no se toca, porque arrastra a sus vecinas con el.
+    La firma de ese error es precisa: la nota queda a ~12 semitonos de SUS DOS
+    vecinas inmediatas, en la misma direccion. Antes se comparaba con la mediana
+    de los 7 s alrededor (+-2.5 st), y eso plegaba saltos melodicos reales: una
+    nota aguda del climax, sobre una frase grave, caia en esa franja y se
+    dibujaba una octava abajo de su propia curva (medido: 6 plataformas mal en
+    Alfonsina y el mar, 40 en Suspicious Minds; con este criterio, 0 y 2).
+    Se llama otra vez tras fundir notas, asi un error largo (varias notas
+    seguidas) se ve como un solo bloque descolgado de sus vecinas.
     """
-    import numpy as np
     if len(notas) < 3:
         return notas
-    VENTANA = 7.0        # s de contexto a cada lado. Con 3 s una nota larga
-                         # (un vocalizo sostenido dura varios segundos) casi no
-                         # alcanzaba a ver vecinas y se quedaba sin corregir
-    CERCA_OCTAVA = 2.5   # semitonos de tolerancia alrededor de los 12
-    GANANCIA = 4.0       # semitonos que debe acercar para justificar el pliegue
-    centros = np.array([n['m'] for n in notas], dtype=float)
-    tiempos = np.array([(n['s'] + n['e']) / 2 for n in notas], dtype=float)
-    salida = centros.copy()
+    VECINA_MAX = 3.0     # s: una vecina mas lejos que esto es de otra frase
+    CERCA_OCTAVA = 2.5   # semitonos alrededor de los 12: la melodia avanza entre las
+                         # dos vecinas, asi que no quedan exactamente a 12
+    c = [n['m'] for n in notas]
+    salida = list(c)
     for i in range(len(notas)):
-        cerca = (np.abs(tiempos - tiempos[i]) <= VENTANA)
-        cerca[i] = False
-        if cerca.sum() < 2:
+        difs = []
+        if i > 0 and notas[i]['s'] - notas[i - 1]['e'] <= VECINA_MAX:
+            difs.append(c[i - 1] - c[i])
+        if i + 1 < len(notas) and notas[i + 1]['s'] - notas[i]['e'] <= VECINA_MAX:
+            difs.append(c[i + 1] - c[i])
+        # con UNA sola vecina no se sabe cual de las dos esta mal: plegar ahi
+        # arrastraba la nota buena hacia la equivocada
+        if len(difs) < 2:
             continue
-        ref = float(np.median(centros[cerca]))
-        d = ref - salida[i]
-        k = round(d / 12.0)
-        if k == 0 or abs(abs(d) - 12 * abs(k)) > CERCA_OCTAVA:
-            continue
-        if abs(d) - abs(d - 12 * k) > GANANCIA:
-            salida[i] = salida[i] + 12 * k
+        k = round(difs[0] / 12.0)
+        if k != 0 and all(abs(d - 12 * k) <= CERCA_OCTAVA for d in difs):
+            salida[i] = c[i] + 12 * k
     for i, n in enumerate(notas):
-        if salida[i] != centros[i]:
+        if salida[i] != c[i]:
+            n['vals'] = n['vals'] + (salida[i] - c[i])
             n['m'] = float(salida[i])
-            n['vals'] = n['vals'] + (salida[i] - centros[i])
     return notas
 
 
