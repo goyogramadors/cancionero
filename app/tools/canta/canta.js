@@ -696,6 +696,7 @@
     cargarNotasDe({ notes: pkg.notes, f0: pkg.f0 });
     S.lines = partirLargas(letraEfectiva(pkg));
     S.letraEditada = S.lines !== pkg.lines && S.lines.length > 0;
+    S.lines = aplicarTiemposLetra(S.lines);   // palabras movidas a mano en el editor
 
     S.view.innerHTML =
       '<div class="ka-scope">' +
@@ -1819,6 +1820,47 @@
      distintas: corregir la clásica no tiene por qué ensuciar la neuronal.
      Nunca se toca el canta.json del paquete; queda todo en este dispositivo.
   */
+  /* Tiempos de la LETRA movidos a mano en el editor. Igual que las plataformas:
+     quedan en este dispositivo y "Publicar para todos" los sube. Se guardan con
+     una firma del texto: si la letra cambia en el Cancionero, la edicion vieja
+     se descarta sola en vez de pegarle tiempos a palabras que ya no son. */
+  function claveLetra() { return S.pkg ? 'sb.canta.letra.' + S.pkg.id : null; }
+  function firmaLetra(lines) {
+    return lines.map(function (l) {
+      return (l.words || []).map(function (w) { return w.w; }).join(' ') || l.text;
+    }).join('|');
+  }
+  function aplicarTiemposLetra(lines) {
+    var k = claveLetra(), v = null;
+    try { v = k && JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) {}
+    if (!v || v.firma !== firmaLetra(lines) || !v.tiempos || v.tiempos.length !== lines.length) return lines;
+    return lines.map(function (l, i) {
+      var t = v.tiempos[i];
+      return { s: t.s, e: t.e, text: l.text, words: (l.words || []).map(function (w, j) {
+        return { s: t.w[j] ? t.w[j][0] : w.s, e: t.w[j] ? t.w[j][1] : w.e, w: w.w };
+      }) };
+    });
+  }
+  function letraParaGuardar() {
+    return S.lines.map(function (l) {
+      return { s: +l.s.toFixed(3), e: +l.e.toFixed(3), text: l.text,
+               words: (l.words || []).map(function (w) { return { s: +w.s.toFixed(3), e: +w.e.toFixed(3), w: w.w }; }) };
+    });
+  }
+  function guardarTiemposLetra() {
+    var k = claveLetra();
+    if (!k) return;
+    try {
+      localStorage.setItem(k, JSON.stringify({ firma: firmaLetra(S.lines), tiempos: letraParaGuardar().map(function (l) {
+        return { s: l.s, e: l.e, w: l.words.map(function (w) { return [w.s, w.e]; }) };
+      }) }));
+    } catch (e) { edMsg('No pude guardar la letra en este dispositivo.'); }
+  }
+  function hayTiemposLetra() {
+    var k = claveLetra();
+    try { return !!(k && localStorage.getItem(k)); } catch (e) { return false; }
+  }
+
   function claveNotas() {
     return S.pkg ? 'sb.canta.notas.' + S.pkg.id + '.' + (S.melodia || 'pyin') : null;
   }
@@ -1876,6 +1918,11 @@
         json.f0 = json.melodias[det].f0;
       }
       json.notes = notas;
+      // la letra movida a mano se publica tambien. La copia local de sus
+      // tiempos se conserva: si la cancion tiene letra en el Cancionero, esa
+      // manda en este aparato y sin la copia volverian los tiempos de antes.
+      var conLetra = hayTiemposLetra();
+      if (conLetra) json.lines = letraParaGuardar();
       await SB.github.putFile(ruta, JSON.stringify(json), f.sha,
         'canta: publica plataformas de "' + pkg.title + '" (desde la app)');
       // lo publicado pasa a ser la "original": la copia local ya sobra, y si
@@ -1883,8 +1930,10 @@
       if (pkg.melodias && pkg.melodias[det]) pkg.melodias[det].notes = notas;
       pkg.notes = notas; pkg.detector = det;
       olvidarNotas();
+      if (conLetra) pkg.lines = json.lines;
       S.notesEditadas = false;
-      edMsg('Publicado: ' + notas.length + ' plataformas. Se ve para todos en 1–2 minutos.');
+      edMsg('Publicado: ' + notas.length + ' plataformas' + (conLetra ? ' y la letra' : '') +
+            '. Se ve para todos en 1–2 minutos.');
     } catch (e) {
       edMsg('No se pudo publicar: ' + e.message);
     }
@@ -2010,6 +2059,37 @@
     };
   }
 
+  // ¿Tocaste una palabra de la letra? Las cajas las anota dibujarLetra en cada cuadro.
+  function palabraEn(px, py, G) {
+    if (py < G.H - 44) return null;
+    var cajas = S.letraCajas || [];
+    for (var i = 0; i < cajas.length; i++) {
+      var c = cajas[i];
+      if (px >= c.x - 4 && px <= c.x + c.w + 4) return c;
+    }
+    return null;
+  }
+
+  // Corre una palabra (sin pasar a sus vecinas) o la frase completa.
+  function moverLetra(A, dt) {
+    var L = S.lines[A.li];
+    if (!L) return;
+    var ws = L.words || [], o = A.orig;
+    if (A.tipo === 'frase') {
+      var d = Math.max(dt, -o.s);
+      L.s = o.s + d; L.e = o.e + d;
+      ws.forEach(function (w, i) { w.s = o.ws[i][0] + d; w.e = o.ws[i][1] + d; });
+      return;
+    }
+    var w = ws[A.k], dur = o.ws[A.k][1] - o.ws[A.k][0];
+    var min = A.k > 0 ? ws[A.k - 1].s + 0.02 : 0;
+    var max = A.k < ws.length - 1 ? ws[A.k + 1].s - 0.02 : Infinity;
+    w.s = Math.max(min, Math.min(max, o.ws[A.k][0] + dt));
+    w.e = w.s + dur;
+    L.s = ws[0].s;
+    L.e = Math.max.apply(null, ws.map(function (x) { return x.e; }));
+  }
+
   var AGARRE = 14;   // px de margen en los extremos para estirar en vez de mover
 
   function zonaDe(n, px, G) {
@@ -2113,8 +2193,21 @@
     var cv = S.els.canvas, r = cv.getBoundingClientRect();
     var px = ev.clientX - r.left, py = ev.clientY - r.top;
     var G = geo();
-    var hit = notaEn(px, py, G);
     var multi = ev.ctrlKey || ev.metaKey || S.multiSel;
+    // la letra (franja de abajo): arrastrar una palabra la corre en el tiempo;
+    // con Ctrl (o "Varias") se corre la frase completa
+    var pal = palabraEn(px, py, G);
+    if (pal) {
+      var L = S.lines[pal.li], frase = multi || pal.k < 0;
+      S.arrastre = { tipo: frase ? 'frase' : 'palabra', li: pal.li, k: pal.k, px0: px, py0: py, movio: false,
+                     orig: { s: L.s, e: L.e, ws: (L.words || []).map(function (w) { return [w.s, w.e]; }) } };
+      try { cv.setPointerCapture(ev.pointerId); } catch (e) {}
+      edMsg(frase ? 'Moviendo la frase completa' : 'Moviendo la palabra · con Ctrl se mueve la frase completa');
+      ev.preventDefault();
+      SB.canta.redibujar();
+      return;
+    }
+    var hit = notaEn(px, py, G);
     if (multi && !hit) { ev.preventDefault(); return; }   // Ctrl en el vacío: no crea ni suelta nada
     if (multi && enSel(hit.nota)) {
       // Ctrl+clic sobre una elegida: la saca de la selección (sin arrastre)
@@ -2169,6 +2262,12 @@
     var dt = (px - A.px0) / PXPS * G.tempo;
     if (Math.abs(px - A.px0) > 3 || Math.abs(py - A.py0) > 3) A.movio = true;
     var MIN = 0.06;   // s: por debajo de esto la plataforma no se puede cantar
+    if (A.tipo === 'palabra' || A.tipo === 'frase') {
+      moverLetra(A, dt);
+      ev.preventDefault();
+      SB.canta.redibujar();
+      return;
+    }
 
     if (A.tipo === 'grupo') {
       // mismo corrimiento para todas; el tiempo se frena en 0 para la primera,
@@ -2203,6 +2302,15 @@
     // o un arrastre corto y rápido se toma por un toque
     if (ev.type === 'pointerup') edPointerMove(ev);
     S.arrastre = null;
+    if (A.tipo === 'palabra' || A.tipo === 'frase') {
+      if (A.movio) {
+        guardarTiemposLetra();
+        edMsg('Letra movida · queda en este dispositivo' + (puedePublicar() ? ' hasta que publiques' : ''));
+      }
+      try { S.els.canvas.releasePointerCapture(ev.pointerId); } catch (e) {}
+      SB.canta.redibujar();
+      return;
+    }
     // un toque sin arrastre sobre el vacío no debe dejar una plataforma diminuta
     if (A.nueva && !A.movio) {
       // tocar el vacío sin arrastrar no crea nada (solo suelta la selección):
@@ -2264,7 +2372,7 @@
       S.edRango = rangoEdicion();   // congelar antes de tocar nada
       S.edPila = [];
       q('#kaEdUndo').disabled = true;
-      edMsg(S.notes.length + ' plataformas · los cambios quedan en este dispositivo' +
+      edMsg(S.notes.length + ' plataformas · arrastra una palabra de la letra para correrla (Ctrl: la frase) · los cambios quedan en este dispositivo' +
             (puedePublicar() ? ' hasta que los publiques' : ''));
     } else {
       S.edRango = null;
@@ -2315,7 +2423,8 @@
       return;
     }
     g.font = LETRA_FUENTE;
-    var esp = g.measureText(' ').width, cursor = -1e9;
+    var esp = g.measureText(' ').width, cursor = -1e9, A = S.arrastre;
+    S.letraCajas = [];
     for (var li = 0; li < lines.length; li++) {
       var L = lines[li];
       if (L.e < t0Vis - 2) continue;   // ya salió por la izquierda
@@ -2327,9 +2436,12 @@
         cursor = x + ancho + esp;
         if (x > W) break;
         if (x + ancho < 0) continue;
+        var kk = (L.words && L.words.length) ? k : -1;
+        S.letraCajas.push({ x: x, w: ancho, li: li, k: kk });
+        var tomada = A && A.li === li && (A.tipo === 'frase' || (A.tipo === 'palabra' && A.k === kk));
         var dicha = now >= w.s;
-        g.fillStyle = dicha ? C.ink : C.mut;
-        g.globalAlpha = dicha && now > w.e + 0.4 ? 0.45 : 1;   // ya cantada: se atenúa
+        g.fillStyle = tomada ? C.good : (dicha || S.editando ? C.ink : C.mut);
+        g.globalAlpha = !S.editando && dicha && now > w.e + 0.4 ? 0.45 : 1;   // ya cantada: se atenúa
         g.fillText(w.w, x, base);
       }
     }
@@ -2520,7 +2632,7 @@
     if (S.micMode === 'mic') dibujarNivel(g, C);
 
     // letra: corre por el carril igual que las plataformas (ver dibujarLetra)
-    if (!cv.classList.contains('editando')) dibujarLetra(g, W, H, now, xOf, t0Vis, t1Vis, C);
+    dibujarLetra(g, W, H, now, xOf, t0Vis, t1Vis, C);
 
     // cabezal
     g.strokeStyle = C.mut; g.lineWidth = 1;
