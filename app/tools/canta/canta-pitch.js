@@ -215,13 +215,18 @@
         }, 20);
         return;
       }
+      // opts.antiguo (iPhone 6 y similares, casilla "Equipo antiguo"): en iOS la
+      // cancelación de eco activa el modo de llamada y la reproducción suena
+      // saturada, así que ahí va siempre apagada, y el análisis usa bloques más
+      // grandes para que el procesador lento no corte el audio. Sin la casilla
+      // todo funciona como siempre.
       // Supresión de ruido y ganancia automática NO: deforman el canto.
       // Cancelación de eco: SÍ con parlantes (si no, la app se escucha a sí
       // misma), pero NO con audífonos — el cancelador atenúa el micrófono cada
       // vez que suena la música, y eso corta la voz a pedazos.
       opts = opts || {};
       var audio = {
-        echoCancellation: !opts.audifonos,
+        echoCancellation: !opts.audifonos && !opts.antiguo,
         noiseSuppression: false,
         autoGainControl: false,
         channelCount: 1
@@ -239,6 +244,10 @@
       }
       if (seq !== St.startSeq) { stream.getTracks().forEach(function (t) { t.stop(); }); return; }
       St.stream = stream;
+      try {
+        var cfgPista = stream.getAudioTracks()[0].getSettings();
+        St.info = { eco: cfgPista.echoCancellation, micHz: cfgPista.sampleRate, hz: audioCtx.sampleRate };
+      } catch (e) { St.info = null; }
       St.srcNode = audioCtx.createMediaStreamSource(St.stream);
       St.sink = audioCtx.createGain(); St.sink.gain.value = 0; // no reproducir el mic
       St.sink.connect(audioCtx.destination);
@@ -255,7 +264,7 @@
       if (!ok) {
         var an = new Analyzer(audioCtx.sampleRate / 3);
         an.onFrame = function (f) { f.t = audioCtx.currentTime; emit(f); };
-        St.node = audioCtx.createScriptProcessor(2048, 1, 1);
+        St.node = audioCtx.createScriptProcessor(opts.antiguo ? 4096 : 2048, 1, 1);
         St.node.onaudioprocess = function (e) { an.feed(e.inputBuffer.getChannelData(0)); };
       }
       St.srcNode.connect(St.node);
@@ -263,6 +272,9 @@
     },
 
     setTestMelody(fn) { St.testFn = fn; },
+
+    // lo que el navegador realmente concedió (eco, frecuencias); null si no se sabe
+    info() { return St.info || null; },
 
     stop() {
       St.startSeq++;
