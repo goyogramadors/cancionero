@@ -160,6 +160,7 @@
       seguirProgreso();
       return;
     }
+    if (!est && SB.github && SB.github.configured()) { pintarCola(body); return; }
     if (!est) {
       body.innerHTML = ayudaSinMotor();
       q('#pxRetry').addEventListener('click', async function () {
@@ -225,6 +226,136 @@
       'Ahí pegas el link de YouTube (o eliges un MP4) y, al terminar, la canción y su letra ' +
       'se suben al repositorio y aparecen acá.</p>' +
       '<div class="set-row"><button class="mini-app-btn" id="pxRetry">Buscar el motor de nuevo</button></div>';
+  }
+
+  /* ---- Sin motor pero con token: pedir la canción a la cola del PC ----
+     El workflow preparar-cancion.yml corre en el runner propio del PC: baja,
+     separa, saca letra y melodía, y publica el paquete. Aquí solo se encola
+     (workflow_dispatch) y se mira el estado de los últimos pedidos. */
+  var URL_YT = /^https:\/\/(www\.|m\.|music\.)?(youtube\.com\/watch\?v=|youtu\.be\/)[A-Za-z0-9_-]{6,}/;
+  var COLA = { timer: null, esperarHasta: 0, refrescados: {} };
+  var PEDIDOS_KEY = 'sb.canta.pedidos';
+
+  function pedidos() { try { return JSON.parse(localStorage.getItem(PEDIDOS_KEY) || '[]'); } catch (e) { return []; } }
+  function guardarPedido(p) {
+    var l = pedidos(); l.unshift(p);
+    try { localStorage.setItem(PEDIDOS_KEY, JSON.stringify(l.slice(0, 10))); } catch (e) {}
+  }
+
+  function pintarCola(body) {
+    body.innerHTML =
+      '<p class="ed-note">Pega un link de YouTube y tu PC prepara la canción (unos 10 minutos): separa la voz, ' +
+      'busca la letra, saca la melodía y la publica acá. El PC tiene que estar encendido y con tu sesión iniciada.</p>' +
+      '<div class="prep-form">' +
+      '<label class="prep-field wide">Link de YouTube' +
+      '<input id="pxUrl" type="url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off"></label>' +
+      '<label class="prep-field">Título <input id="pxTitle" placeholder="(opcional)"></label>' +
+      '<label class="prep-field">Intérprete <input id="pxArtist" placeholder="(opcional)"></label>' +
+      '<button class="pr-play prep-go" id="pxPedir">PEDIR CANCIÓN</button>' +
+      '</div>' +
+      '<p class="set-status" id="pxMsg"></p>' +
+      '<div id="pxCola"></div>' +
+      '<div class="set-row"><button class="mini-app-btn" id="pxRetry">Buscar el motor local</button></div>';
+    q('#pxPedir').addEventListener('click', pedirCancion);
+    q('#pxUrl').addEventListener('keydown', function (e) { if (e.key === 'Enter') pedirCancion(); });
+    q('#pxRetry').addEventListener('click', async function () {
+      body.innerHTML = '<p class="set-status">Buscando el motor…</p>';
+      await SB.cantaMotor.detectar(true);
+      pintarPrep();
+    });
+    refrescarCola();
+  }
+
+  async function pedirCancion() {
+    var url = (q('#pxUrl').value || '').trim();
+    if (!URL_YT.test(url)) { prepMsg('Ese link no parece de YouTube: usa uno de youtube.com/watch?v=… o youtu.be/…'); return; }
+    var titulo = (q('#pxTitle').value || '').trim(), artista = (q('#pxArtist').value || '').trim();
+    var inputs = { url: url };
+    if (titulo) inputs.titulo = titulo;
+    if (artista) inputs.artista = artista;
+    var btn = q('#pxPedir'); btn.disabled = true;
+    prepMsg('Enviando el pedido…');
+    try {
+      await SB.github.dispatchCancion(inputs);
+    } catch (e) {
+      prepMsg('No se pudo pedir: ' + e.message);
+      btn.disabled = false;
+      return;
+    }
+    guardarPedido({ t: Date.now(), url: url, titulo: titulo, artista: artista });
+    q('#pxUrl').value = ''; q('#pxTitle').value = ''; q('#pxArtist').value = '';
+    btn.disabled = false;
+    prepMsg('Pedido enviado. Queda en la cola de tu PC; abajo ves cómo va.');
+    // GitHub tarda unos segundos en mostrar el run nuevo: mirar seguido un rato
+    COLA.esperarHasta = Date.now() + 120000;
+    clearTimeout(COLA.timer);
+    COLA.timer = setTimeout(refrescarCola, 3000);
+  }
+
+  function estadoRun(r) {
+    if (r.status !== 'completed') return r.status === 'in_progress' ? 'procesando' : 'en cola';
+    if (r.conclusion === 'success') return 'lista';
+    if (r.conclusion === 'cancelled') return 'cancelada';
+    return 'falló';
+  }
+
+  // Asocia cada run a un pedido hecho desde este dispositivo (por la hora) para
+  // poder mostrar qué canción es; los pedidos de otro lado salen sin nombre.
+  function nombreRuns(runs) {
+    var libres = pedidos().slice(), nombres = {};
+    runs.slice().reverse().forEach(function (r) {
+      var t = Date.parse(r.created_at);
+      for (var i = 0; i < libres.length; i++) {
+        if (t >= libres[i].t - 30000 && t <= libres[i].t + 180000) {
+          nombres[r.id] = libres[i].titulo || libres[i].url;
+          libres.splice(i, 1);
+          break;
+        }
+      }
+    });
+    return nombres;
+  }
+
+  async function refrescarCola() {
+    clearTimeout(COLA.timer);
+    var caja = q('#pxCola');
+    if (S.screen !== 'lib' || !caja) return;
+    var runs;
+    try { runs = await SB.github.runsCancion(5); }
+    catch (e) {
+      if (q('#pxCola')) q('#pxCola').innerHTML = '<p class="prep-warn">No pude leer la cola: ' + esc(e.message) + '</p>';
+      return;
+    }
+    caja = q('#pxCola');
+    if (S.screen !== 'lib' || !caja) return;
+
+    var nombres = nombreRuns(runs), activos = false, nuevaLista = false, ahora = Date.now();
+    var filas = runs.map(function (r) {
+      var est = estadoRun(r);
+      if (est === 'en cola' || est === 'procesando') activos = true;
+      var aviso = '';
+      if (est === 'en cola' && ahora - Date.parse(r.created_at) > 5 * 60000) {
+        aviso = ' <span class="ed-note">(si no avanza, el PC está apagado, suspendido o sin tu sesión)</span>';
+      }
+      if (est === 'lista' && !COLA.refrescados[r.id] && ahora - Date.parse(r.updated_at) < 30 * 60000) {
+        COLA.refrescados[r.id] = true; nuevaLista = true;
+      }
+      var hora = new Date(r.created_at).toLocaleString('es-CL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+      return '<tr><td>' + esc(nombres[r.id] || 'pedido') + '</td><td>' + esc(hora) + '</td><td><b>' + est + '</b>' + aviso +
+        '</td><td><a href="' + esc(r.html_url) + '" target="_blank" rel="noopener" style="color:inherit">detalle</a></td></tr>';
+    });
+    caja.innerHTML = filas.length
+      ? '<table class="rep"><thead><tr><th>Pedido</th><th>Hora</th><th>Estado</th><th></th></tr></thead><tbody>' + filas.join('') + '</tbody></table>'
+      : '<p class="set-status">Todavía no hay pedidos.</p>';
+
+    if (nuevaLista) {
+      // la canción recién publicada: Pages tarda 1-2 min en servir el index.json nuevo
+      drawLibrary();
+      setTimeout(function () { if (S.screen === 'lib') drawLibrary(); }, 90000);
+    }
+    if (activos || ahora < COLA.esperarHasta) {
+      COLA.timer = setTimeout(refrescarCola, activos ? 15000 : 4000);
+    }
   }
 
   function prepMsg(txt) { var m = q('#pxMsg'); if (m) m.textContent = txt || ''; }

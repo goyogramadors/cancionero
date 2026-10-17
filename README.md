@@ -44,6 +44,14 @@ canción* y esperas (5–15 min: separar la voz y transcribir es pesado). Al ter
 - la **canción** (voz + música + melodía) se **sube al repositorio** con un commit,
 - así aparece sola en el sitio publicado y en el celular, sin volver a tocar el computador.
 
+**Desde el celular o el sitio publicado («Pedir canción»):** si no hay motor pero tienes el token
+puesto en Ajustes, el cuadro muestra un campo para el link de YouTube y el botón **Pedir canción**.
+Eso encola el workflow `preparar-cancion.yml` en el runner de tu PC, que la prepara y la publica
+(unos 10 min, una canción a la vez). Abajo ves los últimos pedidos (en cola / procesando / lista /
+falló) y, cuando una queda lista, la biblioteca se refresca sola. Requisitos: el PC encendido con tu
+sesión iniciada, y el token con **Actions: Read and write** además de Contents (si no, GitHub
+responde 403 y el cuadro lo explica).
+
 > En un computador nuevo, después de clonar el repo: `canta-prep/setup.bat` (una vez) y
 > `canta-prep/crear-acceso-directo.bat` para dejar el ícono en el escritorio.
 
