@@ -708,11 +708,12 @@
       '<canvas id="kaCanvas"></canvas>' +
       '<div class="ka-hud"><span id="kaScore">0</span><span class="ka-hud-sub" id="kaStreak"></span>' +
       '<span class="ka-hud-sub" id="kaBest"></span></div>' +
-      '<div class="ka-lyric"><div class="ka-now" id="kaNow"></div><div class="ka-next" id="kaNext"></div></div>' +
       '</div>' +
 
       '<div class="controls">' +
       '<button class="pr-play ka-play" id="kaPlay">CANTAR</button>' +
+      '<button class="mini-app-btn" id="kaStop" title="Detiene, guarda la grabación y cierra el puntaje">Terminar</button>' +
+      '<button class="mini-app-btn" id="kaListen" hidden title="Reproduce la canción con tu voz grabada, sin grabar ni evaluar">Escuchar mi toma</button>' +
       '<span class="t-key" id="kaTime">0:00 / ' + fmtT(E().duration()) + '</span>' +
       '<input type="range" class="ka-prog" id="kaProg" min="0" max="1000" value="0" aria-label="Posición">' +
       '<button class="mini-app-btn" id="kaEdit">Editar plataformas</button>' +
@@ -780,7 +781,7 @@
       '</div>';
 
     S.els = {
-      canvas: q('#kaCanvas'), now: q('#kaNow'), next: q('#kaNext'),
+      canvas: q('#kaCanvas'),
       score: q('#kaScore'), streak: q('#kaStreak'), best: q('#kaBest'),
       play: q('#kaPlay'), time: q('#kaTime'), prog: q('#kaProg'), status: q('#kaStatus')
     };
@@ -790,6 +791,8 @@
     q('#kaBack').addEventListener('click', function () { S.ctx.navigate('canta'); });
     q('#kaSaveLyr').addEventListener('click', saveLyrics);
     S.els.play.addEventListener('click', togglePlay);
+    q('#kaStop').addEventListener('click', terminar);
+    q('#kaListen').addEventListener('click', escucharToma);
     S.els.prog.addEventListener('input', function () {
       var t = (+this.value / 1000) * E().duration();
       E().seek(t); resetRunFrom(t);
@@ -1009,6 +1012,7 @@
     q('#kaLatU').addEventListener('click', function () { bumpLat(0.01); });
 
     E().setOnEnded(function () {
+      if (S.soloEscuchar) { S.soloEscuchar = false; status(''); updatePlayBtn(); return; }
       cerrarToma();
       finalizeAll();
       saveBest(pkg.id, S.score);
@@ -1048,6 +1052,7 @@
       E().ctx(); // gesto del usuario: despierta el AudioContext
       if (E().position() >= E().duration() - 0.05) { E().seek(0); resetRunFrom(0); }
       if (S.score === 0 && E().position() < 0.05) resetRunFrom(0);
+      S.soloEscuchar = false;
       E().play();
       abrirToma();
       status('');
@@ -1133,8 +1138,50 @@
     }).catch(function (e) { status('No pude guardar la grabación: ' + e.message); });
   }
   function updatePlayBtn() {
-    S.els.play.textContent = E().playing() ? 'PAUSA' : 'CANTAR';
-    S.els.play.classList.toggle('playing', E().playing());
+    var cantando = E().playing() && !S.soloEscuchar;
+    S.els.play.textContent = cantando ? 'PAUSA' : 'CANTAR';
+    S.els.play.classList.toggle('playing', cantando);
+    var l = q('#kaListen');
+    if (l) {
+      l.hidden = !S.tomaId;
+      l.textContent = E().playing() && S.soloEscuchar ? 'Pausa' : 'Escuchar mi toma';
+    }
+  }
+
+  // Termina la sesión de canto: guarda la grabación, cierra el puntaje y deja
+  // todo listo para empezar de nuevo desde el principio.
+  function terminar() {
+    if (S.rendering) return;
+    var escuchando = S.soloEscuchar;
+    E().pause();
+    S.soloEscuchar = false;
+    if (!escuchando) {
+      cerrarToma();
+      finalizeAll();
+      var total = S.score;
+      saveBest(S.pkg.id, total);
+      S.best = bestFor(S.pkg.id);
+      status('Terminado. Puntaje: ' + total + (total > 0 && total >= S.best ? ' — ¡tu mejor marca!' : ''));
+    }
+    E().seek(0);
+    resetRunFrom(0);
+    updatePlayBtn();
+  }
+
+  // Escuchar una toma ya grabada: suena la canción con tu voz, sin grabar
+  // otra encima ni evaluar (si no, parecía que hacías una versión nueva).
+  function escucharToma() {
+    if (S.rendering || !S.tomaId) return;
+    if (E().playing()) {
+      if (S.soloEscuchar) { E().pause(); updatePlayBtn(); return; }
+      E().pause(); cerrarToma();
+    }
+    E().ctx();
+    if (E().position() >= E().duration() - 0.05) E().seek(0);
+    S.soloEscuchar = true;
+    E().play();
+    status('Escuchando tu toma.');
+    updatePlayBtn();
   }
 
   function bumpSemis(d) {
@@ -1293,6 +1340,7 @@
   }
 
   function pintarTomas() {
+    updatePlayBtn();   // "Escuchar mi toma" aparece/desaparece con la toma cargada
     var sec = q('#kaTakes'), lista = q('#kaTakeList');
     if (!sec || !lista || !S.pkg) return;
     E().takeList(S.pkg.id).then(function (tomas) {
@@ -1478,8 +1526,15 @@
   }
 
   // llega ~50 veces/s desde el estabilizador (mic o prueba)
-  function onPitchSample(sample) {
-    if (S.screen !== 'play' || !E().playing()) return;
+  function onPitchSample(sample, crudo) {
+    // nivel de entrada para el medidor (llega aunque la canción esté pausada)
+    if (crudo && typeof crudo.rms === 'number') {
+      var db = 20 * Math.log10(Math.max(crudo.rms, 1e-6));
+      var entrada = Math.max(0, Math.min(1, (db + 60) / 54));    // -60 dB .. -6 dB
+      S.nivelMic = Math.max(entrada, (S.nivelMic || 0) * 0.85);  // sube al tiro, baja suave
+      S.picoMic = db > -3 ? performance.now() : (S.picoMic || 0);
+    }
+    if (S.screen !== 'play' || !E().playing() || S.soloEscuchar) return;
     var dt = S.lastSampleT ? Math.min(0.05, Math.max(0.005, sample.t - S.lastSampleT)) : 0.02;
     S.lastSampleT = sample.t;
     var tAdj = E().position() - S.cfg.latency;
@@ -1754,34 +1809,6 @@
     return pkgLines;
   }
 
-  function updateLyrics(t) {
-    var lines = S.lines || [];
-    if (!lines.length) {
-      if (S.lineIdx !== -2) { S.lineIdx = -2; S.els.now.textContent = ''; S.els.next.textContent = '(sin letra transcrita)'; }
-      return;
-    }
-    // línea vigente: la que contiene t, o la próxima
-    var idx = -1;
-    for (var i = 0; i < lines.length; i++) {
-      if (t <= lines[i].e + 0.3) { idx = i; break; }
-    }
-    if (idx < 0) idx = lines.length - 1;
-    if (idx !== S.lineIdx) {
-      S.lineIdx = idx;
-      var L = lines[idx];
-      S.els.now.innerHTML = (L.words && L.words.length)
-        ? L.words.map(function (w, wi) { return '<span data-wi="' + wi + '">' + esc(w.w) + '</span>'; }).join(' ')
-        : esc(L.text);
-      S.els.next.textContent = idx + 1 < lines.length ? lines[idx + 1].text : '';
-    }
-    var L2 = lines[idx];
-    if (L2.words) {
-      var spans = S.els.now.children;
-      for (i = 0; i < spans.length; i++) {
-        spans[i].classList.toggle('on', t >= (L2.words[i] ? L2.words[i].s : 1e9));
-      }
-    }
-  }
 
   /* ---------------- editor de plataformas ----------------
      Las plataformas son las notas contra las que se puntúa. El detector acierta
@@ -2255,6 +2282,60 @@
     S.raf = requestAnimationFrame(loop);
   }
 
+  // La letra corre por el carril como las plataformas, siempre abajo. Cada
+  // palabra se ubica en el instante en que empieza, así cruza el cabezal justo
+  // cuando se canta: se coordina sola con la música, sin centrar frases. Si
+  // dos palabras quedan encimadas, la segunda se corre lo justo para leerse.
+  // Barritas de nivel del micrófono (arriba a la izquierda). Verdes cuando
+  // llega voz; la última se pone roja si la señal satura (sobre -3 dB).
+  function dibujarNivel(g, C) {
+    var n = 8, w = 5, h = 14, x0 = 34, y0 = 8;
+    var lvl = S.nivelMic || 0;
+    S.nivelMic = lvl * 0.97;                       // si dejan de llegar datos, cae
+    var satura = performance.now() - (S.picoMic || 0) < 600;
+    for (var i = 0; i < n; i++) {
+      var encendida = lvl * n > i + 0.3;
+      g.fillStyle = !encendida ? C.line : (i === n - 1 && satura ? C.bad : C.good);
+      g.fillRect(x0 + i * (w + 2), y0 + h - (h * (i + 2) / (n + 1)), w, h * (i + 2) / (n + 1));
+    }
+    g.fillStyle = C.faint; g.font = '10px ui-monospace,Consolas,monospace';
+    g.fillText('mic', 8, y0 + h - 2);
+  }
+
+  var LETRA_FUENTE = '700 19px "Helvetica Neue",Helvetica,Arial,system-ui,sans-serif';
+  function dibujarLetra(g, W, H, now, xOf, t0Vis, t1Vis, C) {
+    var lines = S.lines || [], base = H - 14, banda = 44;
+    g.globalAlpha = 0.85; g.fillStyle = C.bg;          // fondo para que se lea
+    g.fillRect(0, H - banda, W, banda);
+    g.globalAlpha = 1;
+    if (!lines.length) {
+      g.fillStyle = C.faint; g.font = '14px system-ui,sans-serif'; g.textAlign = 'center';
+      g.fillText('(sin letra transcrita)', W / 2, base);
+      g.textAlign = 'left';
+      return;
+    }
+    g.font = LETRA_FUENTE;
+    var esp = g.measureText(' ').width, cursor = -1e9;
+    for (var li = 0; li < lines.length; li++) {
+      var L = lines[li];
+      if (L.e < t0Vis - 2) continue;   // ya salió por la izquierda
+      if (L.s > t1Vis) break;          // todavía no entra por la derecha
+      var ws = (L.words && L.words.length) ? L.words : [{ s: L.s, e: L.e, w: L.text }];
+      cursor += esp * 2;               // aire entre frases
+      for (var k = 0; k < ws.length; k++) {
+        var w = ws[k], x = Math.max(xOf(w.s), cursor), ancho = g.measureText(w.w).width;
+        cursor = x + ancho + esp;
+        if (x > W) break;
+        if (x + ancho < 0) continue;
+        var dicha = now >= w.s;
+        g.fillStyle = dicha ? C.ink : C.mut;
+        g.globalAlpha = dicha && now > w.e + 0.4 ? 0.45 : 1;   // ya cantada: se atenúa
+        g.fillText(w.w, x, base);
+      }
+    }
+    g.globalAlpha = 1;
+  }
+
   function draw() {
     var cv = S.els.canvas, dpr = window.devicePixelRatio || 1;
     var W = cv.clientWidth, H = cv.clientHeight;
@@ -2270,7 +2351,6 @@
     var now = E().position();
     var tAdj = now - S.cfg.latency;
     finalizeUpTo(tAdj);
-    updateLyrics(now);
     vigilarTramos();
 
     // rango vertical según la melodía transpuesta (congelado mientras se edita)
@@ -2435,6 +2515,12 @@
         g.beginPath(); g.arc(prev.x, prev.y, 5, 0, Math.PI * 2); g.stroke();
       }
     }
+
+    // medidor de entrada del micrófono: confirma que está llegando señal
+    if (S.micMode === 'mic') dibujarNivel(g, C);
+
+    // letra: corre por el carril igual que las plataformas (ver dibujarLetra)
+    if (!cv.classList.contains('editando')) dibujarLetra(g, W, H, now, xOf, t0Vis, t1Vis, C);
 
     // cabezal
     g.strokeStyle = C.mut; g.lineWidth = 1;
