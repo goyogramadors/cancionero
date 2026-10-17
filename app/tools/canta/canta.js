@@ -2442,21 +2442,25 @@
     g.fillText('mic', 8, y0 + h - 2);
   }
 
-  // Intensidad de la musica, justo sobre la letra: muestra como sube y baja
-  // la cancion para anticiparse (la contraparte de la curva de la voz).
+  // Forma de onda de la musica, justo sobre la letra: se ven los golpes, las
+  // entradas y las pausas, para anticiparse. Afuera el pico (ritmo), adentro el
+  // cuerpo (intensidad sostenida), reflejados en torno a una linea central.
   function dibujarDinamica(g, W, H, xOf, t0, t1, C) {
-    var env = E().envolventeMusica(20);
+    var env = E().envolventeMusica(40);
     if (!env) return;
-    var fps = env.fps, v = env.v, piso = H - 46, alto = 26;
-    var i0 = Math.max(0, Math.floor(t0 * fps)), i1 = Math.min(v.length - 1, Math.ceil(t1 * fps));
+    var fps = env.fps, alto = 40, medio = H - 46 - alto / 2 - 2;
+    var i0 = Math.max(0, Math.floor(t0 * fps)), i1 = Math.min(env.v.length - 1, Math.ceil(t1 * fps));
     if (i1 <= i0) return;
-    g.beginPath();
-    g.moveTo(xOf(i0 / fps), piso);
-    for (var i = i0; i <= i1; i++) g.lineTo(xOf(i / fps), piso - alto * Math.pow(v[i], 0.7));
-    g.lineTo(xOf(i1 / fps), piso);
-    g.closePath();
-    g.globalAlpha = 0.5; g.fillStyle = C.line; g.fill();
-    g.globalAlpha = 1; g.strokeStyle = C.faint; g.lineWidth = 1; g.stroke();
+    function capa(arr, color, alfa) {
+      g.beginPath();
+      for (var i = i0; i <= i1; i++) g.lineTo(xOf(i / fps), medio - (alto / 2) * arr[i]);
+      for (i = i1; i >= i0; i--) g.lineTo(xOf(i / fps), medio + (alto / 2) * arr[i]);
+      g.closePath();
+      g.globalAlpha = alfa; g.fillStyle = color; g.fill();
+    }
+    capa(env.p, C.line, 0.9);    // picos
+    capa(env.v, C.faint, 0.55);  // cuerpo
+    g.globalAlpha = 1;
   }
 
   var LETRA_FUENTE = '700 19px "Helvetica Neue",Helvetica,Arial,system-ui,sans-serif';

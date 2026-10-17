@@ -756,8 +756,10 @@
 
   function duration() { return St.buffers ? St.buffers.vocals.duration : 0; }
 
-  // Intensidad de la musica en el tiempo (RMS por ventana, normalizada al
-  // percentil 98), para la guia de dinamica bajo el carril. Una vez por cancion.
+  // Forma de onda de la musica para la guia bajo el carril. Por ventana (1/fps
+  // s) guarda el PICO (golpes, ritmo) y el RMS (cuerpo, intensidad sostenida),
+  // en decibeles y estirados al rango que usa ESTA cancion: la musica viene
+  // masterizada (volumen parejo) y en escala lineal se veia plana. Una vez por cancion.
   function envolventeMusica(fps) {
     var b = St.buffers && St.buffers.music;
     if (!b) return null;
@@ -765,18 +767,27 @@
     var n = b.length, paso = Math.max(1, Math.round(b.sampleRate / fps)), nv = Math.ceil(n / paso);
     var chs = [], c, i, j;
     for (c = 0; c < b.numberOfChannels; c++) chs.push(b.getChannelData(c));
-    var v = new Float32Array(nv);
+    var rmsDb = new Float32Array(nv), picoDb = new Float32Array(nv);
     for (i = 0; i < nv; i++) {
-      var suma = 0, k = 0, fin = Math.min(n, (i + 1) * paso);
-      for (j = i * paso; j < fin; j += 4) {
-        for (c = 0; c < chs.length; c++) { var x = chs[c][j]; suma += x * x; k++; }
+      var suma = 0, k = 0, pico = 0, fin = Math.min(n, (i + 1) * paso);
+      for (j = i * paso; j < fin; j += 2) {
+        for (c = 0; c < chs.length; c++) {
+          var x = chs[c][j], ax = x < 0 ? -x : x;
+          suma += x * x; k++;
+          if (ax > pico) pico = ax;
+        }
       }
-      v[i] = k ? Math.sqrt(suma / k) : 0;
+      rmsDb[i] = 20 * Math.log10((k ? Math.sqrt(suma / k) : 0) + 1e-6);
+      picoDb[i] = 20 * Math.log10(pico + 1e-6);
     }
-    var orden = Array.prototype.slice.call(v).sort(function (a, z) { return a - z; });
-    var tope = orden[Math.floor(nv * 0.98)] || 1e-6;
-    for (i = 0; i < nv; i++) v[i] = Math.min(1, v[i] / tope);
-    St.env = { buf: b, fps: fps, v: v };
+    var ord = Array.prototype.slice.call(rmsDb).sort(function (a, z) { return a - z; });
+    var ordP = Array.prototype.slice.call(picoDb).sort(function (a, z) { return a - z; });
+    var lo = ord[Math.floor(nv * 0.05)], hi = ordP[Math.floor(nv * 0.99)];
+    var rango = Math.max(6, hi - lo);
+    var rel = function (d) { return Math.max(0, Math.min(1, (d - lo) / rango)); };
+    var v = new Float32Array(nv), p = new Float32Array(nv);
+    for (i = 0; i < nv; i++) { v[i] = rel(rmsDb[i]); p[i] = rel(picoDb[i]); }
+    St.env = { buf: b, fps: fps, v: v, p: p };
     return St.env;
   }
 
