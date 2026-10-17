@@ -231,21 +231,21 @@ def silencio_wav(modelo, workdir):
     return salida
 
 
-def separar_voz(wav, workdir):
+def separar_voz(wav, workdir, modelo='htdemucs'):
     """Corre Demucs (htdemucs, two-stems) y devuelve (vocals.wav, no_vocals.wav)."""
     env = dict(os.environ)
     env['PYTHONIOENCODING'] = 'utf-8'   # las barras de progreso no son cp1252
     # Con torch >= 2.6 algunos checkpoints necesitan esto para cargar:
     env.setdefault('TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD', '1')
     cmd = [sys.executable, '-m', 'demucs', '--two-stems', 'vocals',
-           '-n', 'htdemucs', '-o', workdir, wav]
+           '-n', modelo, '-o', workdir, wav]
     r = subprocess.run(cmd, env=env)
     if r.returncode != 0:
         morir('fallo la separacion con Demucs (codigo %d). Si es la primera vez,\n'
               '       revisa tu conexion: Demucs descarga su modelo (~80 MB) al primer uso.'
               % r.returncode)
     nombre = os.path.splitext(os.path.basename(wav))[0]
-    base = os.path.join(workdir, 'htdemucs', nombre)
+    base = os.path.join(workdir, modelo, nombre)
     vocals = os.path.join(base, 'vocals.wav')
     music = os.path.join(base, 'no_vocals.wav')
     if not (os.path.exists(vocals) and os.path.exists(music)):
@@ -729,6 +729,9 @@ def parsear_args():
                    choices=['tiny', 'base', 'small', 'medium', 'large-v3-turbo', 'large-v3'],
                    help='modelo de Whisper (default: small; large-v3 es el mejor pero '
                         'el mas lento en CPU, large-v3-turbo casi lo iguala y es ~4x mas rapido)')
+    p.add_argument('--demucs', default='htdemucs', choices=['htdemucs', 'htdemucs_ft'],
+                   help='modelo de separacion de voz. htdemucs_ft separa mas limpio pero '
+                        'es ~4x mas lento y la primera vez descarga ~320 MB')
     p.add_argument('--language', default=None,
                    help='idioma de la letra, ej. es (default: autodetectar)')
     p.add_argument('--out', default=None,
@@ -893,7 +896,7 @@ def main():
             melodia_desde = wav
         else:
             with Etapa(2, 6, 'Separando voz e instrumental (Demucs, puede tardar varios minutos)'):
-                vocals_wav, music_wav = separar_voz(wav, workdir)
+                vocals_wav, music_wav = separar_voz(wav, workdir, args.demucs)
             melodia_desde = vocals_wav
 
         fuente_letra = None if args.sin_letra else 'whisper'
