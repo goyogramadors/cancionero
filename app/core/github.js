@@ -160,6 +160,32 @@
     return seg ? { owner: h.split('.')[0], repo: seg } : null;
   }
 
+  /* ---------- cola de Canta: workflow_dispatch al runner propio ----------
+     Pide preparar una canción en el PC (workflow preparar-cancion.yml) y lee
+     el estado de los últimos pedidos. El token necesita además
+     Actions: Read and write. */
+  const WF = 'preparar-cancion.yml';
+  function wfUrl(c, resto) { return `https://api.github.com/repos/${c.owner}/${c.repo}/actions/workflows/${WF}/${resto}`; }
+  async function errActions(res) {
+    if (res.status === 401) return new Error('GitHub rechazó el token (401): está mal copiado, vencido o revocado.');
+    if (res.status === 403) return new Error('el token no tiene permiso para lanzar Actions (403). En GitHub, edita el token y deja Actions en "Read and write" (además de Contents).');
+    if (res.status === 404) return new Error('no encontré el workflow ' + WF + ' en ' + cfg().owner + '/' + cfg().repo + ' (404), o el token no ve Actions de ese repo.');
+    return new Error('GitHub ' + res.status + ' — ' + (await res.text()).slice(0, 160));
+  }
+  async function dispatchCancion(inputs) {
+    const c = cfg(); assertCfg(c);
+    const res = await fetch(wfUrl(c, 'dispatches'), { method: 'POST', headers: headers(c),
+      body: JSON.stringify({ ref: branch(c), inputs: inputs }) });
+    if (!res.ok) throw await errActions(res);
+  }
+  async function runsCancion(n) {
+    const c = cfg(); assertCfg(c);
+    const res = await fetch(wfUrl(c, 'runs?per_page=' + (n || 5)), { headers: headers(c), cache: 'no-store' });
+    if (!res.ok) throw await errActions(res);
+    return (await res.json()).workflow_runs || [];
+  }
+
   SB.github = { cfg, setCfg, pull, push, getFile, putFile, sealCfg, unsealCfg, repoDeUrl, VAULT_MIN,
+    dispatchCancion, runsCancion,
     configured() { const c = cfg(); return !!(c.owner && c.repo && c.token); } };
 })();
