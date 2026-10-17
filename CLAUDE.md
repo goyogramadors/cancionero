@@ -52,8 +52,11 @@ python -m http.server 8000   # abrir http://localhost:8000
   desregístralo y limpia caches.
 - **Despliegue:** GitHub Pages sirve desde la rama `main`, carpeta raíz. **Cada `git push` a `main`
   republica** el sitio (tarda ~1-2 min). El `index.html` raíz redirige a `app/`.
-- **No agregues archivos en `.github/workflows/`**: el token de `gh` de la cuenta no tiene el scope
-  `workflow` y el push será rechazado. Por eso Pages es por rama, no por Actions.
+- **Workflows:** el token de `gh` ya tiene el scope `workflow` (desde 2026-10). Pages sigue siendo por
+  rama. Hay un único workflow, `.github/workflows/preparar-cancion.yml`, que corre en el runner propio
+  `dell-win-cancionero` (este PC, `C:\actions-runner-cancionero`, arranca con la sesión vía la carpeta
+  Inicio). El repo es público y el runner es un PC personal: **ningún workflow puede dispararse con
+  pull_request**; solo `workflow_dispatch`, y los datos de entrada van por variables de entorno.
 - **Persistencia:** ediciones del usuario en `localStorage`; sync opcional al repo
   (`data/user-songs.json`) vía `core/github.js` + herramienta Ajustes (necesita un token fino con
   Contents: Read and write). La forma del dato no cambia entre local y repo.

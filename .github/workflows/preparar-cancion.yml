@@ -1,0 +1,77 @@
+# Prepara una cancion de Canta en el PC (runner propio "dell-win-cancionero") y
+# la publica. Se lanza SOLO a pedido (workflow_dispatch): nada de pull requests,
+# porque el repo es publico y el runner corre en un PC personal.
+#   gh workflow run preparar-cancion.yml -R goyogramadors/cancionero -f url=<link>
+name: Preparar cancion
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Link de YouTube'
+        required: true
+      titulo:
+        description: 'Titulo (opcional; si no, sale de LRCLIB o del video)'
+        required: false
+      artista:
+        description: 'Artista (opcional)'
+        required: false
+      modelo:
+        description: 'Modelo de Whisper'
+        required: false
+        default: 'large-v3-turbo'
+        type: choice
+        options: [large-v3-turbo, small, large-v3]
+      demucs:
+        description: 'Separacion de voz'
+        required: false
+        default: 'htdemucs'
+        type: choice
+        options: [htdemucs, htdemucs_ft]
+
+# una cancion a la vez: dos Demucs en paralelo ahogan el PC
+concurrency:
+  group: preparar-cancion
+  cancel-in-progress: false
+
+jobs:
+  preparar:
+    runs-on: [self-hosted, cancionero]
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: C:\Songbook
+    env:
+      PEDIDO_URL: ${{ inputs.url }}
+      PEDIDO_TITULO: ${{ inputs.titulo }}
+      PEDIDO_ARTISTA: ${{ inputs.artista }}
+      PEDIDO_MODELO: ${{ inputs.modelo }}
+      PEDIDO_DEMUCS: ${{ inputs.demucs }}
+      PYTHONIOENCODING: utf-8
+    steps:
+      - name: Validar el link
+        run: |
+          if ($env:PEDIDO_URL -notmatch '^https://(www\.|m\.|music\.)?(youtube\.com/watch\?v=|youtu\.be/)[A-Za-z0-9_-]{6,}') {
+            Write-Error "No parece un link de YouTube: $env:PEDIDO_URL"; exit 1
+          }
+
+      - name: Traer lo ultimo del repo
+        run: git pull --ff-only
+
+      - name: Preparar (descarga, separa, letra, melodia)
+        run: |
+          $a = @($env:PEDIDO_URL, '--model', $env:PEDIDO_MODELO, '--demucs', $env:PEDIDO_DEMUCS)
+          if ($env:PEDIDO_TITULO)  { $a += @('--title',  $env:PEDIDO_TITULO) }
+          if ($env:PEDIDO_ARTISTA) { $a += @('--artist', $env:PEDIDO_ARTISTA) }
+          & .\canta-prep\.venv\Scripts\python.exe -u .\canta-prep\prep.py @a 2>&1 | Tee-Object -Variable salida
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $id = ($salida | Select-String -Pattern '\(id: ([^)]+)\)' | Select-Object -Last 1).Matches.Groups[1].Value
+          if (-not $id) { Write-Error 'prep.py no informo el id del paquete'; exit 1 }
+          "CANCION_ID=$id" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Publicar
+        run: |
+          & .\canta-prep\.venv\Scripts\python.exe -c "import sys, os, json; sys.path.insert(0, r'C:\Songbook\canta-prep'); import motor; r = motor.publicar(os.environ['CANCION_ID']); print(json.dumps(r, ensure_ascii=False)); sys.exit(0 if r.get('ok') else 1)"
+          "### Lista: $env:CANCION_ID" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          "https://goyogramadors.github.io/cancionero/app/#/canta/song/$env:CANCION_ID" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
