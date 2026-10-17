@@ -22,12 +22,22 @@
   var STUDENT = !!window.SB_CANTA_STUDENT;
 
   var CFGKEY = 'sb.canta.cfg', BESTKEY = 'sb.canta.best';
-  var TOL = 0.7;          // tolerancia de afinación: ±70 cents alrededor de la nota
-  var HITRATIO = 0.72;    // fracción del tiempo evaluado que hay que acertar para que la barra quede verde
-  // Cantar no es saltar de plataforma en plataforma: para llegar a una nota se
-  // pasa por las del medio (portamento) y el ataque siempre viene con un
-  // deslizamiento. Ese tramo inicial no se evalúa — ni suma ni castiga.
-  var TRANS = 0.15;       // segundos de gracia al entrar a cada nota
+  // Niveles de exigencia del evaluador.
+  //   tol    semitonos alrededor de la nota que cuentan como afinado
+  //   ratio  fracción del tiempo evaluado que hay que acertar para el verde
+  //   logro  (solo recreativo) segundos afinados que bastan para que TODA la
+  //          plataforma quede verde, aunque después el canto suba o baje;
+  //          en notas cortas basta la mitad de la nota
+  //   rojo   si se pintan los tramos desafinados
+  //   trans  gracia al entrar a cada nota: cantar no es saltar de plataforma en
+  //          plataforma, se llega pasando por las notas del medio (portamento),
+  //          y ese tramo inicial no suma ni castiga
+  var NIVELES = {
+    recreativo: { tol: 1.0, ratio: 0,    logro: 0.3, rojo: false, trans: 0.2 },
+    avanzado:   { tol: 0.9, ratio: 0.5,  logro: 0,   rojo: true,  trans: 0.2 },
+    estricto:   { tol: 0.7, ratio: 0.72, logro: 0,   rojo: true,  trans: 0.15 }
+  };
+  function nivel() { return NIVELES[S.cfg.nivel] || NIVELES.recreativo; }
   var PXPS = 120;         // píxeles por segundo (en tiempo reproducido)
 
   var S = {
@@ -49,7 +59,7 @@
   /* ---------------- configuración ---------------- */
   function loadCfg() {
     var d = { volV: 0.6, volM: 1.0, volMine: 1.0, latency: 0.1, octaveFree: true, latin: true,
-              micDev: null, audifonos: false, grabar: true };
+              micDev: null, audifonos: false, grabar: true, nivel: 'recreativo' };
     try { Object.assign(d, JSON.parse(localStorage.getItem(CFGKEY) || '{}')); } catch (e) {}
     return d;
   }
@@ -615,6 +625,8 @@
       '<select id="kaMicDev"></select></div>' +
       '<label class="check" title="Con audífonos se apaga la cancelación de eco del navegador, que atenúa el micrófono cada vez que suena la música y corta tu voz a pedazos"><input type="checkbox" id="kaAudif"> Audífonos</label>' +
       '<label class="check" title="Guarda lo que cantas para poder escucharte después y compararte con el original. Las grabaciones quedan solo en este dispositivo"><input type="checkbox" id="kaGrabar"> Grabar mi voz</label>' +
+      '<div class="ctl"><span class="ctl-label" title="Recreativo: sostener el tono un momento gana la plataforma entera. Avanzado: tramos verdes y rojos, con más margen. Estricto: tramos verdes y rojos, afinación justa">Nivel</span><div class="seg" id="kaNivelSeg">' +
+      '<button data-n="recreativo">Recreativo</button><button data-n="avanzado">Avanzado</button><button data-n="estricto">Estricto</button></div></div>' +
       '<label class="check" title="Acepta tu canto en la octava que te acomode (hombre cantando una canción de mujer, etc.). Desmarcado: exige la octava exacta"><input type="checkbox" id="kaOct"> Octava libre</label>' +
       '<div class="ctl"><span class="ctl-label" title="Compensación del retardo parlante→micrófono→proceso. Si cantas bien pero te marca corrido, ajústala de a 10 ms">Latencia</span><div class="stepper">' +
       '<button id="kaLatD" aria-label="Menos latencia">−</button><span class="val" id="kaLat"></span><button id="kaLatU" aria-label="Más latencia">+</button></div>' +
@@ -809,6 +821,17 @@
     q('#kaMicSeg').querySelectorAll('button').forEach(function (b) {
       b.addEventListener('click', function () { setMicMode(b.dataset.m); });
     });
+    var nivelBtns = q('#kaNivelSeg').querySelectorAll('button');
+    var marcarNivel = function () {
+      nivelBtns.forEach(function (b) {
+        b.setAttribute('aria-pressed', b.dataset.n === (NIVELES[S.cfg.nivel] ? S.cfg.nivel : 'recreativo') ? 'true' : 'false');
+      });
+    };
+    nivelBtns.forEach(function (b) {
+      b.addEventListener('click', function () { S.cfg.nivel = b.dataset.n; saveCfg(); marcarNivel(); });
+    });
+    marcarNivel();
+
     var oct = q('#kaOct');
     oct.checked = S.cfg.octaveFree;
     oct.addEventListener('change', function () { S.cfg.octaveFree = oct.checked; saveCfg(); });
@@ -1294,7 +1317,7 @@
       if (n.e >= t - 0.05) {
         S.score -= n.pts || 0; // devolver lo ganado: retroceder no infla el puntaje
         n.pts = 0; n.scored = false;
-        n.segs = []; n.hitT = 0; n.totT = 0; n.done = false; n.green = false;
+        n.segs = []; n.hitT = 0; n.totT = 0; n.done = false; n.green = false; n.logrado = false;
       }
     }
     S.finPtr = 0;
@@ -1320,7 +1343,8 @@
     var target = noteAt(tAdj);
     var semis = E().semis();
     var shown = null, state = 0; // 0 sin voz/objetivo · 1 acierto · 2 error · 3 transición
-    var gracia = target ? Math.min(TRANS, (target.e - target.s) * 0.35) : 0;
+    var N = nivel();
+    var gracia = target ? Math.min(N.trans, (target.e - target.s) * 0.35) : 0;
     var enTransicion = target ? (tAdj - target.s) < gracia : false;
     if (sample.midi != null) {
       shown = sample.midi;
@@ -1330,11 +1354,16 @@
           S.wrapOff = 12 * Math.round((goal - sample.midi) / 12);
           shown = sample.midi + S.wrapOff;
         }
-        var hit = Math.abs(shown - goal) <= TOL;
+        var hit = Math.abs(shown - goal) <= N.tol;
         state = enTransicion ? 3 : (hit ? 1 : 2);
         if (!enTransicion) {          // el ataque no se evalúa
           target.totT += dt;
           if (hit) target.hitT += dt;
+          // recreativo: sostener el tono un rato ya gana la plataforma entera
+          if (N.logro && !target.logrado &&
+              target.hitT >= Math.min(N.logro, 0.5 * (target.e - target.s - gracia))) {
+            target.logrado = true;
+          }
         }
         var segs = target.segs, last = segs[segs.length - 1];
         if (last && last.hit === hit && last.trans === enTransicion && tAdj - last.t1 < 0.08) last.t1 = tAdj;
@@ -1364,8 +1393,10 @@
       if (!n.done) {
         n.done = true;
         n.scored = S.micMode !== 'off' && n.totT > 0.02;
+        var N = nivel();
         var ratio = n.scored ? n.hitT / n.totT : 0;
-        n.green = n.scored && ratio >= HITRATIO;
+        if (N.logro && n.logrado) ratio = 1;   // recreativo: la ganaste entera
+        n.green = n.scored && (N.logro ? !!n.logrado : ratio >= N.ratio);
         if (n.scored) {
           var mult = 1 + 0.1 * Math.min(S.streak, 10);
           n.pts = Math.round((n.e - n.s) * 100 * ratio * mult);
@@ -2130,15 +2161,20 @@
       if (n.s > t1Vis) break;
       var x1 = xOf(n.s), x2 = xOf(n.e);
       var ym = yOf(n.m + semis) - barH / 2;
-      // nota cerrada: verde/rojo solo si de verdad se evaluó; saltada queda neutra
-      g.fillStyle = n.done && n.scored ? (n.green ? C.good : C.bad) : C.line;
+      // nota cerrada: verde/rojo solo si de verdad se evaluó; saltada queda neutra.
+      // En recreativo, una plataforma ganada se pinta verde entera al tiro.
+      var Nv = nivel();
+      if (n.logrado && Nv.logro) g.fillStyle = C.good;
+      else if (n.done && n.scored) g.fillStyle = n.green ? C.good : (Nv.rojo ? C.bad : C.line);
+      else g.fillStyle = C.line;
       g.globalAlpha = n.done ? 0.5 : 1;
       rounded(g, x1, ym, Math.max(3, x2 - x1), barH, barH / 2);
       g.fill();
       g.globalAlpha = 1;
       // tramo ya recorrido, pintado según acierto
-      for (var si = 0; si < n.segs.length; si++) {
+      for (var si = 0; !(n.logrado && Nv.logro) && si < n.segs.length; si++) {
         var sg = n.segs[si];
+        if (!Nv.rojo && !sg.hit) continue;   // recreativo: no marca lo desafinado
         var sx1 = xOf(Math.max(sg.t0, n.s)), sx2 = xOf(Math.min(sg.t1, n.e));
         if (sx2 <= sx1) continue;
         // el tramo de entrada (portamento) va neutro: no es error
