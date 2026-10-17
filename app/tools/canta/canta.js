@@ -709,6 +709,9 @@
       '<canvas id="kaCanvas"></canvas>' +
       '<div class="ka-hud"><span id="kaScore">0</span><span class="ka-hud-sub" id="kaStreak"></span>' +
       '<span class="ka-hud-sub" id="kaBest"></span></div>' +
+      '<div class="ka-latov" title="Latencia. Si tu traza queda atrasada respecto a las plataformas, súbela; si queda adelantada, bájala">' +
+      '<button id="kaLatOvM" aria-label="Bajar latencia 10 ms">◀</button><span id="kaLatOvV"></span>' +
+      '<button id="kaLatOvP" aria-label="Subir latencia 10 ms">▶</button></div>' +
       '</div>' +
 
       '<div class="controls">' +
@@ -1028,6 +1031,8 @@
       status('Entrada cambiada. Si no se escucha, revisa que el dispositivo esté activo.');
     });
     q('#kaLatD').addEventListener('click', function () { bumpLat(-0.01); });
+    q('#kaLatOvM').addEventListener('click', function () { bumpLat(-0.01); });
+    q('#kaLatOvP').addEventListener('click', function () { bumpLat(0.01); });
     q('#kaLatU').addEventListener('click', function () { bumpLat(0.01); });
 
     E().setOnEnded(function () {
@@ -1229,6 +1234,8 @@
     return sign + (whole ? whole : '') + (half ? '½' : '');
   }
   function updateSteppers() {
+    var ov = q('#kaLatOvV');
+    if (ov) ov.textContent = Math.round(S.cfg.latency * 1000) + ' ms';
     q('#kaSem').textContent = fmtSemis(S.pendSemis);
     q('#kaTem').textContent = S.pendTempo + '%';
     q('#kaLat').textContent = Math.round(S.cfg.latency * 1000) + ' ms';
@@ -2060,10 +2067,17 @@
     } catch (e) {}
   }
 
+  // Momento que marca la linea vertical: lo que ESTAS ESCUCHANDO. El audio se
+  // manda a sonar antes de que llegue a tus oidos, y tu voz vuelve con retraso
+  // por el microfono: ambos retrasos son la latencia. Corriendo el carril por la
+  // latencia, la linea es lo que oyes y el punto de tu voz cae SOBRE ella; si la
+  // latencia esta bien, cantar con la musica deja tu traza encima de las plataformas.
+  function tVista() { return E().position() - S.cfg.latency; }
+
   function geo() {
     var cv = S.els.canvas;
     var W = cv.clientWidth, H = cv.clientHeight;
-    var semis = E().semis(), tempo = E().tempo(), now = E().position();
+    var semis = E().semis(), tempo = E().tempo(), now = tVista();
     var R = rangoVertical(), loM = R.loM, hiM = R.hiM;
     var span = hiM - loM, phX = W * 0.40;
     return {
@@ -2192,7 +2206,7 @@
   function pegar() {
     if (!PORTAPAPELES || !S.editando) return false;
     empujarDeshacer();
-    var t0 = Math.max(0, E().position());
+    var t0 = Math.max(0, tVista());   // se pega en la linea vertical
     var nuevas = PORTAPAPELES.map(function (c) { return notaNueva(t0 + c.ds, t0 + c.ds + c.dur, c.m); });
     S.notes = S.notes.concat(nuevas);
     ordenarNotas();
@@ -2428,6 +2442,23 @@
     g.fillText('mic', 8, y0 + h - 2);
   }
 
+  // Intensidad de la musica, justo sobre la letra: muestra como sube y baja
+  // la cancion para anticiparse (la contraparte de la curva de la voz).
+  function dibujarDinamica(g, W, H, xOf, t0, t1, C) {
+    var env = E().envolventeMusica(20);
+    if (!env) return;
+    var fps = env.fps, v = env.v, piso = H - 46, alto = 26;
+    var i0 = Math.max(0, Math.floor(t0 * fps)), i1 = Math.min(v.length - 1, Math.ceil(t1 * fps));
+    if (i1 <= i0) return;
+    g.beginPath();
+    g.moveTo(xOf(i0 / fps), piso);
+    for (var i = i0; i <= i1; i++) g.lineTo(xOf(i / fps), piso - alto * Math.pow(v[i], 0.7));
+    g.lineTo(xOf(i1 / fps), piso);
+    g.closePath();
+    g.globalAlpha = 0.5; g.fillStyle = C.line; g.fill();
+    g.globalAlpha = 1; g.strokeStyle = C.faint; g.lineWidth = 1; g.stroke();
+  }
+
   var LETRA_FUENTE = '700 19px "Helvetica Neue",Helvetica,Arial,system-ui,sans-serif';
   function dibujarLetra(g, W, H, now, xOf, t0Vis, t1Vis, C) {
     var lines = S.lines || [], base = H - 14, banda = 44;
@@ -2480,6 +2511,7 @@
     var C = S.colors, tempo = E().tempo(), semis = E().semis();
     var now = E().position();
     var tAdj = now - S.cfg.latency;
+    var vista = tAdj;                 // la linea vertical: lo que escuchas (ver tVista)
     finalizeUpTo(tAdj);
     vigilarTramos();
 
@@ -2489,7 +2521,7 @@
     var i;
     var yOf = function (m) { return H - ((m - loM) / span) * H; };
     var phX = W * 0.40; // 40% de pasado, 60% de futuro
-    var xOf = function (t) { return phX + ((t - now) / tempo) * PXPS; };
+    var xOf = function (t) { return phX + ((t - vista) / tempo) * PXPS; };
     var barH = Math.max(5, Math.min(20, (H / span) * 0.85));
 
     // rejilla: una línea por semitono, más notoria en cada Do
@@ -2507,7 +2539,8 @@
     }
 
     // barras de notas
-    var t0Vis = now - (phX / PXPS) * tempo - 1, t1Vis = now + ((W - phX) / PXPS) * tempo + 1;
+    var t0Vis = vista - (phX / PXPS) * tempo - 1, t1Vis = vista + ((W - phX) / PXPS) * tempo + 1;
+    dibujarDinamica(g, W, H, xOf, t0Vis, t1Vis, C);   // de fondo, detrás de las plataformas
     g.font = '600 11px ui-monospace,Consolas,monospace';
     for (i = 0; i < ns.length; i++) {
       var n = ns[i];
@@ -2650,7 +2683,7 @@
     if (S.micMode === 'mic') dibujarNivel(g, C);
 
     // letra: corre por el carril igual que las plataformas (ver dibujarLetra)
-    dibujarLetra(g, W, H, now, xOf, t0Vis, t1Vis, C);
+    dibujarLetra(g, W, H, vista, xOf, t0Vis, t1Vis, C);
 
     // cabezal
     g.strokeStyle = C.mut; g.lineWidth = 1;

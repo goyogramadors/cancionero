@@ -756,6 +756,30 @@
 
   function duration() { return St.buffers ? St.buffers.vocals.duration : 0; }
 
+  // Intensidad de la musica en el tiempo (RMS por ventana, normalizada al
+  // percentil 98), para la guia de dinamica bajo el carril. Una vez por cancion.
+  function envolventeMusica(fps) {
+    var b = St.buffers && St.buffers.music;
+    if (!b) return null;
+    if (St.env && St.env.buf === b && St.env.fps === fps) return St.env;
+    var n = b.length, paso = Math.max(1, Math.round(b.sampleRate / fps)), nv = Math.ceil(n / paso);
+    var chs = [], c, i, j;
+    for (c = 0; c < b.numberOfChannels; c++) chs.push(b.getChannelData(c));
+    var v = new Float32Array(nv);
+    for (i = 0; i < nv; i++) {
+      var suma = 0, k = 0, fin = Math.min(n, (i + 1) * paso);
+      for (j = i * paso; j < fin; j += 4) {
+        for (c = 0; c < chs.length; c++) { var x = chs[c][j]; suma += x * x; k++; }
+      }
+      v[i] = k ? Math.sqrt(suma / k) : 0;
+    }
+    var orden = Array.prototype.slice.call(v).sort(function (a, z) { return a - z; });
+    var tope = orden[Math.floor(nv * 0.98)] || 1e-6;
+    for (i = 0; i < nv; i++) v[i] = Math.min(1, v[i] / tope);
+    St.env = { buf: b, fps: fps, v: v };
+    return St.env;
+  }
+
   function position() {
     if (!St.buffers) return 0;
     var played = St.playing ? (ctx().currentTime - St.t0) : St.posPaused / St.tempo;
@@ -863,6 +887,7 @@
     position: position, duration: duration,
     tempo: function () { return St.tempo; }, semis: function () { return St.semis; },
     setVol: setVol, vols: function () { return St.vols; },
+    envolventeMusica: envolventeMusica,
     setFx: function (f) { Object.assign(St.fx, f); aplicarFx(); },
     fx: function () { return St.fx; },
     setOnEnded: function (fn) { St.onEnded = fn; },
