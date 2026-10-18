@@ -756,39 +756,78 @@
 
   function duration() { return St.buffers ? St.buffers.vocals.duration : 0; }
 
-  // Forma de onda de la musica para la guia bajo el carril. Por ventana (1/fps
-  // s) guarda el PICO (golpes, ritmo) y el RMS (cuerpo, intensidad sostenida),
-  // en decibeles y estirados al rango que usa ESTA cancion: la musica viene
-  // masterizada (volumen parejo) y en escala lineal se veia plana. Una vez por cancion.
-  function envolventeMusica(fps) {
+  // Golpes de la musica (la percusion) para la guia bajo el carril. Se mide el
+  // flujo espectral: cuanta energia NUEVA aparece en cada instante, banda por
+  // banda. Una nota sostenida casi no suma (su espectro no cambia); un golpe de
+  // bateria o un rasgueo si, de repente y en muchas bandas. Se quedan los picos
+  // que sobresalen de su entorno, con su fuerza relativa a ESTA cancion.
+  // Una vez por cancion (~0,5 s). Devuelve { t: tiempos (s), v: fuerza 0..1 }.
+  function golpesMusica() {
     var b = St.buffers && St.buffers.music;
     if (!b) return null;
-    if (St.env && St.env.buf === b && St.env.fps === fps) return St.env;
-    var n = b.length, paso = Math.max(1, Math.round(b.sampleRate / fps)), nv = Math.ceil(n / paso);
-    var chs = [], c, i, j;
+    if (St.golpes && St.golpes.buf === b) return St.golpes;
+    var N = 512, sr = b.sampleRate / 2, hop = Math.round(sr * 0.02);   // ventanas de 20 ms
+    var chs = [], c, i, k;
     for (c = 0; c < b.numberOfChannels; c++) chs.push(b.getChannelData(c));
-    var rmsDb = new Float32Array(nv), picoDb = new Float32Array(nv);
-    for (i = 0; i < nv; i++) {
-      var suma = 0, k = 0, pico = 0, fin = Math.min(n, (i + 1) * paso);
-      for (j = i * paso; j < fin; j += 2) {
-        for (c = 0; c < chs.length; c++) {
-          var x = chs[c][j], ax = x < 0 ? -x : x;
-          suma += x * x; k++;
-          if (ax > pico) pico = ax;
+    var n = Math.floor(b.length / 2), x = new Float32Array(n);
+    for (i = 0; i < n; i++) { var s = 0; for (c = 0; c < chs.length; c++) s += chs[c][2 * i]; x[i] = s; }
+    var nf = Math.max(0, Math.floor((n - N) / hop) + 1);
+    var flujo = new Float32Array(nf), prev = new Float32Array(N / 2);
+    var re = new Float32Array(N), im = new Float32Array(N), ven = new Float32Array(N);
+    for (k = 0; k < N; k++) ven[k] = 0.5 - 0.5 * Math.cos(2 * Math.PI * k / N);
+    for (var f = 0; f < nf; f++) {
+      var o = f * hop;
+      for (k = 0; k < N; k++) { re[k] = x[o + k] * ven[k]; im[k] = 0; }
+      fft(re, im);
+      var suma = 0;
+      for (k = 1; k < N / 2; k++) {
+        var m = Math.log(1 + 10 * Math.sqrt(re[k] * re[k] + im[k] * im[k])), d = m - prev[k];
+        if (d > 0) suma += d;
+        prev[k] = m;
+      }
+      flujo[f] = suma;
+    }
+    // golpe = maximo local (+-40 ms) que supera el promedio de su entorno (+-100 ms)
+    var acum = new Float64Array(nf + 1);
+    for (f = 0; f < nf; f++) acum[f + 1] = acum[f] + flujo[f];
+    var ts = [], vs = [];
+    for (f = 2; f < nf - 2; f++) {
+      var a = flujo[f];
+      if (a < flujo[f - 1] || a < flujo[f - 2] || a <= flujo[f + 1] || a <= flujo[f + 2]) continue;
+      var i0 = Math.max(0, f - 5), i1 = Math.min(nf, f + 6);
+      var sobre = a - (acum[i1] - acum[i0]) / (i1 - i0);
+      if (sobre > 0) { ts.push((o = f * hop + N / 2) / sr); vs.push(sobre); }
+    }
+    var ord = vs.slice().sort(function (p, q) { return p - q; });
+    var tope = ord[Math.floor(ord.length * 0.98)] || 1, t = [], v = [];
+    for (i = 0; i < ts.length; i++) {
+      var r = Math.min(1, vs[i] / tope);
+      if (r >= 0.12) { t.push(ts[i]); v.push(r); }   // lo mas debil es ruido, no ritmo
+    }
+    St.golpes = { buf: b, t: t, v: v };
+    return St.golpes;
+  }
+  // FFT radix-2 en el lugar (largo potencia de 2)
+  function fft(re, im) {
+    var n = re.length, i, j = 0, k, len, t;
+    for (i = 1; i < n; i++) {
+      var bit = n >> 1;
+      for (; j & bit; bit >>= 1) j ^= bit;
+      j ^= bit;
+      if (i < j) { t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+    }
+    for (len = 2; len <= n; len <<= 1) {
+      var mitad = len >> 1, ang = -2 * Math.PI / len, wr = Math.cos(ang), wi = Math.sin(ang);
+      for (i = 0; i < n; i += len) {
+        var cr = 1, ci = 0;
+        for (k = 0; k < mitad; k++) {
+          var a = i + k, z = a + mitad;
+          var xr = re[z] * cr - im[z] * ci, xi = re[z] * ci + im[z] * cr;
+          re[z] = re[a] - xr; im[z] = im[a] - xi; re[a] += xr; im[a] += xi;
+          t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t;
         }
       }
-      rmsDb[i] = 20 * Math.log10((k ? Math.sqrt(suma / k) : 0) + 1e-6);
-      picoDb[i] = 20 * Math.log10(pico + 1e-6);
     }
-    var ord = Array.prototype.slice.call(rmsDb).sort(function (a, z) { return a - z; });
-    var ordP = Array.prototype.slice.call(picoDb).sort(function (a, z) { return a - z; });
-    var lo = ord[Math.floor(nv * 0.05)], hi = ordP[Math.floor(nv * 0.99)];
-    var rango = Math.max(6, hi - lo);
-    var rel = function (d) { return Math.max(0, Math.min(1, (d - lo) / rango)); };
-    var v = new Float32Array(nv), p = new Float32Array(nv);
-    for (i = 0; i < nv; i++) { v[i] = rel(rmsDb[i]); p[i] = rel(picoDb[i]); }
-    St.env = { buf: b, fps: fps, v: v, p: p };
-    return St.env;
   }
 
   function position() {
@@ -898,7 +937,7 @@
     position: position, duration: duration,
     tempo: function () { return St.tempo; }, semis: function () { return St.semis; },
     setVol: setVol, vols: function () { return St.vols; },
-    envolventeMusica: envolventeMusica,
+    golpesMusica: golpesMusica,
     setFx: function (f) { Object.assign(St.fx, f); aplicarFx(); },
     fx: function () { return St.fx; },
     setOnEnded: function (fn) { St.onEnded = fn; },

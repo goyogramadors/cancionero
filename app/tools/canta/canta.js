@@ -2444,24 +2444,23 @@
     g.fillText('mic', 8, y0 + h - 2);
   }
 
-  // Forma de onda de la musica, justo sobre la letra: se ven los golpes, las
-  // entradas y las pausas, para anticiparse. Afuera el pico (ritmo), adentro el
-  // cuerpo (intensidad sostenida), reflejados en torno a una linea central.
-  function dibujarDinamica(g, W, H, xOf, t0, t1, C) {
-    var env = E().envolventeMusica(40);
-    if (!env) return;
-    var fps = env.fps, alto = 40, medio = H - 46 - alto / 2 - 2;
-    var i0 = Math.max(0, Math.floor(t0 * fps)), i1 = Math.min(env.v.length - 1, Math.ceil(t1 * fps));
-    if (i1 <= i0) return;
-    function capa(arr, color, alfa) {
-      g.beginPath();
-      for (var i = i0; i <= i1; i++) g.lineTo(xOf(i / fps), medio - (alto / 2) * arr[i]);
-      for (i = i1; i >= i0; i--) g.lineTo(xOf(i / fps), medio + (alto / 2) * arr[i]);
-      g.closePath();
-      g.globalAlpha = alfa; g.fillStyle = color; g.fill();
+  // Golpes de la musica (la percusion), justo sobre la letra: una rayita por
+  // golpe, mas alta y oscura mientras mas fuerte. Es el ritmo con que se canta;
+  // la rayita se ilumina al cruzar la linea vertical, como un metronomo.
+  function dibujarDinamica(g, W, H, xOf, t0, t1, C, vista) {
+    var gp = E().golpesMusica();
+    if (!gp) return;
+    var alto = 40, medio = H - 46 - alto / 2 - 2;
+    g.lineWidth = 2;
+    for (var i = 0; i < gp.t.length; i++) {
+      var t = gp.t[i];
+      if (t < t0) continue;
+      if (t > t1) break;
+      var v = gp.v[i], h = alto * (0.2 + 0.8 * v) / 2, x = xOf(t), recien = vista - t >= 0 && vista - t < 0.12;
+      g.globalAlpha = recien ? 1 : 0.3 + 0.7 * v;
+      g.strokeStyle = recien ? C.good : C.ink;
+      g.beginPath(); g.moveTo(x, medio - h); g.lineTo(x, medio + h); g.stroke();
     }
-    capa(env.p, C.line, 0.9);    // picos
-    capa(env.v, C.faint, 0.55);  // cuerpo
     g.globalAlpha = 1;
   }
 
@@ -2546,7 +2545,7 @@
 
     // barras de notas
     var t0Vis = vista - (phX / PXPS) * tempo - 1, t1Vis = vista + ((W - phX) / PXPS) * tempo + 1;
-    dibujarDinamica(g, W, H, xOf, t0Vis, t1Vis, C);   // de fondo, detrás de las plataformas
+    dibujarDinamica(g, W, H, xOf, t0Vis, t1Vis, C, vista);   // de fondo, detrás de las plataformas
     g.font = '600 11px ui-monospace,Consolas,monospace';
     for (i = 0; i < ns.length; i++) {
       var n = ns[i];
