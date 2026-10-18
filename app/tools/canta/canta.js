@@ -38,6 +38,8 @@
     estricto:   { tol: 0.7, ratio: 0.72, logro: 0,   rojo: true,  trans: 0.15 }
   };
   function nivel() { return NIVELES[S.cfg.nivel] || NIVELES.recreativo; }
+  // Tope de latencia: con audífonos Bluetooth el retraso real pasa de 300 ms
+  var LAT_MAX = 1.0;
   var PXPS = 120;         // píxeles por segundo (en tiempo reproducido)
 
   var S = {
@@ -1223,7 +1225,7 @@
     updateSteppers(); scheduleApply();
   }
   function bumpLat(d) {
-    S.cfg.latency = Math.max(0, Math.min(0.3, Math.round((S.cfg.latency + d) * 100) / 100));
+    S.cfg.latency = Math.max(0, Math.min(LAT_MAX, Math.round((S.cfg.latency + d) * 100) / 100));
     saveCfg(); updateSteppers();
   }
   // el paso interno es el semitono; se muestra en tonos: +½, +1, +1½…
@@ -1472,7 +1474,7 @@
     if (pts.length < 30) return null;
 
     var mejor = null;
-    for (var d = -0.10; d <= 0.45001; d += 0.005) {
+    for (var d = -0.10; d <= LAT_MAX + 0.00001; d += 0.005) {
       var difs = [], origs = [];
       for (var i = 0; i < pts.length; i++) {
         var ov = origEn(pts[i].t - d);
@@ -1500,7 +1502,7 @@
     var o = mejor.orig.slice().sort(function (a, b) { return a - b; });
     var varOrig = o[Math.floor(o.length * 0.9)] - o[Math.floor(o.length * 0.1)];
     return {
-      latencia: Math.max(0, Math.min(0.3, Math.round(mejor.d * 100) / 100)),
+      latencia: Math.max(0, Math.min(LAT_MAX, Math.round(mejor.d * 100) / 100)),
       dispersion: mejor.disp,
       puntos: mejor.n,
       rangoMelodia: varOrig,

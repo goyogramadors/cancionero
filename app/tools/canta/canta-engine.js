@@ -678,7 +678,7 @@
       var mejor = null, mejorD = 1e9;
       for (var j = 0; j < golpes.length; j++) {
         var d = golpes[j] - tiemposClic[i];
-        if (d < -0.15 || d > 0.6) continue;      // fuera de rango razonable
+        if (d < -0.15 || d > 1.05) continue;     // fuera de rango razonable (Bluetooth llega a ~0.5 s)
         if (Math.abs(d) < Math.abs(mejorD)) { mejorD = d; mejor = golpes[j]; }
       }
       if (mejor != null) difs.push(mejorD);
@@ -691,7 +691,7 @@
     var desv = ord.map(function (d) { return Math.abs(d - med); })
                   .sort(function (a, b) { return a - b; })[ord.length >> 1];
     return {
-      latencia: Math.max(0, Math.min(0.4, Math.round(med * 1000) / 1000)),
+      latencia: Math.max(0, Math.min(1.0, Math.round(med * 1000) / 1000)),
       golpes: golpes.length, emparejados: difs.length,
       dispersion: desv,
       // con palmadas parejas la dispersion baja de 40 ms; si no, el numero no sirve
