@@ -6,7 +6,7 @@
    caché, así los cambios llegan en la siguiente carga sin quedar atascado
    en una versión vieja. Igual conviene subir CACHE en cada release.
    ============================================================ */
-const CACHE = 'cancionero-v40';
+const CACHE = 'cancionero-v41';
 const SHELL = [
   'index.html',
   'css/base.css',
@@ -30,7 +30,12 @@ const SHELL = [
   'tools/practice/practice.js',
   'tools/settings/settings.js',
   'manifest.webmanifest',
-  'pwa/icon.svg'
+  'pwa/icon.svg',
+  'pwa/icon-192.png',
+  'pwa/icon-512.png',
+  'pwa/icon-maskable-192.png',
+  'pwa/icon-maskable-512.png',
+  'pwa/apple-touch-icon.png'
 ];
 
 self.addEventListener('install', (e) => {
