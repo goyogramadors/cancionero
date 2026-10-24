@@ -44,6 +44,7 @@ nav.tabs button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 
 /* ---------- repertorio ---------- */
 .rep-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+.ka-head-btns{display:flex;gap:8px;flex-wrap:wrap}
 h1{font-size:26px;font-weight:700;margin:0;text-wrap:balance}
 .count{font-size:13px;color:var(--mut)}
 input.search{

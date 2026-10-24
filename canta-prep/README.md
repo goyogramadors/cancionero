@@ -239,6 +239,19 @@ Tarda ~1 minuto en vez de 10, porque no baja nada ni vuelve a correr Demucs ni
 Whisper. Al terminar imprime la cobertura lograda. Ojo: si esa canción ya
 estaba subida al repo, acuérdate de subir el `canta.json` nuevo.
 
+### Acordes
+
+Detecta los acordes en la pista de música y los guarda en el `canta.json` del
+paquete (`acordes`), para que Canta los muestre arriba del carril:
+
+```
+.venv\Scripts\python acordes.py "..\app\canta-media\<id-de-la-cancion>"
+```
+
+Con `--imprimir` solo los muestra. Es un punto de partida (mayores, menores y
+séptimas; ~1 minuto): lo fino se corrige en el Cancionero, y Canta usa los de
+la canción del Cancionero por sobre estos.
+
 ## Tiempos esperados (CPU)
 
 Para una canción de 3–4 minutos: Demucs ~3–8 min, Whisper `small` ~2–4 min,

@@ -182,6 +182,15 @@ karaoke**. La canción guarda `cantaId` para saber a qué paquete corresponde; C
 siempre la letra del Cancionero (la corregida) sobre la del paquete, y le pone tiempo a las
 palabras nuevas interpolando entre las marcas vecinas.
 
+**Acordes en Canta.** Arriba del carril corre el acorde de cada momento, transpuesto con el tono
+del reproductor. Mandan los acordes `a` de la canción vinculada del Cancionero: su tiempo sale del
+mismo mapa carácter→tiempo de la línea. Donde no hay letra (intro, interludios), o si la canción
+aún no tiene acordes, se usan los del paquete: `acordes: [{s, e, c}]` en `canta.json`, detectados
+en la pista de música por `canta-prep/acordes.py`. Al guardar la letra en el Cancionero los
+acordes detectados se anclan solos a la palabra en que cambian; si la canción ya existía sin
+acordes, el botón «Pasar acordes al Cancionero» hace lo mismo. Se guardan en el tono original;
+Canta los muestra con bemoles cuando la tonalidad transpuesta los usa.
+
 `store.js` sirve la semilla del repo y guarda las ediciones del usuario en `localStorage`.
 En la Fase 4 (repo Git como base de datos) se cambia por `fetch` de JSON + commit vía API de
 GitHub **sin tocar las herramientas**: la forma del dato no cambia.
