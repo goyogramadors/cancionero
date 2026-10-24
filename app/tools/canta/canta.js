@@ -517,7 +517,11 @@
     SB.store.save({
       id: id, cantaId: pkg.id, title: pkg.title, artist: pkg.artist || '',
       key: pkg.key || '—', loaded: true,
-      parts: [{ name: 'Letra', lines: lines.length ? lines.map(lineaGuardada) : [{ l: '', a: [] }] }]
+      parts: [{ name: 'Letra', lines: lines.length ? lines.map(function (L) {
+        var ln = lineaGuardada(L);
+        anclarAcordes(ln, pkg.acordes);
+        return ln;
+      }) : [{ l: '', a: [] }] }]
     });
     return { id: id, lineas: lines.length };
   }
@@ -699,13 +703,17 @@
     S.lines = partirLargas(letraEfectiva(pkg));
     S.letraEditada = S.lines !== pkg.lines && S.lines.length > 0;
     S.lines = aplicarTiemposLetra(S.lines);   // palabras movidas a mano en el editor
+    S.acordes = acordesEfectivos(pkg);
+    var pasarAcordes = (pkg.acordes || []).length && !S.acordesCancionero.length && cancionVinculada(pkg);
 
     S.view.innerHTML =
       '<div class="ka-scope">' +
       '<button class="back" id="kaBack">← Canta</button>' +
       '<div class="rep-head"><div><h1>' + esc(pkg.title) + '</h1>' +
       '<p class="artist">' + esc(pkg.artist || '') + (pkg.key ? ' · tono ' + esc(pkg.key) : '') + '</p></div>' +
-      '<button class="mini-app-btn" id="kaSaveLyr">Guardar letra en el Cancionero</button></div>' +
+      '<div class="ka-head-btns"><button class="mini-app-btn" id="kaSaveLyr">Guardar letra en el Cancionero</button>' +
+      (pasarAcordes ? '<button class="mini-app-btn" id="kaSaveAc" title="Escribe en tu canción del Cancionero los acordes detectados en la música, sobre la sílaba en que cambian. Después los corriges ahí y Canta usa los tuyos">Pasar acordes al Cancionero</button>' : '') +
+      '</div></div>' +
 
       '<div class="ka-stage">' +
       '<canvas id="kaCanvas"></canvas>' +
@@ -771,6 +779,9 @@
       '<label class="check" title="Guarda lo que cantas para poder escucharte después y compararte con el original. Las grabaciones quedan solo en este dispositivo"><input type="checkbox" id="kaGrabar"> Grabar mi voz</label>' +
       '<div class="ctl"><span class="ctl-label" title="Recreativo: sostener el tono un momento gana la plataforma entera. Avanzado: tramos verdes y rojos, con más margen. Estricto: tramos verdes y rojos, afinación justa">Nivel</span><div class="seg" id="kaNivelSeg">' +
       '<button data-n="recreativo">Recreativo</button><button data-n="avanzado">Avanzado</button><button data-n="estricto">Estricto</button></div></div>' +
+      (S.acordes.length ? '<label class="check" title="Muestra arriba el acorde de cada momento, transpuesto con el tono. ' +
+        (S.acordesCancionero.length ? 'Salen de tu canción del Cancionero' : 'Son los detectados en la música: corrígelos en el Cancionero') +
+        '"><input type="checkbox" id="kaVerAc"> Acordes</label>' : '') +
       '<label class="check" title="Acepta tu canto en la octava que te acomode (hombre cantando una canción de mujer, etc.). Desmarcado: exige la octava exacta"><input type="checkbox" id="kaOct"> Octava libre</label>' +
       '<div class="ctl"><span class="ctl-label" title="Compensación del retardo parlante→micrófono→proceso. Si cantas bien pero te marca corrido, ajústala de a 10 ms">Latencia</span><div class="stepper">' +
       '<button id="kaLatD" aria-label="Menos latencia">−</button><span class="val" id="kaLat"></span><button id="kaLatU" aria-label="Más latencia">+</button></div>' +
@@ -989,6 +1000,13 @@
       b.addEventListener('click', function () { S.cfg.nivel = b.dataset.n; saveCfg(); marcarNivel(); });
     });
     marcarNivel();
+
+    var verAc = q('#kaVerAc');
+    if (verAc) {
+      verAc.checked = S.cfg.verAcordes !== false;
+      verAc.addEventListener('change', function () { S.cfg.verAcordes = verAc.checked; saveCfg(); });
+    }
+    if (q('#kaSaveAc')) q('#kaSaveAc').addEventListener('click', pasarAcordesAlCancionero);
 
     var oct = q('#kaOct');
     oct.checked = S.cfg.octaveFree;
@@ -1702,7 +1720,9 @@
     };
     return {
       s: t0, e: t1, text: texto.trim(),
-      words: pals.map(function (p) { return { s: mapa(p.pos), e: mapa(p.pos + p.w.length), w: p.w }; })
+      words: pals.map(function (p) { return { s: mapa(p.pos), e: mapa(p.pos + p.w.length), w: p.w, p: p.pos }; }),
+      // acordes del Cancionero anclados a un carácter: su tiempo sale del mismo mapa
+      chords: (ln.a || []).map(function (a) { return { s: mapa(a[0]), c: a[1] }; })
     };
   }
 
@@ -1804,7 +1824,7 @@
   }
 
   function letraEfectiva(pkg) {
-    S.letraOmitidas = 0; S.letraDescartada = false;
+    S.letraOmitidas = 0; S.letraDescartada = false; S.acordesCancionero = [];
     var song = cancionVinculada(pkg);
     var pkgLines = pkg.lines || [];
     if (song) {
@@ -1816,13 +1836,13 @@
       });
       if (crudas.length) {
         // trabajamos sobre copias: prestar tiempos no debe tocar lo guardado
-        var copias = crudas.map(function (l) { return { l: l.l, t: l.t && l.t.slice(), w: l.w }; });
+        var copias = crudas.map(function (l) { return { l: l.l, t: l.t && l.t.slice(), w: l.w, a: l.a }; });
         prestarTiempos(copias, pkgLines);
         var out = [];
         copias.forEach(function (ln) {
           if (!ln.t) return;
           var L = lineaConTiempos(ln);
-          if (L) out.push(L);
+          if (L) { out.push(L); S.acordesCancionero = S.acordesCancionero.concat(L.chords); }
         });
         if (out.length) {
           out.sort(function (a, b) { return a.s - b.s; });
@@ -2431,7 +2451,7 @@
   // Barritas de nivel del micrófono (arriba a la izquierda). Verdes cuando
   // llega voz; la última se pone roja si la señal satura (sobre -3 dB).
   function dibujarNivel(g, C) {
-    var n = 8, w = 5, h = 14, x0 = 34, y0 = 8;
+    var n = 8, w = 5, h = 14, x0 = 34, y0 = verAcordes() ? 38 : 8;   // bajo la banda de acordes
     var lvl = S.nivelMic || 0;
     S.nivelMic = lvl * 0.97;                       // si dejan de llegar datos, cae
     var satura = performance.now() - (S.picoMic || 0) < 600;
@@ -2689,6 +2709,8 @@
 
     // letra: corre por el carril igual que las plataformas (ver dibujarLetra)
     dibujarLetra(g, W, H, vista, xOf, t0Vis, t1Vis, C);
+    // acordes: el mismo carril, arriba
+    dibujarAcordes(g, W, vista, xOf, t0Vis, t1Vis, C);
 
     // cabezal
     g.strokeStyle = C.mut; g.lineWidth = 1;
@@ -2710,6 +2732,142 @@
     g.arcTo(x, y + h, x, y, r);
     g.arcTo(x, y, x + w, y, r);
     g.closePath();
+  }
+
+  /* ---------------- acordes ----------------
+     Arriba del carril corre el acorde de cada momento, como la letra abajo.
+     Mandan los acordes de la canción vinculada del Cancionero (anclados a un
+     carácter de la letra, que ya tiene tiempos); donde no hay letra (intro,
+     interludios) se usan los detectados en la música (canta-prep/acordes.py,
+     "acordes" del canta.json). Se guardan en el tono original y se muestran
+     transpuestos con el tono del reproductor. */
+  function acordesEfectivos(pkg) {
+    var auto = (pkg.acordes || []).filter(function (a) { return a && a.c; });
+    var propios = (S.acordesCancionero || []).filter(function (a) { return a && a.c && isFinite(a.s); });
+    var lista;
+    if (!propios.length) lista = auto.map(function (a) { return { s: a.s, e: a.e, c: a.c }; });
+    else {
+      var lines = S.lines || [];
+      var cubierto = function (t) {
+        return lines.some(function (L) { return t >= L.s - 0.3 && t < L.e; });
+      };
+      lista = propios.map(function (a) { return { s: a.s, c: a.c }; })
+        .concat(auto.filter(function (a) { return !cubierto(a.s); }).map(function (a) { return { s: a.s, e: a.e, c: a.c }; }));
+    }
+    lista.sort(function (a, b) { return a.s - b.s; });
+    var out = [];
+    lista.forEach(function (a) {
+      var ult = out[out.length - 1];
+      if (ult && ult.c === a.c) return;            // mismo acorde seguido: uno solo
+      out.push(a);
+    });
+    var dur = E().duration() || 1e9;
+    out.forEach(function (a, i) {
+      var sig = out[i + 1] ? out[i + 1].s : dur;
+      a.e = a.e != null ? Math.min(a.e, sig) : sig;
+      if (a.e <= a.s) a.e = sig;
+    });
+    return out;
+  }
+  function verAcordes() { return S.cfg.verAcordes !== false && S.acordes && S.acordes.length > 0; }
+
+  // Nombre a mostrar: transpuesto, con bemoles si la tonalidad (ya
+  // transpuesta) se escribe con bemoles, y en Do-Re-Mi si así está la app.
+  var BEMOL = { 'C#': 'Db', 'D#': 'Eb', 'F#': 'Gb', 'G#': 'Ab', 'A#': 'Bb' };
+  var LATIN_B = { Db: 'Reb', Eb: 'Mib', Gb: 'Solb', Ab: 'Lab', Bb: 'Sib' };
+  function usaBemoles(k) {
+    var key = S.pkg && S.pkg.key, M = SB.music;
+    var c = key && M.parseChord(key);
+    if (!c) return false;
+    var r = M.tNote(c.root, k);
+    return c.suf === 'm' ? ['D', 'G', 'C', 'F', 'A#', 'D#'].indexOf(r) >= 0
+                         : ['F', 'A#', 'D#', 'G#', 'C#'].indexOf(r) >= 0;
+  }
+  function nombreAcorde(c, k) {
+    var s = SB.music.displayChord(c, k, 'am');
+    var bem = usaBemoles(k);
+    return s.replace(/[A-G]#?/g, function (n) {
+      if (bem && BEMOL[n]) n = BEMOL[n];
+      return S.cfg.latin ? (SB.music.LATIN_TI[n] || LATIN_B[n] || n) : n;
+    });
+  }
+
+  var ACORDE_FUENTE = '700 18px "Helvetica Neue",Helvetica,Arial,system-ui,sans-serif';
+  function dibujarAcordes(g, W, vista, xOf, t0Vis, t1Vis, C) {
+    if (!verAcordes()) return;
+    var ac = S.acordes, banda = 32, base = 23, semis = E().semis();
+    g.globalAlpha = 0.85; g.fillStyle = C.bg;
+    g.fillRect(0, 0, W, banda);
+    g.globalAlpha = 1;
+    g.font = ACORDE_FUENTE;
+    var cursor = -1e9;
+    for (var i = 0; i < ac.length; i++) {
+      var a = ac[i];
+      if (a.e < t0Vis) continue;
+      if (a.s > t1Vis) break;
+      var actual = a.s <= vista && vista < a.e;
+      var nom = nombreAcorde(a.c, semis), ancho = g.measureText(nom).width;
+      var xs = xOf(a.s);
+      // el que suena se queda a la vista aunque haya empezado hace rato
+      var x = Math.max(xs + 4, cursor, actual ? 4 : -1e9);
+      if (actual) x = Math.min(x, Math.max(4, xOf(a.e) - ancho - 6));
+      cursor = x + ancho + 12;
+      if (x > W) break;
+      g.fillStyle = C.line;                        // rayita donde cambia
+      g.fillRect(xs, 4, 1.5, banda - 8);
+      g.fillStyle = actual ? C.ink : C.mut;
+      g.globalAlpha = !actual && a.e <= vista ? 0.4 : 1;
+      g.fillText(nom, x, base);
+      g.globalAlpha = 1;
+    }
+  }
+
+  // Ancla a una línea del Cancionero ({l, t, w}) los acordes con tiempo que
+  // caen en ella: cada uno sobre la palabra que se está cantando cuando
+  // cambia, y el que viene sonando desde antes, sobre la primera palabra.
+  function anclarAcordes(ln, acordes) {
+    if (!ln || !ln.t || !(acordes || []).length) return 0;
+    var L = lineaConTiempos(ln);
+    if (!L || !L.words.length) return 0;
+    var t0 = L.s, t1 = L.e, ws = L.words, out = [];
+    var poner = function (pos, c) {
+      var ult = out[out.length - 1];
+      if (ult && ult[1] === c) return;
+      if (ult && ult[0] === pos) { ult[1] = c; return; }
+      out.push([pos, c]);
+    };
+    var previo = null;
+    acordes.forEach(function (a) { if (a.s <= t0 + 0.15) previo = a; });
+    if (previo) poner(ws[0].p, previo.c);
+    acordes.forEach(function (a) {
+      if (a.s <= t0 + 0.15 || a.s >= t1) return;
+      var w = ws[0];
+      for (var i = 0; i < ws.length; i++) if (ws[i].s <= a.s + 0.15) w = ws[i];
+      poner(w.p, a.c);
+    });
+    ln.a = out;
+    return out.length;
+  }
+
+  // Para una canción que ya estaba en el Cancionero sin acordes: les pone
+  // los detectados. No toca líneas que ya tengan acordes propios.
+  function pasarAcordesAlCancionero() {
+    var pkg = E().current(), song = cancionVinculada(pkg);
+    if (!song) return;
+    var n = 0, lineas = 0;
+    (song.parts || []).forEach(function (p) {
+      (p.lines || []).forEach(function (ln) {
+        if ((ln.a || []).length) return;
+        var k = anclarAcordes(ln, pkg.acordes);
+        if (k) { n += k; lineas++; }
+      });
+    });
+    if (!n) { status('No pude ubicar acordes en la letra (¿las líneas no tienen tiempos?).'); return; }
+    SB.store.save(song);
+    status(n + ' acordes escritos en ' + lineas + ' líneas de "' + song.title + '" en el Cancionero. Corrígelos ahí: Canta usará los tuyos.');
+    var b = q('#kaSaveAc'); if (b) b.hidden = true;
+    S.lines = aplicarTiemposLetra(partirLargas(letraEfectiva(pkg)));
+    S.acordes = acordesEfectivos(pkg);
   }
 
   /* ---------------- guardar / editar la letra ---------------- */
