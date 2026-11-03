@@ -96,12 +96,19 @@ solo suelta la selección.
 
 ## Piano — aprender piano popular
 
-Pestaña **Piano** (`app/tools/piano/piano.js`): piano para acompañar canciones, no clásico. Siete
-temas en orden (intervalos, acordes, escalas, campo armónico, progresiones, transponer y rítmica),
-cada uno con **Aprender** (teclado en pantalla que muestra y hace sonar) y **Practicar** (ejercicios
-con puntaje que se guarda en el dispositivo). Las notas se deletrean bien (Re + 3ª mayor = Fa#) y se
-ven en Do-Re-Mi o en cifrado americano. Si hay un piano digital conectado por USB, el botón
-**Teclado MIDI** hace que sus teclas cuenten en los ejercicios (Chrome en computador o Android).
+Pestaña **Piano** (`app/tools/piano/piano.js`): piano para acompañar canciones, no clásico. Nueve
+**unidades** en orden (el teclado, intervalos, acordes, escalas, campo armónico, progresiones,
+transponer, rítmica y acompañar canciones), cada una con **lecciones cortas**. Cada lección es una
+**tarea**: una explicación, un ejercicio interactivo que se resuelve **con el mouse sobre el teclado
+en pantalla** (tocar la nota o el intervalo pedido, armar el acorde o el grado, tocar la escala,
+tocar la progresión acorde por acorde, transponer, llevar el ritmo) o con alternativas (de oído,
+campo armónico), y una **meta de aciertos**; al cumplirla queda marcada como completada (también se
+puede marcar o desmarcar a mano). El avance se guarda en el dispositivo. Varias unidades traen un
+**Explorar** para mirar y escuchar antes de practicar. Las notas se deletrean bien (Re + 3ª mayor =
+Fa#) y se ven en Do-Re-Mi o en cifrado americano. Si hay un piano digital conectado por USB, el
+botón **Teclado MIDI** hace que sus teclas cuenten en los ejercicios (Chrome en computador o
+Android). En pantallas anchas la lección muestra a la izquierda la lista de lecciones de la unidad.
+La unidad «Acompañar canciones» toma los acordes de las canciones del propio Cancionero.
 
 ## Estado actual (2026-08-08)
 
