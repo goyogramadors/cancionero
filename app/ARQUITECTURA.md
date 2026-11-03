@@ -19,7 +19,7 @@ flowchart TD
     end
     CORE --> T1[tools/songbook<br/>Cancionero · primary]
     CORE --> T2[tools/practice<br/>Práctica · secondary]
-    CORE --> T3[tools/piano<br/>Piano (aprender) · primary]
+    CORE --> T3[tools/piano<br/>Piano (unidades y lecciones) · primary]
     CORE --> Tn[tools/…<br/>tus próximas herramientas]
     DATA[data/songs.js<br/>biblioteca semilla] --> ST
 ```
@@ -121,6 +121,21 @@ La herramienta más grande; sirve de ejemplo de una sub-herramienta con audio pe
 agregan con `git add -f` desde el motor, y una vez trackeados se versionan normal. La app los carga
 del servidor/sitio (`canta-media/index.json`), de una carpeta elegida por el usuario (quedan en
 IndexedDB) o genera una **demo sintética**.
+
+## Piano (aprender piano popular)
+
+`tools/piano/piano.js`, pestaña primaria, rutas `#/piano`, `#/piano/<unidad>` y
+`#/piano/<unidad>/<lección>`. Todo vive en un arreglo `UNIDADES`: cada unidad tiene `lecciones`, y
+cada lección es `{id, nom, txt, meta, ej, ex?}`. `ej` es una **fábrica de ejercicio**
+(`ejNota`, `ejIntervalo`, `ejAcorde`, `ejEscala`, `ejCampoQuiz`, `ejProgTocar`, `ejProgOido`,
+`ejSemitonos`, `ejTransponer`, `ejRitmo`) parametrizada; devuelve `function(cuerpo, ctl, lec)` que
+pinta el ejercicio y avisa con `ctl.ok()` / `ctl.mal()`. El marco (`abrirLeccion`) cuenta un acierto
+por consigna sin fallos, guarda `{ok, n, hecha}` por lección en `localStorage` (`sb.piano.progreso`)
+y marca la lección completada al llegar a `meta`; la casilla «Completada» la marca o desmarca a mano.
+Las unidades con `explorar` muestran un panel plegable (`exIntervalos`, `exAcordes`, …) cuyo estado
+inicial sale de `lec.ex`. Para sumar una lección basta agregarla al arreglo; para un ejercicio nuevo,
+una fábrica más. El teclado en pantalla (`teclado(el, desde, hasta, marcas, onPress)`) y el teclado
+MIDI (`S.onKey`) alimentan los mismos ejercicios. El sonido es un sintetizador Web Audio propio.
 
 ## Canta para alumnos (sitio satélite, repo aparte)
 

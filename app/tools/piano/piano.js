@@ -2,25 +2,24 @@
    Sub-herramienta: Piano — aprender piano POPULAR y funcional
    (acompañar canciones), no clásico. Pestaña primaria.
 
-   Siete temas, cada uno con "Aprender" (explorar con el teclado y el
-   sonido) y "Practicar" (ejercicios con puntaje):
-     intervalos · acordes · escalas · campo armónico · progresiones ·
-     transponer · rítmica
+   Se organiza en UNIDADES, cada una con LECCIONES. Una lección es una
+   tarea: una explicación corta, un ejercicio interactivo (se resuelve con
+   el mouse sobre un teclado en pantalla, o con un piano MIDI) y una meta
+   de aciertos; al llegar a la meta queda marcada como completada. También
+   se puede marcar y desmarcar a mano. Varias unidades traen además un
+   "explorador" para mirar y escuchar antes de practicar.
 
-   Sin dependencias fuera de SB. El sonido es un sintetizador propio
-   (Web Audio). Si hay un teclado MIDI conectado (piano digital por USB),
-   sus teclas cuentan en los ejercicios igual que tocar la pantalla.
-   Las notas se deletrean por letra (Re + 3ª mayor = Fa#, no Solb) y en
-   Do-Re-Mi o en cifrado americano según el botón de la portada.
-   El avance se guarda en este dispositivo (localStorage).
+   Sin dependencias fuera de SB. Sonido: sintetizador propio (Web Audio).
+   Las notas se deletrean por letra (Re + 3ª mayor = Fa#, no Solb) y se
+   muestran en Do-Re-Mi o en cifrado americano. El avance se guarda en
+   este dispositivo (localStorage, `sb.piano.progreso`).
+   Rutas: #/piano · #/piano/<unidad> · #/piano/<unidad>/<lección>
    ============================================================ */
 (function () {
   window.SB = window.SB || {};
 
   var CFGKEY = 'sb.piano.cfg', PROGKEY = 'sb.piano.progreso';
-  var S = { view: null, ctx: null, cfg: null, tema: null, modo: 'aprender', st: {}, onKey: null, held: new Set(), midi: null };
-
-  var ICON = '';
+  var S = { view: null, ctx: null, cfg: null, uni: null, lec: null, st: {}, onKey: null, held: new Set(), midi: null };
 
   /* ================= teoría: nombres y deletreo ================= */
   var LETRAS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
@@ -28,9 +27,9 @@
   var LAT = { C: 'Do', D: 'Re', E: 'Mi', F: 'Fa', G: 'Sol', A: 'La', B: 'Si' };
   var SOST = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   var BEM = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
-  // cómo se llama cada tónica en la práctica (las tonalidades con menos alteraciones)
   var RAIZ_MAYOR = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
   var RAIZ_MENOR = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'G#', 'A', 'Bb', 'B'];
+  var SIMPLE = { Cb: 'B', Fb: 'E', 'E#': 'F', 'B#': 'C' };
 
   function mod12(n) { return ((n % 12) + 12) % 12; }
   function pcDe(nombre) {
@@ -39,26 +38,22 @@
     var acc = m[2] || '';
     return mod12(PC_LETRA[m[1]] + (acc[0] === '#' ? acc.length : -acc.length));
   }
-  function raizNombre(pc, menor) { return (menor ? RAIZ_MENOR : RAIZ_MAYOR)[mod12(pc)]; }
-  // Nota a distancia `semis` de la raíz, escrita con la letra que corresponde
-  // al grado (3ª de Re = alguna Fa; 4 semitonos = Fa#).
+  // Nota a distancia `semis` de la raíz, escrita con la letra del grado
+  // (3ª de Re = alguna Fa; 4 semitonos = Fa#). En piano popular nadie
+  // escribe Cb ni dobles alteraciones: se usa la tecla simple.
   function deletrear(raiz, semis, grado) {
     var li = LETRAS.indexOf(raiz[0]);
     var letra = LETRAS[(li + grado - 1) % 7];
     var dif = mod12(pcDe(raiz) + semis - PC_LETRA[letra]);
     if (dif > 6) dif -= 12;
-    if (Math.abs(dif) > 2) return (dif > 0 ? SOST : BEM)[mod12(pcDe(raiz) + semis)]; // no debería pasar
-    var n = letra + (dif > 0 ? '#'.repeat(dif) : 'b'.repeat(-dif));
-    // en piano popular nadie escribe Cb, E# ni dobles alteraciones: se usa la tecla simple
-    return SIMPLE[n] || (Math.abs(dif) === 2 ? (dif > 0 ? SOST : BEM)[mod12(pcDe(raiz) + semis)] : n);
+    if (Math.abs(dif) > 1) return (dif > 0 ? SOST : BEM)[mod12(pcDe(raiz) + semis)];
+    var n = letra + (dif > 0 ? '#' : dif < 0 ? 'b' : '');
+    return SIMPLE[n] || n;
   }
-  var SIMPLE = { Cb: 'B', Fb: 'E', 'E#': 'F', 'B#': 'C' };
-  // Texto visible: cifrado americano o Do-Re-Mi (también dentro de acordes: "Bbm7" → "Sibm7")
   function ver(txt) {
     if (!S.cfg.latin) return String(txt);
     return String(txt).replace(/([A-G])(#{1,2}|b{1,2})?/g, function (_, l, acc) { return LAT[l] + (acc || ''); });
   }
-  // con bemoles o sostenidos según la armadura de la tonalidad
   function usaBemoles(pc, menor) { return [5, 10, 3, 8, 1].indexOf(mod12(menor ? pc + 3 : pc)) >= 0; }
   function notaPc(pc, bem) { return (bem ? BEM : SOST)[mod12(pc)]; }
   function nombreMidi(m) { return ver(SOST[mod12(m)]); }
@@ -78,6 +73,7 @@
     { s: 11, g: 7, nom: '7ª mayor', uso: 'La de Domaj7: suave y abierta, de balada y bossa.' },
     { s: 12, g: 8, nom: 'Octava', uso: 'La misma nota, más aguda. En la mano izquierda refuerza el bajo.' }
   ];
+  function intervalo(s) { for (var i = 0; i < INTERVALOS.length; i++) if (INTERVALOS[i].s === s) return INTERVALOS[i]; return INTERVALOS[3]; }
 
   var TIPOS = [
     { id: '', nom: 'Mayor', iv: [0, 4, 7], gr: [1, 3, 5], f: '1 – 3 – 5' },
@@ -104,6 +100,17 @@
     var t = tipo(tipoId);
     return t.iv.map(function (s, i) { return deletrear(raiz, s, t.gr[i]); });
   }
+  function pcsAcorde(raiz, tipoId) { return tipo(tipoId).iv.map(function (s) { return mod12(pcDe(raiz) + s); }); }
+  // sufijo del cifrado de una canción → tipo conocido (lo demás, tríada)
+  function tipoDeSufijo(suf) {
+    suf = String(suf || '').replace('º', 'dim');
+    if (TIPOS.some(function (t) { return t.id === suf; })) return suf;
+    if (/^dim/.test(suf)) return 'dim';
+    if (/^m(?!aj)/.test(suf)) return /7/.test(suf) ? 'm7' : 'm';
+    if (/^maj7|^Δ/.test(suf)) return 'maj7';
+    if (/7|9|13/.test(suf)) return '7';
+    return '';
+  }
 
   var ESCALAS = [
     { id: 'mayor', nom: 'Mayor', iv: [0, 2, 4, 5, 7, 9, 11], gr: [1, 2, 3, 4, 5, 6, 7], uso: 'La base de todo: de ella salen los acordes del campo armónico mayor.' },
@@ -127,8 +134,7 @@
     return out.join(' – ');
   }
 
-  // Campo armónico. En menor el V va mayor (prestado de la armónica): así
-  // se toca en la música popular.
+  // Campo armónico. En menor el V va mayor (prestado de la armónica).
   var CAMPO = {
     mayor: { esc: [0, 2, 4, 5, 7, 9, 11], tri: ['', 'm', 'm', '', '', 'm', 'dim'], sep: ['maj7', 'm7', 'm7', 'maj7', '7', 'm7', 'm7b5'],
              rom: ['I', 'ii', 'iii', 'IV', 'V', 'vi', 'viiº'], fun: ['T', 'SD', 'T', 'SD', 'D', 'T', 'D'] },
@@ -136,23 +142,22 @@
              rom: ['i', 'iiº', 'III', 'iv', 'V', 'VI', 'VII'], fun: ['T', 'SD', 'T', 'SD', 'D', 'SD', 'D'] }
   };
   var FUNCION = { T: 'Tónica: reposo, "estar en casa"', SD: 'Subdominante: se aleja, prepara', D: 'Dominante: tensión, pide volver a la tónica' };
-  // acorde del grado g (0..6) de una tonalidad
   function grado(raiz, modo, g, sept) {
-    var c = CAMPO[modo];
-    var r = deletrear(raiz, c.esc[g], g + 1);
+    var c = CAMPO[modo], r = deletrear(raiz, c.esc[g], g + 1);
     var s7 = c.sep[g], rom = !sept ? c.rom[g] : s7 === 'maj7' ? c.rom[g] + 'maj7' : s7 === 'm7b5' ? c.rom[g].replace('º', '') + 'ø7' : c.rom[g] + '7';
-    return { raiz: r, tipo: sept ? s7 : c.tri[g], rom: rom, fun: c.fun[g] };
+    return { raiz: r, tipo: sept ? s7 : c.tri[g], rom: rom, fun: c.fun[g], g: g };
   }
 
   var PROGS = [
+    { id: 'folk', nom: 'I – IV – V – I', modo: 'mayor', g: [0, 3, 4, 0], txt: 'Tónica, subdominante, dominante: folclor, rancheras, rock and roll.' },
     { id: 'pop', nom: 'I – V – vi – IV', modo: 'mayor', g: [0, 4, 5, 3], txt: 'La progresión del pop: miles de canciones la usan de principio a fin.' },
     { id: '50s', nom: 'I – vi – IV – V', modo: 'mayor', g: [0, 5, 3, 4], txt: 'La de los años 50 y las baladas románticas ("Stand by me").' },
-    { id: 'folk', nom: 'I – IV – V – I', modo: 'mayor', g: [0, 3, 4, 0], txt: 'Tónica, subdominante, dominante: folclor, rancheras, rock and roll.' },
+    { id: 'emo', nom: 'vi – IV – I – V', modo: 'mayor', g: [5, 3, 0, 4], txt: 'La misma del pop empezando en el vi: suena más melancólica.' },
     { id: 'iivi', nom: 'ii – V – I', modo: 'mayor', g: [1, 4, 0, 0], sept: true, txt: 'La cadencia del jazz, el bolero y la bossa nova. Se toca con séptimas.' },
     { id: 'circulo', nom: 'I – vi – ii – V', modo: 'mayor', g: [0, 5, 1, 4], sept: true, txt: 'El "círculo": cada acorde lleva al siguiente. Boleros y standards.' },
-    { id: 'emo', nom: 'vi – IV – I – V', modo: 'mayor', g: [5, 3, 0, 4], txt: 'La misma del pop empezando en el vi: suena más melancólica.' },
     { id: 'menor', nom: 'i – iv – V – i', modo: 'menor', g: [0, 3, 4, 0], txt: 'La cadencia menor: boleros, baladas y música latinoamericana.' },
     { id: 'andaluza', nom: 'i – VII – VI – V', modo: 'menor', g: [0, 6, 5, 4], txt: 'La andaluza: flamenco, rumba, "Hit the road Jack".' },
+    { id: 'menorpop', nom: 'i – VI – III – VII', modo: 'menor', g: [0, 5, 2, 6], txt: 'La del pop en menor: la misma de I–V–vi–IV vista desde el relativo menor.' },
     { id: 'blues', nom: 'Blues de 12 compases', modo: 'mayor', g: [0, 0, 0, 0, 3, 3, 0, 0, 4, 3, 0, 4], blues: true, txt: 'I7 – IV7 – V7 repartidos en 12 compases: la base del blues y del rock and roll.' }
   ];
   function prog(id) { for (var i = 0; i < PROGS.length; i++) if (PROGS[i].id === id) return PROGS[i]; return PROGS[0]; }
@@ -164,13 +169,14 @@
     });
   }
 
-  // Ritmos de acompañamiento. Un paso = una corchea (en 6/8 también).
-  // Mano izquierda: B = bajo (fundamental), 5 = quinta. Mano derecha: A = el
+  // Ritmos de acompañamiento. Un paso = una corchea. Mano izquierda:
+  // B = bajo (fundamental), 5 = quinta, 8 = octava. Mano derecha: A = el
   // acorde entero; 1 3 5 8 = una nota del acorde (arpegio).
   var RITMOS = [
     { id: 'negras', nom: 'Balada en negras', comp: '4/4', mi: 'B...B...', md: 'A.A.A.A.', txt: 'El acompañamiento más simple: bajo en 1 y 3, acorde en cada tiempo. Para aprender canciones nuevas.' },
     { id: 'corcheas', nom: 'Pop en corcheas', comp: '4/4', mi: 'B...B...', md: 'AAAAAAAA', txt: 'Acordes parejos en corcheas: pop y rock. Marca más fuerte el 1 y el 3.' },
     { id: 'arpegio', nom: 'Balada arpegiada', comp: '4/4', mi: 'B.......', md: '.135831.', txt: 'Las notas del acorde una a una sobre el bajo largo: baladas lentas.' },
+    { id: 'octavas', nom: 'Bajo en octavas', comp: '4/4', mi: 'B.8.B.8.', md: 'A...A...', txt: 'La izquierda alterna fundamental y su octava: rock and roll, boogie, cumbia chilena.' },
     { id: 'vals', nom: 'Vals (3/4)', comp: '3/4', mi: 'B.....', md: '..A.A.', txt: 'Bajo en el 1, acorde en el 2 y el 3: valses, valses peruanos, rancheras.' },
     { id: 'tresillo', nom: 'Bolero / tresillo (3+3+2)', comp: '4/4', mi: 'B...5...', md: 'A..A..A.', txt: 'El tresillo latino: bolero, balada pop latina, reggaetón lento.' },
     { id: 'bossa', nom: 'Bossa nova', comp: '4/4', mi: 'B..5B..5', md: 'A..A.A..', txt: 'Bajo en 1 y 3 con anticipación; acordes a contratiempo. Mejor con séptimas.' },
@@ -188,24 +194,21 @@
   }
 
   /* ================= voces: cómo se toca un acorde ================= */
-  // Mano derecha: la inversión más cercana a la anterior (casi sin moverse).
-  function midisAcorde(raiz, tipoId) { var p = pcDe(raiz); return tipo(tipoId).iv.map(function (s) { return p + s; }); }
   function candidatos(raiz, tipoId) {
-    var pcs = tipo(tipoId).iv.map(function (s) { return mod12(pcDe(raiz) + s); });
+    var pcs = pcsAcorde(raiz, tipoId);
     if (pcs.length > 4) pcs = pcs.filter(function (_, i) { return i !== 2; }); // novena: sin la quinta
     var out = [];
     for (var inv = 0; inv < pcs.length; inv++) {
       var rot = pcs.slice(inv).concat(pcs.slice(0, inv));
       for (var base = 52; base <= 67; base++) {
         if (mod12(base) !== rot[0]) continue;
-        var v = [base], ok = true;
+        var v = [base];
         for (var k = 1; k < rot.length; k++) {
           var n = v[k - 1] + 1;
           while (mod12(n) !== rot[k]) n++;
           v.push(n);
         }
-        if (v[v.length - 1] > 79) ok = false;
-        if (ok) out.push(v);
+        if (v[v.length - 1] <= 79) out.push(v);
       }
     }
     return out;
@@ -221,9 +224,7 @@
           previa.forEach(function (p) { d = Math.min(d, Math.abs(p - v[i])); });
           c += d;
         }
-      } else {
-        c = Math.abs(v.reduce(function (a, b) { return a + b; }, 0) / v.length - 64);
-      }
+      } else c = Math.abs(v.reduce(function (a, b) { return a + b; }, 0) / v.length - 64);
       if (c < costo) { costo = c; mejor = v; }
     });
     return mejor;
@@ -272,14 +273,12 @@
     o.start(cuando); o.stop(cuando + 0.05);
   }
 
-  // Reproductor por pasos con planificación anticipada (no se atrasa aunque
-  // el navegador esté ocupado). spec: {dur, total|null, sched(i, t), paso(i)}
+  // Reproductor por pasos con planificación anticipada.
   var R = { timer: null };
   function reproducir(spec) {
     parar();
     var c = ac(); if (!c) return;
     var i = 0, t = c.currentTime + 0.12, sec = (R.sec = (R.sec || 0) + 1);
-    R.t0 = t; R.spec = spec;
     R.timer = setInterval(function () {
       while (t < c.currentTime + 0.15) {
         if (spec.total != null && i >= spec.total) {
@@ -302,11 +301,41 @@
   }
   function sonando() { return !!R.timer; }
 
+  // Toca acordes con un ritmo. acordes: [{raiz, tipo}], un acorde por compás.
+  function acompanar(acordes, r, bpm, opt) {
+    opt = opt || {};
+    var porCompas = r.md.length, dur = r.comp === '6/8' ? 60 / bpm / 3 : 60 / bpm / 2;
+    var voces = [], previa = null;
+    acordes.forEach(function (a) { previa = voz(a.raiz, a.tipo, previa); voces.push(previa); });
+    reproducir({
+      dur: dur, total: opt.loop ? null : acordes.length * porCompas,
+      sched: function (i, t) {
+        var k = Math.floor(i / porCompas) % acordes.length, s = i % porCompas, a = acordes[k], v = voces[k];
+        var b = bajo(a.raiz), ci = r.mi[s], cd = r.md[s];
+        if (ci === 'B') tocar(b, t, dur * 3.5, 0.75);
+        else if (ci === '5') tocar(b + (tipo(a.tipo).iv[2] === 6 ? 6 : 7), t, dur * 3, 0.6);
+        else if (ci === '8') tocar(b + 12, t, dur * 3, 0.6);
+        if (!opt.sinDerecha) {
+          if (cd === 'A') tocarVarias(v, t, dur * (r.md[s + 1] === '.' ? 1.9 : 0.95), s === 0 ? 0.62 : 0.5);
+          else if ('1358'.indexOf(cd) >= 0) {
+            var idx = { 1: 0, 3: 1, 5: 2, 8: 0 }[cd], m = v[Math.min(idx, v.length - 1)] + (cd === '8' ? 12 : 0);
+            tocar(m, t, dur * 2.5, 0.5);
+          }
+        }
+        if (opt.clic && s % (r.comp === '6/8' ? 3 : 2) === 0) clic(t, s === 0);
+      },
+      paso: function (i) { if (opt.paso) opt.paso(Math.floor(i / porCompas) % acordes.length, i % porCompas, voces, i); },
+      fin: opt.fin
+    });
+    return voces;
+  }
+
   /* ================= teclado en pantalla ================= */
   // marcas: { midi: {c: 'on'|'sel'|'ok'|'bad'|'tenue', t: 'etiqueta'} }
   var NEGRAS = [1, 3, 6, 8, 10];
   function esNegra(m) { return NEGRAS.indexOf(mod12(m)) >= 0; }
   function teclado(el, desde, hasta, marcas, onPress) {
+    if (!el) return;
     var ww = 24, wh = 112, bw = 15, bh = 70, blancas = [];
     for (var m = desde; m <= hasta; m++) if (!esNegra(m)) blancas.push(m);
     var W = blancas.length * ww + 2, svg = '<svg viewBox="0 0 ' + W + ' ' + (wh + 2) + '" class="pk-kb" role="group" aria-label="Teclado">';
@@ -315,16 +344,10 @@
     function marca(m, x, w, y, negra) {
       var k = marcas && marcas[m];
       if (!k) return '';
-      var s = '';
-      var col = negra ? 'var(--bg)' : 'var(--ink)';
-      if (k.c === 'bad') {
-        s += '<text x="' + (x + w / 2) + '" y="' + (y + 4) + '" text-anchor="middle" font-size="15" font-weight="700" fill="' + col + '">×</text>';
-      } else {
-        s += '<circle cx="' + (x + w / 2) + '" cy="' + y + '" r="' + (negra ? 5 : 6.5) + '" fill="' + (k.c === 'tenue' ? 'none' : col) +
-          '" stroke="' + col + '" stroke-width="1.5"/>';
-      }
-      if (k.t) s += '<text x="' + (x + w / 2) + '" y="' + (negra ? y - 10 : y - 12) + '" text-anchor="middle" font-size="' + (negra ? 8 : 9.5) +
-        '" font-weight="700" fill="' + col + '">' + SB.ui.esc(k.t) + '</text>';
+      var s = '', col = negra ? 'var(--bg)' : 'var(--ink)';
+      if (k.c === 'bad') s += '<text x="' + (x + w / 2) + '" y="' + (y + 4) + '" text-anchor="middle" font-size="15" font-weight="700" fill="' + col + '">×</text>';
+      else s += '<circle cx="' + (x + w / 2) + '" cy="' + y + '" r="' + (negra ? 5 : 6.5) + '" fill="' + (k.c === 'tenue' ? 'none' : col) + '" stroke="' + col + '" stroke-width="1.5"/>';
+      if (k.t) s += '<text x="' + (x + w / 2) + '" y="' + (negra ? y - 10 : y - 12) + '" text-anchor="middle" font-size="' + (negra ? 8 : 9.5) + '" font-weight="700" fill="' + col + '">' + SB.ui.esc(k.t) + '</text>';
       return s;
     }
     blancas.forEach(function (m) {
@@ -344,11 +367,7 @@
     if (onPress) {
       el.querySelector('svg').addEventListener('pointerdown', function (ev) {
         var r = ev.target.closest && ev.target.closest('[data-m]');
-        if (!r) {
-          // tocó una marca encima de la tecla: buscar la tecla bajo el dedo
-          var bajo = document.elementsFromPoint(ev.clientX, ev.clientY).filter(function (n) { return n.dataset && n.dataset.m; })[0];
-          r = bajo;
-        }
+        if (!r) r = document.elementsFromPoint(ev.clientX, ev.clientY).filter(function (n) { return n.dataset && n.dataset.m; })[0];
         if (!r) return;
         ev.preventDefault();
         var mm = +r.dataset.m;
@@ -380,18 +399,20 @@
 
   /* ================= avance ================= */
   function avance() { try { return JSON.parse(localStorage.getItem(PROGKEY) || '{}'); } catch (e) { return {}; } }
-  function anotar(tema, ok) {
-    var p = avance(), x = p[tema] || (p[tema] = { ok: 0, n: 0, racha: 0, mejor: 0 });
+  function guardarAvance(p) { try { localStorage.setItem(PROGKEY, JSON.stringify(p)); } catch (e) {} }
+  function regLec(lec) { var p = avance(); return p[lec.id] || { ok: 0, n: 0, hecha: false }; }
+  function anotar(lec, ok) {
+    var p = avance(), x = p[lec.id] || (p[lec.id] = { ok: 0, n: 0, hecha: false });
     x.n++;
-    if (ok) { x.ok++; x.racha++; x.mejor = Math.max(x.mejor, x.racha); } else x.racha = 0;
-    try { localStorage.setItem(PROGKEY, JSON.stringify(p)); } catch (e) {}
-    var el = S.view.querySelector('#pkPuntos');
-    if (el) el.textContent = puntosTxt(tema);
+    if (ok) x.ok++;
+    var recien = !x.hecha && x.ok >= lec.meta;
+    if (recien) x.hecha = true;
+    guardarAvance(p);
+    return { reg: x, recien: recien };
   }
-  function puntosTxt(tema) {
-    var x = avance()[tema];
-    if (!x || !x.n) return 'Sin ejercicios aún';
-    return x.ok + ' de ' + x.n + ' bien · racha ' + x.racha + (x.mejor > 1 ? ' · mejor ' + x.mejor : '');
+  function marcarHecha(lec, v) {
+    var p = avance(), x = p[lec.id] || (p[lec.id] = { ok: 0, n: 0, hecha: false });
+    x.hecha = !!v; guardarAvance(p);
   }
   function cargarCfg() {
     var d = { latin: true };
@@ -424,8 +445,7 @@
     }).join('') + '</select>';
   }
   function selRaiz(id, val, menor) {
-    var ns = menor ? RAIZ_MENOR : RAIZ_MAYOR;
-    return selHtml(id, ns.map(function (n) { return [n, ver(n)]; }), val, 'Nota');
+    return selHtml(id, (menor ? RAIZ_MENOR : RAIZ_MAYOR).map(function (n) { return [n, ver(n)]; }), val, 'Nota');
   }
   function ctl(label, html) { return '<div class="ctl"><span class="ctl-label">' + esc(label) + '</span>' + html + '</div>'; }
   function on(id, ev, fn) { var el = q('#' + id); if (el) el.addEventListener(ev, fn); }
@@ -434,88 +454,32 @@
     el.textContent = txt || '';
     el.className = 'pk-fb' + (tipoF ? ' ' + tipoF : '');
   }
-
-  /* ================= temas ================= */
-  var TEMAS = [
-    { id: 'intervalos', nom: 'Intervalos', que: 'La distancia entre dos notas: de ahí salen los acordes', ap: apIntervalos, pr: prIntervalos },
-    { id: 'acordes', nom: 'Acordes', que: 'Mayores, menores, séptimas e inversiones, con las dos manos', ap: apAcordes, pr: prAcordes },
-    { id: 'escalas', nom: 'Escalas', que: 'Mayor, menores, pentatónicas, blues y modos útiles', ap: apEscalas, pr: prEscalas },
-    { id: 'campo', nom: 'Campo armónico', que: 'Los siete acordes de cada tono y para qué sirve cada uno', ap: apCampo, pr: prCampo },
-    { id: 'progresiones', nom: 'Progresiones', que: 'Las secuencias de acordes de miles de canciones, para tocarlas', ap: apProgresiones, pr: prProgresiones },
-    { id: 'transponer', nom: 'Transponer', que: 'Llevar una canción a otro tono para cantarla cómodo', ap: apTransponer, pr: prTransponer },
-    { id: 'ritmica', nom: 'Rítmica', que: 'Patrones de acompañamiento: balada, bolero, vals, cumbia, bossa…', ap: apRitmica, pr: prRitmica }
-  ];
-  function temaDe(id) { for (var i = 0; i < TEMAS.length; i++) if (TEMAS[i].id === id) return TEMAS[i]; return null; }
-
-  /* ---------- portada ---------- */
-  function portada() {
-    S.onKey = null; parar();
-    var p = avance();
-    S.view.innerHTML =
-      '<div class="pk-scope">' +
-      '<div class="rep-head"><h1>Piano popular</h1>' +
-      '<div class="ka-head-btns">' + segHtml('pkNot', [['1', 'Do Re Mi'], ['0', 'C D E']], S.cfg.latin ? '1' : '0') +
-      '<button class="mini-app-btn" id="pkMidi" title="Si tienes un piano digital conectado por USB, sus teclas cuentan en los ejercicios">Teclado MIDI</button></div></div>' +
-      '<p class="ed-note">Piano para acompañar canciones, no piano clásico. Cada tema tiene una parte para <b>aprender</b> (mira y escucha en el teclado) y otra para <b>practicar</b> (ejercicios con puntaje). Conviene ir en orden: cada tema usa lo del anterior.</p>' +
-      '<p class="set-status" id="pkAviso"></p>' +
-      '<table class="rep"><thead><tr><th>Tema</th><th>Qué aprendes</th><th class="t-acc">Avance</th></tr></thead><tbody>' +
-      TEMAS.map(function (t, i) {
-        var x = p[t.id];
-        var av = x && x.n ? Math.round(100 * x.ok / x.n) + '% · ' + x.n : '—';
-        return '<tr class="song" data-t="' + t.id + '"><td class="t-title">' + (i + 1) + '. ' + esc(t.nom) + '</td><td>' + esc(t.que) + '</td><td class="t-acc t-key">' + av + '</td></tr>';
-      }).join('') +
-      '</tbody></table></div>';
-    S.view.querySelectorAll('tr[data-t]').forEach(function (tr) {
-      tr.addEventListener('click', function () { S.ctx.navigate('piano/' + tr.dataset.t); });
-    });
-    segWire('pkNot', function (v) { S.cfg.latin = v === '1'; guardarCfg(); });
-    on('pkMidi', 'click', function () { conectarMidi(q('#pkMidi')); });
-    if (S.midi) q('#pkMidi').setAttribute('aria-pressed', 'true');
+  function consigna(sub, big, sub2) {
+    var a = q('#pkSub'), b = q('#pkBig'), c = q('#pkSub2');
+    if (a) a.textContent = sub || ''; if (b) b.textContent = big || ''; if (c) c.textContent = sub2 || '';
   }
-
-  /* ---------- marco común de un tema ---------- */
-  function abrirTema(t, modo) {
-    S.tema = t; S.modo = modo === 'practicar' ? 'practicar' : 'aprender';
-    S.onKey = null; S.st = {}; parar();
-    S.view.innerHTML =
-      '<div class="pk-scope">' +
-      '<button class="back" id="pkBack">← Piano</button>' +
-      '<div class="rep-head"><h1>' + esc(t.nom) + '</h1>' +
-      segHtml('pkModo', [['aprender', 'Aprender'], ['practicar', 'Practicar']], S.modo) + '</div>' +
-      '<div id="pkCuerpo"></div>' +
-      '<p class="set-status" id="pkAviso"></p>' +
-      '</div>';
-    on('pkBack', 'click', function () { S.ctx.navigate('piano'); });
-    segWire('pkModo', function (v) { S.ctx.navigate('piano/' + t.id + (v === 'practicar' ? '/practicar' : '')); });
-    var cuerpo = q('#pkCuerpo');
-    if (S.modo === 'aprender') t.ap(cuerpo); else t.pr(cuerpo);
+  function stepper(id, label) {
+    return ctl(label, '<div class="stepper"><button id="' + id + 'M" aria-label="Menos">−</button><span class="val" id="' + id + '"></span><button id="' + id + 'P" aria-label="Más">+</button></div>');
   }
-  // caja de ejercicio: consigna grande + puntaje + retroalimentación
-  function cajaEjercicio(extraCtl) {
-    return '<div class="controls">' + (extraCtl || '') +
-      '<span class="pk-puntos" id="pkPuntos">' + esc(puntosTxt(S.tema.id)) + '</span></div>' +
-      '<div class="pk-stage"><div class="pk-sub" id="pkSub"></div><div class="pk-big" id="pkBig"></div><div class="pk-sub" id="pkSub2"></div></div>';
-  }
+  // sigue vigente esta lección (el usuario no se fue a otra parte)
+  function vigente(lec) { return S.lec === lec; }
+  function luego(lec, ms, fn) { setTimeout(function () { if (vigente(lec)) fn(); }, ms); }
 
-  /* ---------- 1. intervalos ---------- */
-  function apIntervalos(el) {
-    var st = S.st; st.raiz = st.raiz || 'C'; st.iv = st.iv || 4;
+  /* ================= exploradores (mirar y escuchar) ================= */
+  function exIntervalos(el, st) {
+    st.raiz = st.raiz || 'C'; st.iv = st.iv || 4;
     el.innerHTML =
-      '<p class="ed-note">Un intervalo es la distancia entre dos notas, contada en semitonos (de una tecla a la vecina, blanca o negra, hay un semitono). No hace falta memorizarlos todos: para acompañar importan sobre todo la <b>3ª</b> (mayor o menor), la <b>5ª</b> y la <b>7ª</b>.</p>' +
-      '<div class="controls">' + ctl('Desde', selRaiz('pkRaiz', st.raiz)) +
-      '<button class="mini-app-btn" id="pkOir">Escuchar</button></div>' +
-      '<div class="pk-grid" id="pkIvs">' + INTERVALOS.map(function (iv) {
+      '<div class="controls">' + ctl('Desde', selRaiz('pkXRaiz', st.raiz)) + '<button class="mini-app-btn" id="pkXOir">Escuchar</button></div>' +
+      '<div class="pk-grid" id="pkXIvs">' + INTERVALOS.map(function (iv) {
         return '<button class="pk-opt" data-s="' + iv.s + '" aria-pressed="' + (iv.s === st.iv) + '"><b>' + iv.s + '</b> ' + esc(iv.nom) + '</button>';
       }).join('') + '</div>' +
-      '<div class="pk-stage"><div class="pk-big" id="pkBig"></div><div class="pk-sub" id="pkSub"></div></div>' +
-      '<div class="pk-kbw" id="pkKb"></div>';
+      '<div class="pk-stage"><div class="pk-big" id="pkXBig"></div><div class="pk-sub" id="pkXSub"></div></div><div class="pk-kbw" id="pkXKb"></div>';
     function pintar() {
-      var iv = INTERVALOS.filter(function (x) { return x.s === st.iv; })[0];
-      var n2 = deletrear(st.raiz, iv.s, iv.g), m1 = 48 + pcDe(st.raiz), m2 = m1 + iv.s, mk = {};
+      var iv = intervalo(st.iv), n2 = deletrear(st.raiz, iv.s, iv.g), m1 = 48 + pcDe(st.raiz), m2 = m1 + iv.s, mk = {};
       mk[m1] = { c: 'on', t: ver(st.raiz) }; mk[m2] = { c: 'on', t: ver(n2) };
-      q('#pkBig').textContent = ver(st.raiz) + ' → ' + ver(n2);
-      q('#pkSub').textContent = iv.nom + ' · ' + iv.s + ' semitono' + (iv.s > 1 ? 's' : '') + '. ' + iv.uso;
-      teclado(q('#pkKb'), 48, 72, mk, function () {});
+      q('#pkXBig').textContent = ver(st.raiz) + ' → ' + ver(n2);
+      q('#pkXSub').textContent = iv.nom + ' · ' + iv.s + ' semitono' + (iv.s > 1 ? 's' : '') + '. ' + iv.uso;
+      teclado(q('#pkXKb'), 48, 72, mk, function () {});
       return [m1, m2];
     }
     function oir() {
@@ -523,136 +487,45 @@
       var t = c.currentTime + 0.05;
       tocar(ms[0], t, 0.9); tocar(ms[1], t + 0.6, 0.9); tocarVarias(ms, t + 1.3, 1.6);
     }
-    on('pkRaiz', 'change', function () { st.raiz = this.value; oir(); });
-    on('pkOir', 'click', oir);
-    S.view.querySelectorAll('#pkIvs button').forEach(function (b) {
+    on('pkXRaiz', 'change', function () { st.raiz = this.value; oir(); });
+    on('pkXOir', 'click', oir);
+    S.view.querySelectorAll('#pkXIvs button').forEach(function (b) {
       b.addEventListener('click', function () {
         st.iv = +b.dataset.s;
-        S.view.querySelectorAll('#pkIvs button').forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+        S.view.querySelectorAll('#pkXIvs button').forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
         oir();
       });
     });
     pintar();
   }
-  function prIntervalos(el) {
-    var st = S.st; st.tipo = st.tipo || 'tocar';
-    el.innerHTML = cajaEjercicio(ctl('Ejercicio', segHtml('pkTipo', [['tocar', 'Tocar'], ['oido', 'De oído']], st.tipo)) +
-      '<button class="mini-app-btn" id="pkOtra">Otro</button>') +
-      '<div class="pk-grid" id="pkOps"></div><div class="pk-kbw" id="pkKb"></div><p class="pk-fb" id="pkFb"></p>';
-    segWire('pkTipo', function (v) { st.tipo = v; nuevo(); });
-    on('pkOtra', 'click', nuevo);
-    // los de uso diario salen más seguido
-    var BOLSA = [3, 4, 7, 10, 3, 4, 7, 10, 2, 5, 9, 11, 12, 6, 1, 8];
-    function nuevo() {
-      feedback('');
-      st.raiz = azar(RAIZ_MAYOR.filter(function (n) { return n.length === 1 || Math.random() < 0.4; }));
-      st.iv = INTERVALOS.filter(function (x) { return x.s === azar(BOLSA); })[0];
-      st.m1 = 48 + pcDe(st.raiz); st.listo = false; st.fallos = 0;
-      var ops = q('#pkOps');
-      if (st.tipo === 'tocar') {
-        q('#pkSub').textContent = 'Toca en el teclado';
-        q('#pkBig').textContent = st.iv.nom + ' sobre ' + ver(st.raiz);
-        q('#pkSub2').textContent = 'hacia arriba (la nota de abajo está marcada)';
-        ops.innerHTML = '';
-        var mk = {}; mk[st.m1] = { c: 'on', t: ver(st.raiz) };
-        teclado(q('#pkKb'), 48, 72, mk, responderTecla);
-        S.onKey = responderTecla;
-      } else {
-        q('#pkSub').textContent = 'Escucha y elige';
-        q('#pkBig').textContent = '¿Qué intervalo es?';
-        q('#pkSub2').textContent = '';
-        var cand = mezclar(INTERVALOS.filter(function (x) { return x !== st.iv; })).slice(0, 3).concat([st.iv]);
-        cand.sort(function (a, b) { return a.s - b.s; });
-        ops.innerHTML = '<button class="pk-opt" id="pkRep">▶ Repetir</button>' + cand.map(function (x) {
-          return '<button class="pk-opt" data-s="' + x.s + '">' + esc(x.nom) + '</button>';
-        }).join('');
-        on('pkRep', 'click', sonar);
-        ops.querySelectorAll('button[data-s]').forEach(function (b) {
-          b.addEventListener('click', function () { responderOido(+b.dataset.s, b); });
-        });
-        q('#pkKb').innerHTML = '';
-        S.onKey = null;
-        sonar();
-      }
-    }
-    function sonar() {
-      var c = ac(); if (!c) return;
-      var t = c.currentTime + 0.05;
-      tocar(st.m1, t, 0.9); tocar(st.m1 + st.iv.s, t + 0.65, 0.9); tocarVarias([st.m1, st.m1 + st.iv.s], t + 1.4, 1.5);
-    }
-    function responderTecla(m) {
-      if (st.listo) return;
-      var ok = mod12(m - st.m1) === mod12(st.iv.s) && m !== st.m1;
-      var mk = {}; mk[st.m1] = { c: 'on', t: ver(st.raiz) };
-      var objetivo = st.m1 + st.iv.s, nombre = deletrear(st.raiz, st.iv.s, st.iv.g);
-      if (ok) {
-        st.listo = true; anotar('intervalos', st.fallos === 0);
-        mk[objetivo] = { c: 'ok', t: ver(nombre) };
-        feedback('¡Bien! ' + ver(st.raiz) + ' → ' + ver(nombre) + ' (' + st.iv.s + ' semitonos).', 'ok');
-        tocar(st.m1, null, 1.2); setTimeout(siguiente, 1400);
-      } else {
-        st.fallos++;
-        mk[m] = { c: 'bad' };
-        var d = mod12(m - st.m1);
-        feedback('Esa está a ' + d + ' semitono' + (d === 1 ? '' : 's') + '. La ' + st.iv.nom + ' son ' + st.iv.s + '.' + (st.fallos >= 2 ? ' Es ' + ver(nombre) + '.' : ''), 'bad');
-        if (st.fallos >= 2) mk[objetivo] = { c: 'tenue', t: ver(nombre) };
-        if (st.fallos === 1) anotar('intervalos', false);
-      }
-      teclado(q('#pkKb'), 48, 72, mk, responderTecla);
-    }
-    function responderOido(s, b) {
-      if (st.listo) return;
-      if (s === st.iv.s) {
-        st.listo = true; anotar('intervalos', st.fallos === 0);
-        b.classList.add('ok');
-        feedback('¡Bien! Era una ' + st.iv.nom + ' (' + ver(st.raiz) + ' → ' + ver(deletrear(st.raiz, st.iv.s, st.iv.g)) + ').', 'ok');
-        setTimeout(siguiente, 1500);
-      } else {
-        b.classList.add('bad'); b.disabled = true;
-        if (!st.fallos) anotar('intervalos', false);
-        st.fallos++;
-        feedback('No. Escúchalo de nuevo: ¿más abierto o más cerrado?', 'bad');
-        sonar();
-      }
-    }
-    function siguiente() { if (S.tema && S.tema.id === 'intervalos' && S.modo === 'practicar') nuevo(); }
-    nuevo();
-  }
-
-  /* ---------- 2. acordes ---------- */
-  function apAcordes(el) {
-    var st = S.st; st.raiz = st.raiz || 'C'; st.tipo = st.tipo != null ? st.tipo : ''; st.inv = st.inv || 0;
+  function exAcordes(el, st) {
+    st.raiz = st.raiz || 'C'; st.tipo = st.tipo != null ? st.tipo : ''; st.inv = st.inv || 0;
     el.innerHTML =
-      '<p class="ed-note">Un acorde son tres o más notas juntas, armadas con intervalos desde la <b>fundamental</b>. En piano popular la <b>mano izquierda toca la fundamental</b> (el bajo) y la <b>derecha el acorde</b>, en la inversión que quede más cerca de la anterior. Invertir es empezar por otra nota del acorde: las notas son las mismas.</p>' +
-      '<div class="controls">' + ctl('Raíz', selRaiz('pkRaiz', st.raiz)) +
-      ctl('Tipo', selHtml('pkTipo', TIPOS.map(function (t) { return [t.id, t.nom]; }), st.tipo, 'Tipo')) +
-      ctl('Inversión', '<div id="pkInvW"></div>') +
-      '<button class="mini-app-btn" id="pkOir">Escuchar</button></div>' +
-      '<div class="pk-stage"><div class="pk-big" id="pkBig"></div><div class="pk-sub" id="pkSub"></div></div>' +
-      '<div class="pk-manos"><div><div class="ctl-label">Mano izquierda</div><div class="pk-kbw pk-izq" id="pkKbI"></div></div>' +
-      '<div class="pk-der"><div class="ctl-label">Mano derecha</div><div class="pk-kbw" id="pkKbD"></div></div></div>';
+      '<div class="controls">' + ctl('Raíz', selRaiz('pkXRaiz', st.raiz)) +
+      ctl('Tipo', selHtml('pkXTipo', TIPOS.map(function (t) { return [t.id, t.nom]; }), st.tipo, 'Tipo')) +
+      ctl('Inversión', '<div id="pkXInvW"></div>') + '<button class="mini-app-btn" id="pkXOir">Escuchar</button></div>' +
+      '<div class="pk-stage"><div class="pk-big" id="pkXBig"></div><div class="pk-sub" id="pkXSub"></div></div>' +
+      '<div class="pk-manos"><div><div class="ctl-label">Mano izquierda</div><div class="pk-kbw pk-izq" id="pkXKbI"></div></div>' +
+      '<div class="pk-der"><div class="ctl-label">Mano derecha</div><div class="pk-kbw" id="pkXKbD"></div></div></div>';
     function invHtml() {
       var n = tipo(st.tipo).iv.length, ops = [['0', 'Fundamental'], ['1', '1ª'], ['2', '2ª']];
       if (n >= 4) ops.push(['3', '3ª']);
       if (st.inv >= n) st.inv = 0;
-      q('#pkInvW').innerHTML = segHtml('pkInv', ops, String(st.inv));
-      segWire('pkInv', function (v) { st.inv = +v; oir(); });
+      q('#pkXInvW').innerHTML = segHtml('pkXInv', ops, String(st.inv));
+      segWire('pkXInv', function (v) { st.inv = +v; oir(); });
     }
     function pintar() {
       var t = tipo(st.tipo), notas = notasAcorde(st.raiz, st.tipo), p = pcDe(st.raiz);
       var iv = t.iv.slice(st.inv).concat(t.iv.slice(0, st.inv).map(function (s) { return s + 12; }));
-      var gr = t.gr.slice(st.inv).concat(t.gr.slice(0, st.inv));
-      var nm = notas.slice(st.inv).concat(notas.slice(0, st.inv));
+      var gr = t.gr.slice(st.inv).concat(t.gr.slice(0, st.inv)), nm = notas.slice(st.inv).concat(notas.slice(0, st.inv));
       var base = 60 + p; if (base + Math.max.apply(null, iv) > 84) base -= 12;
       var md = iv.map(function (s) { return base + s; }), mi = 36 + p, mkD = {}, mkI = {};
       md.forEach(function (m, i) { mkD[m] = { c: 'on', t: ver(nm[i]) }; });
       mkI[mi] = { c: 'on', t: ver(st.raiz) };
-      var nombre = cifra(st.raiz, st.tipo) + (st.inv ? '/' + nm[0] : '');
-      q('#pkBig').textContent = ver(nombre);
-      q('#pkSub').textContent = t.nom + ' · ' + t.f + ' · ' + notas.map(ver).join(' – ') +
+      q('#pkXBig').textContent = ver(cifra(st.raiz, st.tipo) + (st.inv ? '/' + nm[0] : ''));
+      q('#pkXSub').textContent = t.nom + ' · ' + t.f + ' · ' + notas.map(ver).join(' – ') +
         (st.inv ? ' · ' + (st.inv === 1 ? 'primera' : st.inv === 2 ? 'segunda' : 'tercera') + ' inversión: abajo queda la ' + gr[0] + 'ª' : '');
-      teclado(q('#pkKbI'), 36, 48, mkI);
-      teclado(q('#pkKbD'), 48, 84, mkD);
+      teclado(q('#pkXKbI'), 36, 48, mkI); teclado(q('#pkXKbD'), 48, 84, mkD);
       return { md: md, mi: mi };
     }
     function oir() {
@@ -662,414 +535,183 @@
       v.md.forEach(function (m, i) { tocar(m, t + 0.35 + i * 0.12, 1.4); });
       tocarVarias(v.md.concat([v.mi]), t + 0.45 + v.md.length * 0.12 + 0.3, 1.8);
     }
-    on('pkRaiz', 'change', function () { st.raiz = this.value; oir(); });
-    on('pkTipo', 'change', function () { st.tipo = this.value; invHtml(); oir(); });
-    on('pkOir', 'click', oir);
+    on('pkXRaiz', 'change', function () { st.raiz = this.value; oir(); });
+    on('pkXTipo', 'change', function () { st.tipo = this.value; invHtml(); oir(); });
+    on('pkXOir', 'click', oir);
     invHtml(); pintar();
   }
-  function prAcordes(el) {
-    var st = S.st; st.nivel = st.nivel || 'triadas';
-    el.innerHTML = cajaEjercicio(ctl('Nivel', segHtml('pkNivel', [['triadas', 'Mayores y menores'], ['mas', '+ dim, sus'], ['sept', 'Séptimas']], st.nivel)) +
-      '<button class="mini-app-btn" id="pkOtra">Otro</button>') +
-      '<div class="pk-kbw" id="pkKb"></div>' +
-      '<div class="pk-acc"><button class="mini-app-btn" id="pkOirSel">Escuchar lo mío</button><button class="mini-app-btn" id="pkBorrar">Borrar</button>' +
-      '<button class="pr-play pk-go" id="pkComp">COMPROBAR</button></div><p class="pk-fb" id="pkFb"></p>';
-    segWire('pkNivel', function (v) { st.nivel = v; nuevo(); });
-    on('pkOtra', 'click', nuevo);
-    on('pkBorrar', 'click', function () { st.sel = []; pintar(); feedback(''); });
-    on('pkOirSel', 'click', function () { tocarVarias(st.sel, null, 1.5); });
-    on('pkComp', 'click', comprobar);
-    function nuevo() {
-      feedback('');
-      var tipos = st.nivel === 'triadas' ? ['', 'm'] : st.nivel === 'mas' ? ['', 'm', 'dim', 'sus4', 'sus2', 'aug'] : ['7', 'maj7', 'm7', 'm7b5', '6'];
-      st.tipo = azar(tipos);
-      var menor = !!tipo(st.tipo).menor;
-      st.raiz = azar((menor ? RAIZ_MENOR : RAIZ_MAYOR));
-      st.sel = []; st.listo = false; st.fallos = 0;
-      q('#pkSub').textContent = 'Toca las notas en el teclado (en cualquier orden) y comprueba';
-      q('#pkBig').textContent = ver(cifra(st.raiz, st.tipo));
-      q('#pkSub2').textContent = tipo(st.tipo).nom;
-      pintar();
-      S.onKey = function (m, origen) {
-        if (origen === 'midi') {
-          // con piano real: se comprueba solo cuando están todas las teclas abajo
-          st.sel = Array.from(S.held);
-          pintar();
-          if (new Set(st.sel.map(mod12)).size >= tipo(st.tipo).iv.length) comprobar();
-        } else alternar(m);
-      };
-    }
-    function alternar(m) {
-      if (st.listo) return;
-      var i = st.sel.indexOf(m);
-      if (i >= 0) st.sel.splice(i, 1); else st.sel.push(m);
-      pintar();
-    }
-    function pintar(extra) {
-      var mk = {};
-      st.sel.forEach(function (m) { mk[m] = { c: 'sel' }; });
-      if (extra) Object.assign(mk, extra);
-      teclado(q('#pkKb'), 48, 79, mk, function (m) { alternar(m); });
-    }
-    function comprobar() {
-      if (st.listo || !st.sel.length) return;
-      var quiero = new Set(midisAcorde(st.raiz, st.tipo).map(mod12)), tengo = new Set(st.sel.map(mod12));
-      var faltan = Array.from(quiero).filter(function (p) { return !tengo.has(p); });
-      var sobran = st.sel.filter(function (m) { return !quiero.has(mod12(m)); });
-      var notas = notasAcorde(st.raiz, st.tipo);
-      if (!faltan.length && !sobran.length) {
-        st.listo = true; anotar('acordes', st.fallos === 0);
-        var mk = {};
-        st.sel.forEach(function (m) {
-          var i = tipo(st.tipo).iv.map(function (s) { return mod12(pcDe(st.raiz) + s); }).indexOf(mod12(m));
-          mk[m] = { c: 'ok', t: ver(notas[i]) };
-        });
-        pintar(mk);
-        feedback('¡Bien! ' + ver(cifra(st.raiz, st.tipo)) + ' = ' + notas.map(ver).join(' – '), 'ok');
-        tocarVarias(st.sel, null, 1.6);
-        setTimeout(function () { if (S.tema && S.tema.id === 'acordes' && S.modo === 'practicar') nuevo(); }, 1800);
-      } else {
-        if (!st.fallos) anotar('acordes', false);
-        st.fallos++;
-        var mk2 = {};
-        sobran.forEach(function (m) { mk2[m] = { c: 'bad' }; });
-        pintar(mk2);
-        var txt = (sobran.length ? 'Marcadas con × no van. ' : '') + (faltan.length ? 'Falta' + (faltan.length > 1 ? 'n ' + faltan.length + ' notas' : ' una nota') + '.' : '');
-        if (st.fallos >= 2) txt += ' Las notas son: ' + notas.map(ver).join(' – ') + '.';
-        feedback(txt, 'bad');
-      }
-    }
-    nuevo();
-  }
-
-  /* ---------- 3. escalas ---------- */
-  function apEscalas(el) {
-    var st = S.st; st.raiz = st.raiz || 'C'; st.esc = st.esc || 'mayor';
+  function exEscalas(el, st) {
+    st.raiz = st.raiz || 'C'; st.esc = st.esc || 'mayor';
     el.innerHTML =
-      '<p class="ed-note">Una escala es la lista ordenada de notas que "pertenecen" a un tono. Para acompañar no se trata de tocarlas rápido, sino de saber <b>qué notas suenan bien</b> en una canción y de dónde salen sus acordes. T = tono (2 semitonos), S = semitono.</p>' +
-      '<div class="controls">' + ctl('Tónica', selRaiz('pkRaiz', st.raiz, escala(st.esc).menor)) +
-      ctl('Escala', selHtml('pkEsc', ESCALAS.map(function (e) { return [e.id, e.nom]; }), st.esc, 'Escala')) +
-      '<button class="mini-app-btn" id="pkOir">Escuchar</button></div>' +
-      '<div class="pk-stage"><div class="pk-big pk-mid" id="pkBig"></div><div class="pk-sub" id="pkSub"></div><div class="pk-sub" id="pkSub2"></div></div>' +
-      '<div class="pk-kbw" id="pkKb"></div>';
+      '<div class="controls">' + ctl('Tónica', '<span id="pkXRaizW"></span>') +
+      ctl('Escala', selHtml('pkXEsc', ESCALAS.map(function (e) { return [e.id, e.nom]; }), st.esc, 'Escala')) +
+      '<button class="mini-app-btn" id="pkXOir">Escuchar</button></div>' +
+      '<div class="pk-stage"><div class="pk-big pk-mid" id="pkXBig"></div><div class="pk-sub" id="pkXSub"></div><div class="pk-sub" id="pkXSub2"></div></div>' +
+      '<div class="pk-kbw" id="pkXKb"></div>';
+    function raizSel() {
+      var menor = !!escala(st.esc).menor;
+      st.raiz = (menor ? RAIZ_MENOR : RAIZ_MAYOR)[pcDe(st.raiz)];
+      q('#pkXRaizW').innerHTML = selRaiz('pkXRaiz', st.raiz, menor);
+      on('pkXRaiz', 'change', function () { st.raiz = this.value; oir(); });
+    }
     function midis() { var b = 48 + pcDe(st.raiz); return escala(st.esc).iv.concat([12]).map(function (s) { return b + s; }); }
     function pintar(activo) {
       var e = escala(st.esc), ns = notasEscala(st.raiz, e), ms = midis(), mk = {};
-      ms.forEach(function (m, i) {
-        var n = ns[i % ns.length];
-        mk[m] = { c: activo === i ? 'ok' : 'on', t: ver(n) };
-      });
-      q('#pkBig').textContent = ns.concat([ns[0]]).map(ver).join(' ');
-      q('#pkSub').textContent = e.nom + ' de ' + ver(st.raiz) + ' · ' + pasos(e);
-      q('#pkSub2').textContent = e.uso + (e.id === 'mayor' ? ' Digitación de la mano derecha en Do, Sol, Re, La y Mi: 1-2-3, pasa el pulgar, 1-2-3-4-5.' : '');
-      teclado(q('#pkKb'), 48, 74, mk, function () {});
+      ms.forEach(function (m, i) { mk[m] = { c: activo === i ? 'ok' : 'on', t: ver(ns[i % ns.length]) }; });
+      q('#pkXBig').textContent = ns.concat([ns[0]]).map(ver).join(' ');
+      q('#pkXSub').textContent = e.nom + ' de ' + ver(st.raiz) + ' · ' + pasos(e);
+      q('#pkXSub2').textContent = e.uso + (e.id === 'mayor' ? ' Digitación de la mano derecha en Do, Sol, Re, La y Mi: 1-2-3, pasa el pulgar, 1-2-3-4-5.' : '');
+      teclado(q('#pkXKb'), 48, 74, mk, function () {});
     }
     function oir() {
-      var ms = midis(), c = ac(); if (!c) return;
-      var ida = ms.concat(ms.slice(0, -1).reverse()), dur = 0.32;
-      reproducir({
-        dur: dur, total: ida.length,
-        sched: function (i, t) { tocar(ida[i], t, 0.5); },
-        paso: function (i) { var k = i < ms.length ? i : ida.length - 1 - i; pintar(k); },
-        fin: function () { pintar(); }
-      });
+      var ms = midis(), ida = ms.concat(ms.slice(0, -1).reverse());
+      reproducir({ dur: 0.32, total: ida.length, sched: function (i, t) { tocar(ida[i], t, 0.5); },
+        paso: function (i) { pintar(i < ms.length ? i : ida.length - 1 - i); }, fin: function () { pintar(); } });
     }
-    on('pkRaiz', 'change', function () { st.raiz = this.value; oir(); });
-    on('pkEsc', 'change', function () {
-      st.esc = this.value;
-      var menor = escala(st.esc).menor;
-      q('#pkRaiz').outerHTML = selRaiz('pkRaiz', (menor ? RAIZ_MENOR : RAIZ_MAYOR)[pcDe(st.raiz)], menor);
-      st.raiz = q('#pkRaiz').value;
-      on('pkRaiz', 'change', function () { st.raiz = this.value; oir(); });
-      oir();
-    });
-    on('pkOir', 'click', oir);
-    pintar();
+    on('pkXEsc', 'change', function () { st.esc = this.value; raizSel(); oir(); });
+    on('pkXOir', 'click', oir);
+    raizSel(); pintar();
   }
-  function prEscalas(el) {
-    var st = S.st; st.nivel = st.nivel || 'mayor';
-    el.innerHTML = cajaEjercicio(ctl('Escalas', segHtml('pkNivel', [['mayor', 'Mayores'], ['menor', 'Menores'], ['todas', 'Todas']], st.nivel)) +
-      '<button class="mini-app-btn" id="pkOtra">Otra</button><button class="mini-app-btn" id="pkPista">Pista</button>') +
-      '<div class="pk-kbw" id="pkKb"></div><p class="pk-fb" id="pkFb"></p>';
-    segWire('pkNivel', function (v) { st.nivel = v; nuevo(); });
-    on('pkOtra', 'click', nuevo);
-    on('pkPista', 'click', function () {
-      if (st.listo) return;
-      st.pista = true;
-      var pc = mod12(pcDe(st.raiz) + st.e.iv.concat([12])[st.i]);
-      feedback('Sigue ' + ver(st.notas[st.i % st.notas.length]) + ' (' + (st.i ? (st.e.iv.concat([12])[st.i] - st.e.iv.concat([12])[st.i - 1] === 1 ? 'un semitono' : 'un tono') + ' más arriba' : 'la tónica') + ').');
-      pintar(pc);
-    });
-    function nuevo() {
-      feedback('');
-      var lista = st.nivel === 'mayor' ? ['mayor'] : st.nivel === 'menor' ? ['menor', 'armonica'] : ['mayor', 'menor', 'armonica', 'pentam', 'penta'];
-      st.e = escala(azar(lista));
-      st.raiz = azar(st.e.menor ? RAIZ_MENOR : RAIZ_MAYOR);
-      st.notas = notasEscala(st.raiz, st.e);
-      st.i = 0; st.tocadas = []; st.fallos = 0; st.listo = false; st.pista = false;
-      q('#pkSub').textContent = 'Toca la escala subiendo, desde la tónica hasta la tónica de arriba';
-      q('#pkBig').textContent = st.e.nom + ' de ' + ver(st.raiz);
-      q('#pkSub2').textContent = st.notas.length + 1 + ' notas';
-      pintar();
-      S.onKey = responder;
-    }
-    function pintar(pista) {
-      var mk = {};
-      st.tocadas.forEach(function (x) { mk[x.m] = { c: 'ok', t: ver(x.n) }; });
-      if (st.malo != null) mk[st.malo] = { c: 'bad' };
-      if (pista != null) for (var m = 48; m <= 79; m++) if (mod12(m) === pista && !mk[m]) mk[m] = { c: 'tenue' };
-      teclado(q('#pkKb'), 48, 79, mk, responder);
-    }
-    function responder(m) {
-      if (st.listo) return;
-      var ivs = st.e.iv.concat([12]), pcQuiero = mod12(pcDe(st.raiz) + ivs[st.i]);
-      var previo = st.tocadas.length ? st.tocadas[st.tocadas.length - 1].m : null;
-      st.malo = null;
-      if (mod12(m) === pcQuiero && (previo == null || m > previo)) {
-        st.tocadas.push({ m: m, n: st.notas[st.i % st.notas.length] });
-        st.i++;
-        if (st.i === ivs.length) {
-          st.listo = true;
-          var bien = st.fallos === 0 && !st.pista;
-          anotar('escalas', bien);
-          feedback(bien ? '¡Perfecta!' : 'Completa, con ' + st.fallos + ' error' + (st.fallos === 1 ? '' : 'es') + (st.pista ? ' y pista' : '') + '. Repítela hasta que salga limpia.', bien ? 'ok' : '');
-          setTimeout(function () { if (S.tema && S.tema.id === 'escalas' && S.modo === 'practicar') nuevo(); }, 1800);
-        } else feedback('');
-      } else {
-        st.fallos++; st.malo = m;
-        feedback(mod12(m) === pcQuiero ? 'Esa nota va, pero más arriba que la anterior.' : 'Esa no es. ¿Tono o semitono desde la anterior?', 'bad');
-      }
-      pintar();
-    }
-    nuevo();
-  }
-
-  /* ---------- 4. campo armónico ---------- */
-  function apCampo(el) {
-    var st = S.st; st.raiz = st.raiz || 'C'; st.modo = st.modo || 'mayor'; st.sept = !!st.sept;
+  function exCampo(el, st) {
+    st.raiz = st.raiz || 'C'; st.modo = st.modo || 'mayor'; st.sept = !!st.sept;
     el.innerHTML =
-      '<p class="ed-note">Si a cada nota de la escala le armas un acorde con notas de la misma escala, salen los siete acordes del tono: su <b>campo armónico</b>. Casi todas las canciones usan solo estos. Se numeran con romanos (mayúscula = mayor, minúscula = menor), y eso permite hablar de una canción sin importar el tono.</p>' +
-      '<div class="controls">' + ctl('Tono', selRaiz('pkRaiz', st.raiz, st.modo === 'menor')) +
-      ctl('Modo', segHtml('pkModo2', [['mayor', 'Mayor'], ['menor', 'Menor']], st.modo)) +
-      ctl('Acordes', segHtml('pkSept', [['0', 'Tríadas'], ['1', 'Con séptima']], st.sept ? '1' : '0')) + '</div>' +
-      '<table class="rep pk-campo"><thead><tr><th>Grado</th><th>Acorde</th><th>Función</th></tr></thead><tbody id="pkFilas"></tbody></table>' +
-      '<p class="ed-note" id="pkNotaModo"></p>' +
-      '<div class="pk-manos"><div><div class="ctl-label">Mano izquierda</div><div class="pk-kbw pk-izq" id="pkKbI"></div></div>' +
-      '<div class="pk-der"><div class="ctl-label">Mano derecha</div><div class="pk-kbw" id="pkKbD"></div></div></div>';
+      '<div class="controls">' + ctl('Tono', '<span id="pkXRaizW"></span>') +
+      ctl('Modo', segHtml('pkXModo', [['mayor', 'Mayor'], ['menor', 'Menor']], st.modo)) +
+      ctl('Acordes', segHtml('pkXSept', [['0', 'Tríadas'], ['1', 'Con séptima']], st.sept ? '1' : '0')) + '</div>' +
+      '<table class="rep pk-campo"><thead><tr><th>Grado</th><th>Acorde</th><th>Función</th></tr></thead><tbody id="pkXFilas"></tbody></table>' +
+      '<p class="ed-note">Toca una fila para verla en el teclado y escucharla.</p>' +
+      '<div class="pk-manos"><div><div class="ctl-label">Mano izquierda</div><div class="pk-kbw pk-izq" id="pkXKbI"></div></div>' +
+      '<div class="pk-der"><div class="ctl-label">Mano derecha</div><div class="pk-kbw" id="pkXKbD"></div></div></div>';
+    function raizSel() {
+      var menor = st.modo === 'menor';
+      st.raiz = (menor ? RAIZ_MENOR : RAIZ_MAYOR)[pcDe(st.raiz)];
+      q('#pkXRaizW').innerHTML = selRaiz('pkXRaiz', st.raiz, menor);
+      on('pkXRaiz', 'change', function () { st.raiz = this.value; pintar(); });
+    }
     function pintar(sel) {
       var filas = '';
       for (var g = 0; g < 7; g++) {
         var a = grado(st.raiz, st.modo, g, st.sept);
-        filas += '<tr class="song' + (sel === g ? ' pk-sel-row' : '') + '" data-g="' + g + '"><td class="t-key">' + a.rom + '</td><td class="t-title">' + esc(ver(cifra(a.raiz, a.tipo))) +
-          '</td><td>' + esc(FUNCION[a.fun]) + '</td></tr>';
+        filas += '<tr class="song' + (sel === g ? ' pk-sel-row' : '') + '" data-g="' + g + '"><td class="t-key">' + a.rom + '</td><td class="t-title">' + esc(ver(cifra(a.raiz, a.tipo))) + '</td><td>' + esc(FUNCION[a.fun]) + '</td></tr>';
       }
-      q('#pkFilas').innerHTML = filas;
-      q('#pkNotaModo').textContent = st.modo === 'menor'
-        ? 'En menor, el V se toca mayor (con la 7ª de la menor armónica): así suena la cadencia que "vuelve a casa". Funciones: i, III y VI reposan; iv y iiº preparan; V y VII tensan.'
-        : 'Los más usados: I, IV, V y vi. El V (y mejor aún el V7) es el que pide volver al I.';
-      S.view.querySelectorAll('#pkFilas tr').forEach(function (tr) {
-        tr.addEventListener('click', function () { mostrar(+tr.dataset.g); });
-      });
+      q('#pkXFilas').innerHTML = filas;
+      S.view.querySelectorAll('#pkXFilas tr').forEach(function (tr) { tr.addEventListener('click', function () { mostrar(+tr.dataset.g); }); });
     }
     function mostrar(g) {
       pintar(g);
       var a = grado(st.raiz, st.modo, g, st.sept), v = voz(a.raiz, a.tipo, null), b = 36 + mod12(pcDe(a.raiz)), mkD = {}, mkI = {};
-      var ns = notasAcorde(a.raiz, a.tipo), pcs = tipo(a.tipo).iv.map(function (s) { return mod12(pcDe(a.raiz) + s); });
+      var ns = notasAcorde(a.raiz, a.tipo), pcs = pcsAcorde(a.raiz, a.tipo);
       v.forEach(function (m) { mkD[m] = { c: 'on', t: ver(ns[pcs.indexOf(mod12(m))]) }; });
       mkI[b] = { c: 'on', t: ver(a.raiz) };
-      teclado(q('#pkKbI'), 36, 48, mkI); teclado(q('#pkKbD'), 48, 84, mkD);
+      teclado(q('#pkXKbI'), 36, 48, mkI); teclado(q('#pkXKbD'), 48, 84, mkD);
       var c = ac(); if (c) { var t = c.currentTime + 0.03; tocar(b, t, 1.6, 0.7); tocarVarias(v, t, 1.6); }
     }
-    on('pkRaiz', 'change', function () { st.raiz = this.value; pintar(); });
-    segWire('pkModo2', function (v) {
-      st.modo = v;
-      var menor = v === 'menor';
-      q('#pkRaiz').outerHTML = selRaiz('pkRaiz', (menor ? RAIZ_MENOR : RAIZ_MAYOR)[pcDe(st.raiz)], menor);
-      st.raiz = q('#pkRaiz').value;
-      on('pkRaiz', 'change', function () { st.raiz = this.value; pintar(); });
-      pintar();
-    });
-    segWire('pkSept', function (v) { st.sept = v === '1'; pintar(); });
-    pintar();
-    teclado(q('#pkKbI'), 36, 48, {}); teclado(q('#pkKbD'), 48, 84, {});
+    segWire('pkXModo', function (v) { st.modo = v; raizSel(); pintar(); });
+    segWire('pkXSept', function (v) { st.sept = v === '1'; pintar(); });
+    raizSel(); pintar();
+    teclado(q('#pkXKbI'), 36, 48, {}); teclado(q('#pkXKbD'), 48, 84, {});
   }
-  function prCampo(el) {
-    var st = S.st;
-    el.innerHTML = cajaEjercicio('<button class="mini-app-btn" id="pkOtra">Otra</button>') +
-      '<div class="pk-grid" id="pkOps"></div><p class="pk-fb" id="pkFb"></p>';
-    on('pkOtra', 'click', nuevo);
-    function nuevo() {
-      feedback('');
-      var modo = Math.random() < 0.7 ? 'mayor' : 'menor', menor = modo === 'menor';
-      var raiz = azar(menor ? RAIZ_MENOR : RAIZ_MAYOR), tono = ver(raiz) + (menor ? ' menor' : ' mayor');
-      var g = Math.floor(Math.random() * 7), a = grado(raiz, modo, g, false), clase = Math.random();
-      st.listo = false; st.fallos = 0;
-      var ops, correcta;
-      if (clase < 0.45) {
-        q('#pkSub').textContent = 'En ' + tono + ',';
-        q('#pkBig').textContent = '¿cuál es el ' + a.rom + '?';
-        correcta = ver(cifra(a.raiz, a.tipo));
-        ops = [correcta];
-        var otros = mezclar([0, 1, 2, 3, 4, 5, 6].filter(function (x) { return x !== g; })).slice(0, 3);
-        otros.forEach(function (x) { var b = grado(raiz, modo, x, false); ops.push(ver(cifra(b.raiz, b.tipo))); });
-      } else if (clase < 0.85) {
-        q('#pkSub').textContent = 'En ' + tono + ',';
-        q('#pkBig').textContent = '¿qué grado es ' + ver(cifra(a.raiz, a.tipo)) + '?';
-        correcta = a.rom;
-        ops = [correcta].concat(mezclar(CAMPO[modo].rom.filter(function (r) { return r !== a.rom; })).slice(0, 3));
-      } else {
-        q('#pkSub').textContent = 'En ' + tono + ', el ' + a.rom + ' (' + ver(cifra(a.raiz, a.tipo)) + ')';
-        q('#pkBig').textContent = '¿qué función cumple?';
-        correcta = FUNCION[a.fun];
-        ops = [FUNCION.T, FUNCION.SD, FUNCION.D];
-      }
-      q('#pkSub2').textContent = '';
-      var caja = q('#pkOps');
-      caja.innerHTML = mezclar(ops).map(function (o) { return '<button class="pk-opt">' + esc(o) + '</button>'; }).join('');
-      caja.querySelectorAll('button').forEach(function (b) {
-        b.addEventListener('click', function () {
-          if (st.listo) return;
-          if (b.textContent === correcta) {
-            st.listo = true; b.classList.add('ok'); anotar('campo', st.fallos === 0);
-            feedback('¡Bien! ' + a.rom + ' de ' + tono + ' = ' + ver(cifra(a.raiz, a.tipo)) + '. ' + FUNCION[a.fun] + '.', 'ok');
-            var c = ac(); if (c) { var v = voz(a.raiz, a.tipo, null); tocar(36 + mod12(pcDe(a.raiz)), null, 1.4, 0.7); tocarVarias(v, null, 1.4); }
-            setTimeout(function () { if (S.tema && S.tema.id === 'campo' && S.modo === 'practicar') nuevo(); }, 1900);
-          } else {
-            b.classList.add('bad'); b.disabled = true;
-            if (!st.fallos) anotar('campo', false);
-            st.fallos++;
-            feedback('No. Cuenta los grados desde ' + ver(raiz) + ' por la escala.', 'bad');
-          }
-        });
-      });
-    }
-    nuevo();
-  }
-
-  /* ---------- acompañamiento: progresión + ritmo ---------- */
-  // Toca acordes con un ritmo. acordes: [{raiz, tipo}], un acorde por compás.
-  function acompanar(acordes, r, bpm, opt) {
+  // progresiones y ritmos comparten el explorador: acordes + ritmo + tempo
+  function exProgresiones(el, st, opt) {
     opt = opt || {};
-    var porCompas = r.md.length, dur = r.comp === '6/8' ? 60 / bpm / 3 : 60 / bpm / 2;
-    var voces = [], previa = null;
-    acordes.forEach(function (a) { previa = voz(a.raiz, a.tipo, previa); voces.push(previa); });
-    var total = opt.loop ? null : acordes.length * porCompas;
-    reproducir({
-      dur: dur, total: total,
-      sched: function (i, t) {
-        var k = Math.floor(i / porCompas) % acordes.length, s = i % porCompas, a = acordes[k], v = voces[k];
-        var b = bajo(a.raiz), ci = r.mi[s], cd = r.md[s];
-        if (ci === 'B') tocar(b, t, dur * 3.5, 0.75);
-        else if (ci === '5') tocar(b + (tipo(a.tipo).iv[2] === 6 ? 6 : 7), t, dur * 3, 0.6);
-        if (opt.sinDerecha) { /* el alumno toca la derecha */ }
-        else if (cd === 'A') tocarVarias(v, t, dur * (r.md[s + 1] === '.' ? 1.9 : 0.95), s === 0 ? 0.62 : 0.5);
-        else if ('1358'.indexOf(cd) >= 0) {
-          var idx = { 1: 0, 3: 1, 5: 2, 8: 0 }[cd], m = v[Math.min(idx, v.length - 1)] + (cd === '8' ? 12 : 0);
-          tocar(m, t, dur * 2.5, 0.5);
-        }
-        if (opt.clic && s % (r.comp === '6/8' ? 3 : 2) === 0) clic(t, s === 0);
-        if (opt.sched) opt.sched(i, t);
-      },
-      paso: function (i) { if (opt.paso) opt.paso(Math.floor(i / porCompas) % acordes.length, i % porCompas, voces, i); },
-      fin: opt.fin
-    });
-    return voces;
-  }
-
-  /* ---------- 5. progresiones ---------- */
-  function apProgresiones(el) {
-    var st = S.st; st.p = st.p || 'pop'; st.raiz = st.raiz || 'C'; st.bpm = st.bpm || 80; st.r = st.r || 'negras';
+    st.p = st.p || opt.p || 'pop'; st.raiz = st.raiz || 'C'; st.bpm = st.bpm || 80; st.r = st.r || opt.r || 'negras';
     el.innerHTML =
-      '<p class="ed-note">Una progresión es la secuencia de acordes de una canción. Como se escriben en grados, la misma progresión sirve en cualquier tono. Fíjate en la mano derecha: <b>cambia de inversión para moverse lo menos posible</b>, así suena ligado y es fácil de tocar.</p>' +
-      '<div class="controls">' + ctl('Progresión', selHtml('pkProg', PROGS.map(function (p) { return [p.id, p.nom]; }), st.p, 'Progresión')) +
-      ctl('Tono', '<span id="pkRaizW"></span>') +
-      ctl('Ritmo', selHtml('pkRit', RITMOS.map(function (r) { return [r.id, r.nom]; }), st.r, 'Ritmo')) +
-      ctl('Tempo', '<div class="stepper"><button id="pkBpmM" aria-label="Más lento">−</button><span class="val" id="pkBpm"></span><button id="pkBpmP" aria-label="Más rápido">+</button></div>') +
-      '<button class="pr-play pk-go" id="pkPlay">TOCAR</button></div>' +
-      '<p class="pk-sub" id="pkTxt"></p>' +
-      '<div class="pk-prog" id="pkCifras"></div>' +
-      '<div class="pk-manos"><div><div class="ctl-label">Mano izquierda</div><div class="pk-kbw pk-izq" id="pkKbI"></div></div>' +
-      '<div class="pk-der"><div class="ctl-label">Mano derecha</div><div class="pk-kbw" id="pkKbD"></div></div></div>';
+      '<div class="controls">' + ctl('Progresión', selHtml('pkXProg', PROGS.map(function (p) { return [p.id, p.nom]; }), st.p, 'Progresión')) +
+      ctl('Tono', '<span id="pkXRaizW"></span>') +
+      ctl('Ritmo', selHtml('pkXRit', RITMOS.map(function (r) { return [r.id, r.nom]; }), st.r, 'Ritmo')) +
+      stepper('pkXBpm', 'Tempo') + '<button class="pr-play pk-go" id="pkXPlay">TOCAR</button></div>' +
+      '<p class="pk-sub" id="pkXTxt"></p><div class="pk-prog" id="pkXCifras"></div>' +
+      (opt.rejilla ? '<div id="pkXRej"></div>' : '') +
+      '<div class="pk-manos"><div><div class="ctl-label">Mano izquierda</div><div class="pk-kbw pk-izq" id="pkXKbI"></div></div>' +
+      '<div class="pk-der"><div class="ctl-label">Mano derecha</div><div class="pk-kbw" id="pkXKbD"></div></div></div>';
     function raizSel() {
       var menor = prog(st.p).modo === 'menor';
       st.raiz = (menor ? RAIZ_MENOR : RAIZ_MAYOR)[pcDe(st.raiz)];
-      q('#pkRaizW').innerHTML = selRaiz('pkRaiz', st.raiz, menor);
-      on('pkRaiz', 'change', function () { st.raiz = this.value; reiniciar(); });
+      q('#pkXRaizW').innerHTML = selRaiz('pkXRaiz', st.raiz, menor);
+      on('pkXRaiz', 'change', function () { st.raiz = this.value; reiniciar(); });
     }
     function acordes() { return acordesProg(prog(st.p), st.raiz); }
-    function pintar(k, voces) {
-      var as = acordes(), p = prog(st.p);
-      q('#pkTxt').textContent = p.txt;
-      q('#pkCifras').innerHTML = as.map(function (a, i) {
+    function pintar(k, voces, paso) {
+      var as = acordes(), p = prog(st.p), r = ritmo(st.r);
+      q('#pkXTxt').textContent = p.txt + ' Ritmo: ' + r.txt;
+      q('#pkXCifras').innerHTML = as.map(function (a, i) {
         return '<div class="pk-cif' + (i === k ? ' on' : '') + '"><span class="pk-rom">' + esc(a.rom) + '</span><span class="pk-ac">' + esc(ver(cifra(a.raiz, a.tipo))) + '</span></div>';
       }).join('');
+      if (opt.rejilla) q('#pkXRej').innerHTML = rejilla(r, paso);
       var mkD = {}, mkI = {};
       if (k != null && voces) {
-        var a = as[k], ns = notasAcorde(a.raiz, a.tipo), pcs = tipo(a.tipo).iv.map(function (s) { return mod12(pcDe(a.raiz) + s); });
+        var a = as[k], ns = notasAcorde(a.raiz, a.tipo), pcs = pcsAcorde(a.raiz, a.tipo);
         voces[k].forEach(function (m) { mkD[m] = { c: 'on', t: ver(ns[pcs.indexOf(mod12(m))]) }; });
         mkI[bajo(a.raiz)] = { c: 'on', t: ver(a.raiz) };
       }
-      teclado(q('#pkKbI'), 36, 52, mkI); teclado(q('#pkKbD'), 48, 84, mkD);
-      q('#pkBpm').textContent = st.bpm;
+      teclado(q('#pkXKbI'), 36, 52, mkI); teclado(q('#pkXKbD'), 48, 84, mkD);
+      q('#pkXBpm').textContent = st.bpm;
     }
-    var ultimo = -1;
     function tocarProg() {
-      ultimo = -1;
-      acompanar(acordes(), ritmo(st.r), st.bpm, {
-        loop: true, clic: false,
-        paso: function (k, s, voces) { if (k !== ultimo) { ultimo = k; pintar(k, voces); } }
-      });
-      q('#pkPlay').textContent = 'DETENER'; q('#pkPlay').classList.add('playing');
+      acompanar(acordes(), ritmo(st.r), st.bpm, { loop: true, clic: !!opt.rejilla, paso: function (k, s, voces) { pintar(k, voces, s); } });
+      q('#pkXPlay').textContent = 'DETENER'; q('#pkXPlay').classList.add('playing');
     }
-    function detener() { parar(); q('#pkPlay').textContent = 'TOCAR'; q('#pkPlay').classList.remove('playing'); pintar(); }
+    function detener() { parar(); q('#pkXPlay').textContent = 'TOCAR'; q('#pkXPlay').classList.remove('playing'); pintar(); }
     function reiniciar() { if (sonando()) tocarProg(); else pintar(); }
-    on('pkPlay', 'click', function () { if (sonando()) detener(); else tocarProg(); });
-    on('pkProg', 'change', function () { st.p = this.value; raizSel(); reiniciar(); });
-    on('pkRit', 'change', function () { st.r = this.value; reiniciar(); });
-    on('pkBpmM', 'click', function () { st.bpm = Math.max(40, st.bpm - 5); reiniciar(); });
-    on('pkBpmP', 'click', function () { st.bpm = Math.min(180, st.bpm + 5); reiniciar(); });
+    on('pkXPlay', 'click', function () { if (sonando()) detener(); else tocarProg(); });
+    on('pkXProg', 'change', function () { st.p = this.value; raizSel(); reiniciar(); });
+    on('pkXRit', 'change', function () { st.r = this.value; reiniciar(); });
+    on('pkXBpmM', 'click', function () { st.bpm = Math.max(40, st.bpm - 5); reiniciar(); });
+    on('pkXBpmP', 'click', function () { st.bpm = Math.min(180, st.bpm + 5); reiniciar(); });
     raizSel(); pintar();
   }
-  function prProgresiones(el) {
-    var st = S.st;
-    el.innerHTML = cajaEjercicio('<button class="mini-app-btn" id="pkRep">▶ Repetir</button><button class="mini-app-btn" id="pkOtra">Otra</button>') +
-      '<div class="pk-grid" id="pkOps"></div><p class="pk-fb" id="pkFb"></p>';
-    on('pkOtra', 'click', nuevo);
-    on('pkRep', 'click', sonar);
-    function sonar() { acompanar(acordesProg(st.p, st.raiz), ritmo('negras'), 92, {}); }
-    function nuevo() {
-      feedback(''); parar();
-      st.p = azar(PROGS.filter(function (p) { return !p.blues; }));
-      st.raiz = azar(st.p.modo === 'menor' ? RAIZ_MENOR : RAIZ_MAYOR);
-      st.listo = false; st.fallos = 0;
-      q('#pkSub').textContent = 'Escucha (empieza en el I del tono) y elige';
-      q('#pkBig').textContent = '¿Qué progresión es?';
-      q('#pkSub2').textContent = 'Pista: fíjate si el primer acorde es mayor o menor, y si el último deja tensión.';
-      var mismas = PROGS.filter(function (p) { return !p.blues && p !== st.p; });
-      var ops = mezclar([st.p].concat(mezclar(mismas).slice(0, 3)));
-      var caja = q('#pkOps');
-      caja.innerHTML = ops.map(function (p) { return '<button class="pk-opt" data-p="' + p.id + '">' + esc(p.nom) + '</button>'; }).join('');
-      caja.querySelectorAll('button').forEach(function (b) {
-        b.addEventListener('click', function () {
-          if (st.listo) return;
-          if (b.dataset.p === st.p.id) {
-            st.listo = true; b.classList.add('ok'); anotar('progresiones', st.fallos === 0); parar();
-            feedback('¡Bien! ' + st.p.nom + ' en ' + ver(st.raiz) + ': ' + acordesProg(st.p, st.raiz).map(function (a) { return ver(cifra(a.raiz, a.tipo)); }).join(' – '), 'ok');
-          } else {
-            b.classList.add('bad'); b.disabled = true;
-            if (!st.fallos) anotar('progresiones', false);
-            st.fallos++;
-            feedback('No. Escúchala otra vez.', 'bad');
-            sonar();
-          }
-        });
-      });
-      sonar();
+  function rejilla(r, paso, resultado) {
+    var cuenta = cuentaRitmo(r), filas = [['Mano der.', r.md], ['Mano izq.', r.mi]];
+    var h = '<div class="pk-rej" style="grid-template-columns:72px repeat(' + r.md.length + ',1fr)">';
+    h += '<span></span>' + cuenta.map(function (c, i) { return '<span class="pk-cu' + (i === paso ? ' on' : '') + '">' + c + '</span>'; }).join('');
+    filas.forEach(function (f) {
+      h += '<span class="ctl-label">' + f[0] + '</span>';
+      for (var i = 0; i < f[1].length; i++) {
+        var ch = f[1][i], txt = ch === '.' ? '' : ch === 'A' ? '●' : ch;
+        h += '<span class="pk-cel' + (ch !== '.' ? ' lleno' : '') + (i === paso ? ' on' : '') + '">' + txt + '</span>';
+      }
+    });
+    if (resultado) {
+      h += '<span class="ctl-label">Tú</span>';
+      for (var j = 0; j < r.md.length; j++) h += '<span class="pk-cel">' + (resultado[j] || '') + '</span>';
     }
-    nuevo();
+    return h + '</div>';
   }
-
-  /* ---------- 6. transponer ---------- */
+  function exTransponer(el, st) {
+    st.txt = st.txt != null ? st.txt : 'G Em C D'; st.k = st.k || 0; st.menor = !!st.menor;
+    el.innerHTML =
+      '<div class="controls"><input class="search pk-in" id="pkXTxtIn" value="' + esc(st.txt) + '" aria-label="Acordes"></div>' +
+      '<div class="controls">' + ctl('Tono original', '<span id="pkXOrigW"></span>') + stepper('pkXK', 'Mover') +
+      ctl('Tono nuevo', '<span id="pkXDestW"></span>') + '<button class="mini-app-btn" id="pkXOir">Escuchar</button></div>' +
+      '<table class="rep pk-campo"><thead><tr><th>Original</th><th>Grado</th><th>Transpuesto</th></tr></thead><tbody id="pkXFilas"></tbody></table>';
+    function tonica() {
+      var cs = leerCifras(st.txt).filter(function (c) { return !c.mal; });
+      if (st.orig == null) { st.orig = cs.length ? cs[0].pc : 0; st.menor = cs.length ? /^m(?!aj)/.test(cs[0].suf) : false; }
+      return st.orig;
+    }
+    function pintar() {
+      var t = tonica(), cs = leerCifras(st.txt), dest = mod12(t + st.k), bemO = usaBemoles(t, st.menor), bemD = usaBemoles(dest, st.menor);
+      var nomT = function (pc) { return ver(notaPc(pc, usaBemoles(pc, st.menor))) + (st.menor ? 'm' : ''); };
+      var ops = SOST.map(function (_, pc) { return [pc, nomT(pc)]; });
+      q('#pkXOrigW').innerHTML = selHtml('pkXOrig', ops, t, 'Tono original');
+      q('#pkXDestW').innerHTML = selHtml('pkXDest', ops, dest, 'Tono nuevo');
+      q('#pkXK').textContent = (st.k > 0 ? '+' : '') + st.k + ' st';
+      q('#pkXFilas').innerHTML = cs.map(function (c) {
+        return '<tr><td class="t-title">' + esc(ver(escribirCifra(c, 0, bemO))) + '</td><td class="t-key">' + esc(romanoDe(c, t, st.menor)) + '</td><td class="t-title">' + esc(ver(escribirCifra(c, st.k, bemD))) + '</td></tr>';
+      }).join('');
+      on('pkXOrig', 'change', function () { st.orig = +this.value; pintar(); });
+      on('pkXDest', 'change', function () { st.k = mod12(+this.value - tonica()); if (st.k > 6) st.k -= 12; pintar(); });
+    }
+    on('pkXTxtIn', 'input', function () { st.txt = this.value; st.orig = null; pintar(); });
+    on('pkXKM', 'click', function () { st.k = Math.max(-11, st.k - 1); pintar(); });
+    on('pkXKP', 'click', function () { st.k = Math.min(11, st.k + 1); pintar(); });
+    on('pkXOir', 'click', function () {
+      var cs = leerCifras(st.txt).filter(function (c) { return !c.mal; }), bem = usaBemoles(mod12(tonica() + st.k), st.menor);
+      var as = cs.map(function (c) { return { raiz: notaPc(c.pc + st.k, bem), tipo: tipoDeSufijo(c.suf) }; });
+      if (as.length) acompanar(as, ritmo('negras'), 90, {});
+    });
+    pintar();
+  }
   function leerCifras(txt) {
     return String(txt || '').split(/[\s,–\-|]+/).filter(Boolean).map(function (tok) {
       var n = SB.music.normalizeInput(tok);
@@ -1085,234 +727,800 @@
   function romanoDe(c, tonica, menor) {
     if (c.mal) return '?';
     var d = mod12(c.pc - tonica);
-    var R = ['I', '♭II', 'II', '♭III', 'III', 'IV', '♯IV', 'V', '♭VI', 'VI', '♭VII', 'VII'];
-    if (menor) R = ['I', '♭II', 'II', 'III', '♯III', 'IV', '♯IV', 'V', 'VI', '♯VI', 'VII', '♯VII'];
+    var R = menor ? ['I', '♭II', 'II', 'III', '♯III', 'IV', '♯IV', 'V', 'VI', '♯VI', 'VII', '♯VII'] : ['I', '♭II', 'II', '♭III', 'III', 'IV', '♯IV', 'V', '♭VI', 'VI', '♭VII', 'VII'];
     var r = R[d], esMenor = /^m(?!aj)/.test(c.suf) || /^dim|º/.test(c.suf);
     if (esMenor) r = r.replace(/[IV]+/, function (x) { return x.toLowerCase(); });
     return r + c.suf.replace(/^m(?!aj)/, '').replace(/^dim/, 'º');
   }
-  function apTransponer(el) {
-    var st = S.st; st.txt = st.txt != null ? st.txt : 'G Em C D'; st.k = st.k || 0; st.menor = !!st.menor;
-    el.innerHTML =
-      '<p class="ed-note">Transponer es subir o bajar todos los acordes la misma cantidad de semitonos, para que la canción quede en un tono cómodo para cantar. El truco: piensa la canción <b>en grados</b> (I, IV, V…) y vuelve a armarla en el tono nuevo. Escribe los acordes separados por espacios (sirve "G Em C D" o "Sol Mim Do Re").</p>' +
-      '<div class="controls"><input class="search pk-in" id="pkTxtIn" value="' + esc(st.txt) + '" aria-label="Acordes"></div>' +
-      '<div class="controls">' + ctl('Tono original', '<span id="pkOrigW"></span>') +
-      ctl('Mover', '<div class="stepper"><button id="pkKM" aria-label="Bajar medio tono">−</button><span class="val" id="pkK"></span><button id="pkKP" aria-label="Subir medio tono">+</button></div>') +
-      ctl('Tono nuevo', '<span id="pkDestW"></span>') +
-      '<button class="mini-app-btn" id="pkOir">Escuchar</button></div>' +
-      '<table class="rep pk-campo"><thead><tr><th>Original</th><th>Grado</th><th>Transpuesto</th></tr></thead><tbody id="pkFilas"></tbody></table>';
-    function tonica() {
-      var cs = leerCifras(st.txt).filter(function (c) { return !c.mal; });
-      if (st.orig == null) {
-        st.orig = cs.length ? cs[0].pc : 0;
-        st.menor = cs.length ? /^m(?!aj)/.test(cs[0].suf) : false;
-      }
-      return st.orig;
-    }
-    function pintar() {
-      var t = tonica(), cs = leerCifras(st.txt), dest = mod12(t + st.k), bemO = usaBemoles(t, st.menor), bemD = usaBemoles(dest, st.menor);
-      var nomT = function (pc, bem) { return ver(notaPc(pc, bem)) + (st.menor ? 'm' : ''); };
-      q('#pkOrigW').innerHTML = selHtml('pkOrig', SOST.map(function (_, pc) { return [pc, nomT(pc, usaBemoles(pc, st.menor))]; }), t, 'Tono original');
-      q('#pkDestW').innerHTML = selHtml('pkDest', SOST.map(function (_, pc) { return [pc, nomT(pc, usaBemoles(pc, st.menor))]; }), dest, 'Tono nuevo');
-      q('#pkK').textContent = (st.k > 0 ? '+' : '') + st.k + ' st';
-      q('#pkFilas').innerHTML = cs.map(function (c) {
-        return '<tr><td class="t-title">' + esc(ver(escribirCifra(c, 0, bemO))) + '</td><td class="t-key">' + esc(romanoDe(c, t, st.menor)) +
-          '</td><td class="t-title">' + esc(ver(escribirCifra(c, st.k, bemD))) + '</td></tr>';
-      }).join('');
-      on('pkOrig', 'change', function () { st.orig = +this.value; pintar(); });
-      on('pkDest', 'change', function () { st.k = mod12(+this.value - tonica()); if (st.k > 6) st.k -= 12; pintar(); });
-    }
-    on('pkTxtIn', 'input', function () { st.txt = this.value; st.orig = null; pintar(); });
-    on('pkKM', 'click', function () { st.k = Math.max(-11, st.k - 1); pintar(); });
-    on('pkKP', 'click', function () { st.k = Math.min(11, st.k + 1); pintar(); });
-    on('pkOir', 'click', function () {
-      var cs = leerCifras(st.txt).filter(function (c) { return !c.mal; }), bem = usaBemoles(mod12(tonica() + st.k), st.menor);
-      var as = cs.map(function (c) {
-        var suf = c.suf;
-        var tp = TIPOS.some(function (x) { return x.id === suf; }) ? suf : (/^m(?!aj)/.test(suf) ? 'm' : '');
-        return { raiz: notaPc(c.pc + st.k, bem), tipo: tp };
-      });
-      if (as.length) acompanar(as, ritmo('negras'), 90, {});
-    });
-    pintar();
-  }
-  function prTransponer(el) {
-    var st = S.st;
-    el.innerHTML = cajaEjercicio('<button class="mini-app-btn" id="pkOtra">Otra</button>') +
-      '<div class="pk-trans" id="pkTr"></div>' +
-      '<div class="pk-acc"><button class="pr-play pk-go" id="pkComp">COMPROBAR</button></div><p class="pk-fb" id="pkFb"></p>';
-    on('pkOtra', 'click', nuevo);
-    on('pkComp', 'click', comprobar);
-    function nuevo() {
-      feedback('');
-      var p = azar(PROGS.filter(function (x) { return !x.blues; })), menor = p.modo === 'menor';
-      var desde = azar(['C', 'G', 'D', 'A', 'E', 'F'].map(function (n) { return menor ? RAIZ_MENOR[pcDe(n)] : n; }));
-      var k = azar([-5, -4, -3, -2, -1, 1, 2, 3, 4, 5]);
-      var hasta = (menor ? RAIZ_MENOR : RAIZ_MAYOR)[mod12(pcDe(desde) + k)];
-      st.orig = acordesProg(p, desde); st.dest = acordesProg(p, hasta); st.listo = false; st.fallos = 0;
-      q('#pkSub').textContent = 'Lleva estos acordes de ' + ver(desde) + (menor ? ' menor' : '') + ' a ' + ver(hasta) + (menor ? ' menor' : '');
-      q('#pkBig').textContent = st.orig.map(function (a) { return ver(cifra(a.raiz, a.tipo)); }).join('  ');
-      q('#pkSub2').textContent = 'Elige la nota de cada acorde; el tipo (m, 7…) no cambia.';
-      var ops = (menor ? RAIZ_MENOR : RAIZ_MAYOR).map(function (n) { return [n, ver(n)]; });
-      q('#pkTr').innerHTML = st.orig.map(function (a, i) {
-        return '<div class="pk-cif"><span class="pk-rom">' + esc(ver(cifra(a.raiz, a.tipo))) + ' →</span>' +
-          '<span class="pk-ac">' + selHtml('pkT' + i, [['', '¿?']].concat(ops), '', 'Acorde ' + (i + 1)) + '<b>' + esc(sufijo(a.tipo)) + '</b></span></div>';
-      }).join('');
-    }
-    function comprobar() {
-      if (st.listo) return;
-      var bien = 0, vacios = 0;
-      st.dest.forEach(function (a, i) {
-        var sel = q('#pkT' + i), v = sel.value;
-        if (!v) { vacios++; return; }
-        var ok = pcDe(v) === pcDe(a.raiz);
-        sel.classList.toggle('ok', ok); sel.classList.toggle('bad', !ok);
-        if (ok) bien++;
-      });
-      if (vacios) { feedback('Te falta' + (vacios > 1 ? 'n ' + vacios : ' uno') + '.', ''); return; }
-      if (bien === st.dest.length) {
-        st.listo = true; anotar('transponer', st.fallos === 0);
-        feedback('¡Bien! ' + st.dest.map(function (a) { return ver(cifra(a.raiz, a.tipo)); }).join(' – '), 'ok');
-        acompanar(st.dest, ritmo('negras'), 96, {});
-        setTimeout(function () { if (S.tema && S.tema.id === 'transponer' && S.modo === 'practicar') nuevo(); }, 3200);
-      } else {
-        if (!st.fallos) anotar('transponer', false);
-        st.fallos++;
-        feedback(bien + ' de ' + st.dest.length + ' bien. Cuenta cuántos semitonos hay entre los dos tonos y mueve cada acorde lo mismo.' +
-          (st.fallos >= 2 ? ' Respuesta: ' + st.dest.map(function (a) { return ver(cifra(a.raiz, a.tipo)); }).join(' – ') : ''), 'bad');
-      }
-    }
-    nuevo();
+
+  /* ================= ejercicios =================
+     Cada uno es una fábrica: ej(opts) devuelve function(cuerpo, ctl, lec).
+     ctl.ok() / ctl.mal() anotan el intento; el marco cuenta la meta. Un
+     fallo cuenta una sola vez por consigna, y una consigna con fallo no
+     suma acierto aunque después salga bien. */
+  function consignaHtml(extra) {
+    return (extra || '') + '<div class="pk-stage"><div class="pk-sub" id="pkSub"></div><div class="pk-big" id="pkBig"></div><div class="pk-sub" id="pkSub2"></div></div>';
   }
 
-  /* ---------- 7. rítmica ---------- */
-  function rejilla(r, paso, resultado) {
-    var cuenta = cuentaRitmo(r), filas = [['Mano der.', r.md], ['Mano izq.', r.mi]];
-    var h = '<div class="pk-rej" style="grid-template-columns:72px repeat(' + r.md.length + ',1fr)">';
-    h += '<span></span>' + cuenta.map(function (c, i) { return '<span class="pk-cu' + (i === paso ? ' on' : '') + '">' + c + '</span>'; }).join('');
-    filas.forEach(function (f) {
-      h += '<span class="ctl-label">' + f[0] + '</span>';
-      for (var i = 0; i < f[1].length; i++) {
-        var ch = f[1][i], txt = ch === '.' ? '' : ch === 'A' ? '●' : ch === 'B' ? 'B' : ch;
-        h += '<span class="pk-cel' + (ch !== '.' ? ' lleno' : '') + (i === paso ? ' on' : '') + '">' + txt + '</span>';
+  // Toca la nota pedida. opts: {negras, octavas}
+  function ejNota(opts) {
+    return function (el, ctl, lec) {
+      var st = S.st;
+      el.innerHTML = consignaHtml() + '<div class="pk-kbw" id="pkKb"></div><p class="pk-fb" id="pkFb"></p>';
+      function nuevo() {
+        ctl.nueva(); feedback('');
+        var bolsa = opts.negras ? SOST.concat(BEM.filter(function (n) { return n.length === 2; })) : LETRAS;
+        do { st.nota = azar(bolsa); } while (st.nota === st.prev);
+        st.prev = st.nota; st.listo = false;
+        st.oct = opts.octavas ? azar([3, 4, 5]) : null;
+        consigna('Toca en el teclado', ver(st.nota) + (st.oct != null ? st.oct : ''), st.oct != null ? 'en esa octava (el número chico bajo cada Do dice cuál es)' : 'en cualquier octava');
+        teclado(q('#pkKb'), 48, 84, {}, responder);
+        S.onKey = responder;
       }
-    });
-    if (resultado) {
-      h += '<span class="ctl-label">Tú</span>';
-      for (var j = 0; j < r.md.length; j++) h += '<span class="pk-cel">' + (resultado[j] || '') + '</span>';
-    }
-    return h + '</div>';
+      function responder(m) {
+        if (st.listo) return;
+        var ok = mod12(m) === pcDe(st.nota) && (st.oct == null || Math.floor(m / 12) - 1 === st.oct), mk = {};
+        if (ok) {
+          st.listo = true; mk[m] = { c: 'ok', t: ver(st.nota) }; ctl.ok();
+          feedback('¡Bien!', 'ok'); luego(lec, 900, nuevo);
+        } else {
+          mk[m] = { c: 'bad' }; ctl.mal();
+          feedback(mod12(m) === pcDe(st.nota) ? 'Es esa nota, pero en otra octava.' : 'Esa es ' + nombreMidi(m) + '. ' +
+            (st.nota.length === 2 ? 'Las teclas negras toman el nombre de la blanca vecina: # es la de la derecha, b la de la izquierda.' : 'Ubica el grupo de dos teclas negras: la blanca a su izquierda es Do.'), 'bad');
+        }
+        teclado(q('#pkKb'), 48, 84, mk, responder);
+      }
+      nuevo();
+    };
   }
-  var PROG_RITMO = [
-    { id: 'pop', raiz: 'C' }, { id: 'menor', raiz: 'A' }, { id: 'iivi', raiz: 'F' }, { id: 'folk', raiz: 'G' }
-  ];
-  function apRitmica(el) {
-    var st = S.st; st.r = st.r || 'negras'; st.bpm = st.bpm || 80; st.pr = st.pr || 0;
-    el.innerHTML =
-      '<p class="ed-note">El ritmo es lo que hace que un acompañamiento suene a bolero, a cumbia o a balada, aunque los acordes sean los mismos. La regla de oro: <b>la mano izquierda marca el bajo en los tiempos fuertes</b> y la derecha "dibuja" el estilo. Cuenta en voz alta ("1 y 2 y…") mientras escuchas.</p>' +
-      '<div class="controls">' + ctl('Ritmo', selHtml('pkRit', RITMOS.map(function (r) { return [r.id, r.nom]; }), st.r, 'Ritmo')) +
-      ctl('Sobre', selHtml('pkSobre', PROG_RITMO.map(function (x, i) { var a = acordesProg(prog(x.id), x.raiz); return [i, a.map(function (c) { return ver(cifra(c.raiz, c.tipo)); }).join(' ')]; }), st.pr, 'Acordes')) +
-      ctl('Tempo', '<div class="stepper"><button id="pkBpmM" aria-label="Más lento">−</button><span class="val" id="pkBpm"></span><button id="pkBpmP" aria-label="Más rápido">+</button></div>') +
-      '<button class="pr-play pk-go" id="pkPlay">TOCAR</button></div>' +
-      '<p class="pk-sub" id="pkTxt"></p><div id="pkRej"></div>' +
-      '<p class="ed-note">● = acorde con la mano derecha · 1 3 5 8 = una nota del acorde (8 = la fundamental arriba) · B = bajo · 5 = la quinta en el bajo.</p>';
-    function pintar(paso) {
-      var r = ritmo(st.r);
-      q('#pkTxt').textContent = r.comp + ' · ' + r.txt;
-      q('#pkRej').innerHTML = rejilla(r, paso);
-      q('#pkBpm').textContent = st.bpm;
-    }
-    function tocarR() {
-      var x = PROG_RITMO[st.pr];
-      acompanar(acordesProg(prog(x.id), x.raiz), ritmo(st.r), st.bpm, { loop: true, clic: true, paso: function (k, s) { pintar(s); } });
-      q('#pkPlay').textContent = 'DETENER'; q('#pkPlay').classList.add('playing');
-    }
-    function detener() { parar(); q('#pkPlay').textContent = 'TOCAR'; q('#pkPlay').classList.remove('playing'); pintar(); }
-    function reiniciar() { if (sonando()) tocarR(); else pintar(); }
-    on('pkPlay', 'click', function () { if (sonando()) detener(); else tocarR(); });
-    on('pkRit', 'change', function () { st.r = this.value; reiniciar(); });
-    on('pkSobre', 'change', function () { st.pr = +this.value; reiniciar(); });
-    on('pkBpmM', 'click', function () { st.bpm = Math.max(40, st.bpm - 5); reiniciar(); });
-    on('pkBpmP', 'click', function () { st.bpm = Math.min(180, st.bpm + 5); reiniciar(); });
-    pintar();
+
+  // Toca (o reconoce de oído) un intervalo. opts: {semis:[...], oido}
+  function ejIntervalo(opts) {
+    return function (el, ctl, lec) {
+      var st = S.st;
+      el.innerHTML = consignaHtml() + '<div class="pk-grid" id="pkOps"></div><div class="pk-kbw" id="pkKb"></div><p class="pk-fb" id="pkFb"></p>';
+      function nuevo() {
+        ctl.nueva(); feedback('');
+        st.raiz = azar(opts.raices || ['C', 'D', 'E', 'F', 'G', 'A', 'B', 'Bb', 'Eb']);
+        do { st.iv = intervalo(azar(opts.semis)); } while (opts.semis.length > 1 && st.iv === st.prev);
+        st.prev = st.iv; st.m1 = 48 + pcDe(st.raiz); st.listo = false;
+        var ops = q('#pkOps');
+        if (!opts.oido) {
+          consigna('Toca en el teclado', st.iv.nom + ' sobre ' + ver(st.raiz), 'hacia arriba (la nota de abajo ya está marcada)');
+          ops.innerHTML = '';
+          var mk = {}; mk[st.m1] = { c: 'on', t: ver(st.raiz) };
+          teclado(q('#pkKb'), 48, 72, mk, responderTecla);
+          S.onKey = responderTecla;
+        } else {
+          consigna('Escucha y elige', '¿Qué intervalo es?', '');
+          var cand = INTERVALOS.filter(function (x) { return opts.semis.indexOf(x.s) >= 0; });
+          ops.innerHTML = '<button class="pk-opt" id="pkRep">▶ Repetir</button>' + cand.map(function (x) { return '<button class="pk-opt" data-s="' + x.s + '">' + esc(x.nom) + '</button>'; }).join('');
+          on('pkRep', 'click', sonar);
+          ops.querySelectorAll('button[data-s]').forEach(function (b) { b.addEventListener('click', function () { responderOido(+b.dataset.s, b); }); });
+          q('#pkKb').innerHTML = ''; S.onKey = null;
+          sonar();
+        }
+      }
+      function sonar() {
+        var c = ac(); if (!c) return;
+        var t = c.currentTime + 0.05;
+        tocar(st.m1, t, 0.9); tocar(st.m1 + st.iv.s, t + 0.65, 0.9); tocarVarias([st.m1, st.m1 + st.iv.s], t + 1.4, 1.5);
+      }
+      function responderTecla(m) {
+        if (st.listo) return;
+        var mk = {}; mk[st.m1] = { c: 'on', t: ver(st.raiz) };
+        var objetivo = st.m1 + st.iv.s, nombre = deletrear(st.raiz, st.iv.s, st.iv.g);
+        if (mod12(m - st.m1) === mod12(st.iv.s) && m !== st.m1) {
+          st.listo = true; mk[objetivo] = { c: 'ok', t: ver(nombre) }; ctl.ok();
+          feedback('¡Bien! ' + ver(st.raiz) + ' → ' + ver(nombre) + ' (' + st.iv.s + ' semitonos).', 'ok');
+          tocar(st.m1, null, 1.2); luego(lec, 1300, nuevo);
+        } else {
+          mk[m] = { c: 'bad' }; ctl.mal();
+          var d = mod12(m - st.m1);
+          feedback('Esa está a ' + d + ' semitono' + (d === 1 ? '' : 's') + '. La ' + st.iv.nom + ' son ' + st.iv.s + '.' + (ctl.fallos() >= 2 ? ' Es ' + ver(nombre) + '.' : ''), 'bad');
+          if (ctl.fallos() >= 2) mk[objetivo] = { c: 'tenue', t: ver(nombre) };
+        }
+        teclado(q('#pkKb'), 48, 72, mk, responderTecla);
+      }
+      function responderOido(s, b) {
+        if (st.listo) return;
+        if (s === st.iv.s) {
+          st.listo = true; b.classList.add('ok'); ctl.ok();
+          feedback('¡Bien! Era una ' + st.iv.nom + ' (' + ver(st.raiz) + ' → ' + ver(deletrear(st.raiz, st.iv.s, st.iv.g)) + ').', 'ok');
+          luego(lec, 1400, nuevo);
+        } else {
+          b.classList.add('bad'); b.disabled = true; ctl.mal();
+          feedback('No. Escúchalo de nuevo: ¿más abierto o más cerrado?', 'bad'); sonar();
+        }
+      }
+      nuevo();
+    };
   }
-  function prRitmica(el) {
-    var st = S.st; st.r = st.r || 'negras'; st.bpm = st.bpm || 70;
-    el.innerHTML = cajaEjercicio(ctl('Ritmo', selHtml('pkRit', RITMOS.map(function (r) { return [r.id, r.nom]; }), st.r, 'Ritmo')) +
-      ctl('Tempo', '<div class="stepper"><button id="pkBpmM" aria-label="Más lento">−</button><span class="val" id="pkBpm"></span><button id="pkBpmP" aria-label="Más rápido">+</button></div>')) +
-      '<div id="pkRej"></div>' +
-      '<div class="pk-acc"><button class="pr-play pk-go" id="pkPlay">EMPEZAR</button><button class="pk-tap" id="pkTap" disabled>TOCA AQUÍ</button></div>' +
-      '<p class="pk-fb" id="pkFb"></p>';
-    var TOL = 0.12, COMPASES = 4;
-    function pintar(paso, res) {
-      var r = ritmo(st.r);
-      q('#pkBig').textContent = r.nom;
-      q('#pkSub').textContent = 'Toca la mano derecha (● y números) sobre el bajo, durante ' + COMPASES + ' compases';
-      q('#pkSub2').textContent = 'Con la tecla espaciadora, el botón o cualquier tecla del teclado MIDI. Primero suena un compás de cuenta.';
-      q('#pkRej').innerHTML = rejilla(r, paso, res);
-      q('#pkBpm').textContent = st.bpm;
-    }
-    function empezar() {
-      var r = ritmo(st.r), c = ac(); if (!c) return;
-      var n = r.md.length, dur = r.comp === '6/8' ? 60 / st.bpm / 3 : 60 / st.bpm / 2;
-      st.golpes = []; st.esperados = []; st.res = {};
-      var x = PROG_RITMO[0], acs = acordesProg(prog(x.id), x.raiz);
-      var cuenta = [{ raiz: acs[0].raiz, tipo: acs[0].tipo }];
-      feedback('');
-      q('#pkTap').disabled = false; q('#pkPlay').disabled = true;
-      S.onKey = function () { golpe(); };
-      // compás de cuenta (solo clic) + 4 compases con bajo y clic; la derecha la pones tú
-      var total = n * (COMPASES + 1);
-      reproducir({
-        dur: dur, total: total,
-        sched: function (i, t) {
-          var s = i % n, compas = Math.floor(i / n);
-          if (s % (r.comp === '6/8' ? 3 : 2) === 0) clic(t, s === 0);
-          if (compas === 0) return;
-          var a = acs[(compas - 1) % acs.length], b = bajo(a.raiz);
-          if (r.mi[s] === 'B') tocar(b, t, dur * 3.5, 0.75);
-          else if (r.mi[s] === '5') tocar(b + 7, t, dur * 3, 0.6);
-          if (r.md[s] !== '.') st.esperados.push({ t: t, s: s, usado: false });
-        },
-        paso: function (i) { pintar(i % n, st.res); },
-        fin: function () { setTimeout(evaluar, TOL * 1000 + 50); }
+
+  // Arma el acorde pedido. opts: {tipos, manos (bajo + acorde), inversion, grado:{modo, grados, sept} (pide "el IV de Sol")}
+  function ejAcorde(opts) {
+    return function (el, ctl, lec) {
+      var st = S.st;
+      el.innerHTML = consignaHtml() +
+        (opts.manos
+          ? '<div class="pk-manos"><div><div class="ctl-label">Mano izquierda: el bajo</div><div class="pk-kbw pk-izq" id="pkKbI"></div></div><div class="pk-der"><div class="ctl-label">Mano derecha: el acorde</div><div class="pk-kbw" id="pkKb"></div></div></div>'
+          : '<div class="pk-kbw" id="pkKb"></div>') +
+        '<div class="pk-acc"><button class="mini-app-btn" id="pkOirSel">Escuchar lo mío</button><button class="mini-app-btn" id="pkBorrar">Borrar</button><button class="pr-play pk-go" id="pkComp">COMPROBAR</button></div><p class="pk-fb" id="pkFb"></p>';
+      on('pkBorrar', 'click', function () { st.sel = []; st.selI = []; pintar(); feedback(''); });
+      on('pkOirSel', 'click', function () { tocarVarias(st.sel.concat(st.selI), null, 1.5); });
+      on('pkComp', 'click', comprobar);
+      function nuevo() {
+        ctl.nueva(); feedback('');
+        if (opts.grado) {
+          var modo = opts.grado.modo === 'ambos' ? azar(['mayor', 'menor']) : opts.grado.modo, menor = modo === 'menor';
+          st.tono = azar(menor ? RAIZ_MENOR : RAIZ_MAYOR); st.modo = modo;
+          var g = azar(opts.grado.grados || [0, 1, 2, 3, 4, 5]), a = grado(st.tono, modo, g, !!opts.grado.sept);
+          st.raiz = a.raiz; st.tipo = a.tipo; st.rom = a.rom;
+        } else {
+          do { st.tipo = azar(opts.tipos); } while (opts.tipos.length > 1 && st.tipo === st.prevT);
+          st.prevT = st.tipo;
+          st.raiz = azar(tipo(st.tipo).menor ? RAIZ_MENOR : RAIZ_MAYOR);
+        }
+        st.inv = opts.inversion ? azar([1, 2]) : 0;
+        st.sel = []; st.selI = []; st.listo = false;
+        var nombre = ver(cifra(st.raiz, st.tipo));
+        if (opts.grado) consigna('En ' + ver(st.tono) + (st.modo === 'menor' ? ' menor' : ' mayor') + ', arma el', st.rom, 'Toca las notas del acorde y comprueba' + (opts.manos ? ' (el bajo en la mano izquierda)' : ''));
+        else if (st.inv) consigna('Arma el acorde en', nombre + ' · ' + (st.inv === 1 ? '1ª' : '2ª') + ' inversión', 'la nota más grave debe ser la ' + (st.inv === 1 ? '3ª' : '5ª') + ' (' + ver(notasAcorde(st.raiz, st.tipo)[st.inv]) + ')');
+        else consigna('Toca las notas (en cualquier orden) y comprueba' + (opts.manos ? '; el bajo en la izquierda' : ''), nombre, tipo(st.tipo).nom);
+        pintar();
+        S.onKey = function (m, origen) {
+          if (origen === 'midi') {
+            var h = Array.from(S.held);
+            st.selI = opts.manos ? h.filter(function (x) { return x < 48; }) : [];
+            st.sel = opts.manos ? h.filter(function (x) { return x >= 48; }) : h;
+            pintar();
+            if (new Set(st.sel.map(mod12)).size >= tipo(st.tipo).iv.length && (!opts.manos || st.selI.length)) comprobar();
+          }
+        };
+      }
+      function alternar(lista, m) {
+        if (st.listo) return;
+        var i = lista.indexOf(m);
+        if (i >= 0) lista.splice(i, 1); else lista.push(m);
+        pintar();
+      }
+      function pintar(extra, extraI) {
+        var mk = {}, mkI = {};
+        st.sel.forEach(function (m) { mk[m] = { c: 'sel' }; });
+        st.selI.forEach(function (m) { mkI[m] = { c: 'sel' }; });
+        if (extra) Object.assign(mk, extra);
+        if (extraI) Object.assign(mkI, extraI);
+        teclado(q('#pkKb'), 48, 79, mk, function (m) { alternar(st.sel, m); });
+        if (opts.manos) teclado(q('#pkKbI'), 36, 47, mkI, function (m) { alternar(st.selI, m); });
+      }
+      function comprobar() {
+        if (st.listo || !st.sel.length) return;
+        var pcs = pcsAcorde(st.raiz, st.tipo), quiero = new Set(pcs), tengo = new Set(st.sel.map(mod12));
+        var faltan = Array.from(quiero).filter(function (p) { return !tengo.has(p); });
+        var sobran = st.sel.filter(function (m) { return !quiero.has(mod12(m)); });
+        var notas = notasAcorde(st.raiz, st.tipo), txt = '';
+        var grave = Math.min.apply(null, st.sel), pcGrave = mod12(grave);
+        var invOk = !st.inv || pcGrave === pcs[st.inv];
+        var bajoOk = !opts.manos || (st.selI.length && st.selI.every(function (m) { return mod12(m) === pcs[0]; }));
+        if (!faltan.length && !sobran.length && invOk && bajoOk) {
+          st.listo = true; ctl.ok();
+          var mk = {}, mkI = {};
+          st.sel.forEach(function (m) { mk[m] = { c: 'ok', t: ver(notas[pcs.indexOf(mod12(m))]) }; });
+          st.selI.forEach(function (m) { mkI[m] = { c: 'ok', t: ver(st.raiz) }; });
+          pintar(mk, mkI);
+          feedback('¡Bien! ' + ver(cifra(st.raiz, st.tipo)) + ' = ' + notas.map(ver).join(' – '), 'ok');
+          tocarVarias(st.sel.concat(st.selI), null, 1.6);
+          luego(lec, 1700, nuevo);
+        } else {
+          ctl.mal();
+          var mk2 = {}; sobran.forEach(function (m) { mk2[m] = { c: 'bad' }; });
+          var mkI2 = {};
+          if (opts.manos && st.selI.length && !bajoOk) st.selI.forEach(function (m) { mkI2[m] = { c: 'bad' }; });
+          pintar(mk2, mkI2);
+          if (sobran.length) txt += 'Las marcadas con × no van. ';
+          if (faltan.length) txt += 'Falta' + (faltan.length > 1 ? 'n ' + faltan.length + ' notas. ' : ' una nota. ');
+          if (!faltan.length && !sobran.length && !invOk) txt += 'Las notas están, pero la más grave tiene que ser ' + ver(notas[st.inv]) + '. ';
+          if (!bajoOk) txt += (st.selI.length ? 'El bajo tiene que ser la fundamental (' + ver(st.raiz) + '). ' : 'Falta el bajo en la mano izquierda. ');
+          if (ctl.fallos() >= 2) txt += 'Las notas son: ' + notas.map(ver).join(' – ') + '.';
+          feedback(txt, 'bad');
+        }
+      }
+      nuevo();
+    };
+  }
+
+  // Toca la escala subiendo. opts: {escalas:[ids], raices?}
+  function ejEscala(opts) {
+    return function (el, ctl, lec) {
+      var st = S.st;
+      el.innerHTML = consignaHtml() + '<div class="pk-kbw" id="pkKb"></div><div class="pk-acc"><button class="mini-app-btn" id="pkPista">Pista</button></div><p class="pk-fb" id="pkFb"></p>';
+      on('pkPista', 'click', function () {
+        if (st.listo) return;
+        ctl.mal();
+        var ivs = st.e.iv.concat([12]);
+        feedback('Sigue ' + ver(st.notas[st.i % st.notas.length]) + ' (' + (st.i ? (ivs[st.i] - ivs[st.i - 1] === 1 ? 'un semitono' : ivs[st.i] - ivs[st.i - 1] === 2 ? 'un tono' : 'tono y medio') + ' más arriba' : 'la tónica') + ').');
+        pintar(mod12(pcDe(st.raiz) + ivs[st.i]));
       });
-      void cuenta;
+      function nuevo() {
+        ctl.nueva(); feedback('');
+        st.e = escala(azar(opts.escalas));
+        st.raiz = azar(opts.raices || (st.e.menor ? RAIZ_MENOR : RAIZ_MAYOR));
+        st.notas = notasEscala(st.raiz, st.e);
+        st.i = 0; st.tocadas = []; st.listo = false; st.malo = null;
+        consigna('Toca la escala subiendo, desde la tónica hasta la tónica de arriba', st.e.nom + ' de ' + ver(st.raiz), (st.notas.length + 1) + ' notas · ' + pasos(st.e));
+        pintar();
+        S.onKey = responder;
+      }
+      function pintar(pista) {
+        var mk = {};
+        st.tocadas.forEach(function (x) { mk[x.m] = { c: 'ok', t: ver(x.n) }; });
+        if (st.malo != null) mk[st.malo] = { c: 'bad' };
+        if (pista != null) for (var m = 48; m <= 79; m++) if (mod12(m) === pista && !mk[m]) mk[m] = { c: 'tenue' };
+        teclado(q('#pkKb'), 48, 79, mk, responder);
+      }
+      function responder(m) {
+        if (st.listo) return;
+        var ivs = st.e.iv.concat([12]), pcQuiero = mod12(pcDe(st.raiz) + ivs[st.i]);
+        var previo = st.tocadas.length ? st.tocadas[st.tocadas.length - 1].m : null;
+        st.malo = null;
+        if (mod12(m) === pcQuiero && (previo == null || m > previo)) {
+          st.tocadas.push({ m: m, n: st.notas[st.i % st.notas.length] });
+          st.i++;
+          if (st.i === ivs.length) {
+            st.listo = true;
+            var limpia = ctl.fallos() === 0;
+            ctl.ok();
+            feedback(limpia ? '¡Perfecta!' : 'Completa, pero con errores o pista: no suma. Repítela hasta que salga limpia.', limpia ? 'ok' : '');
+            luego(lec, 1700, nuevo);
+          } else feedback('');
+        } else {
+          st.malo = m; ctl.mal();
+          feedback(mod12(m) === pcQuiero ? 'Esa nota va, pero más arriba que la anterior.' : 'Esa no es. ¿Tono o semitono desde la anterior?', 'bad');
+        }
+        pintar();
+      }
+      nuevo();
+    };
+  }
+
+  // Preguntas de alternativas sobre el campo armónico. opts: {modo:'mayor'|'menor'|'ambos', clases:['acorde','grado','funcion']}
+  function ejCampoQuiz(opts) {
+    return function (el, ctl, lec) {
+      el.innerHTML = consignaHtml() + '<div class="pk-grid" id="pkOps"></div><p class="pk-fb" id="pkFb"></p>';
+      function nuevo() {
+        ctl.nueva(); feedback('');
+        var modo = opts.modo === 'ambos' ? azar(['mayor', 'menor']) : opts.modo, menor = modo === 'menor';
+        var raiz = azar(menor ? RAIZ_MENOR : RAIZ_MAYOR), tono = ver(raiz) + (menor ? ' menor' : ' mayor');
+        var g = Math.floor(Math.random() * 7), a = grado(raiz, modo, g, false), clase = azar(opts.clases), listo = false;
+        var ops, correcta;
+        if (clase === 'acorde') {
+          consigna('En ' + tono + ',', '¿cuál es el ' + a.rom + '?', '');
+          correcta = ver(cifra(a.raiz, a.tipo)); ops = [correcta];
+          mezclar([0, 1, 2, 3, 4, 5, 6].filter(function (x) { return x !== g; })).slice(0, 3).forEach(function (x) { var b = grado(raiz, modo, x, false); ops.push(ver(cifra(b.raiz, b.tipo))); });
+        } else if (clase === 'grado') {
+          consigna('En ' + tono + ',', '¿qué grado es ' + ver(cifra(a.raiz, a.tipo)) + '?', '');
+          correcta = a.rom; ops = [correcta].concat(mezclar(CAMPO[modo].rom.filter(function (r) { return r !== a.rom; })).slice(0, 3));
+        } else {
+          consigna('En ' + tono + ', el ' + a.rom + ' (' + ver(cifra(a.raiz, a.tipo)) + ')', '¿qué función cumple?', '');
+          correcta = FUNCION[a.fun]; ops = [FUNCION.T, FUNCION.SD, FUNCION.D];
+        }
+        var caja = q('#pkOps');
+        caja.innerHTML = mezclar(ops).map(function (o) { return '<button class="pk-opt">' + esc(o) + '</button>'; }).join('');
+        caja.querySelectorAll('button').forEach(function (b) {
+          b.addEventListener('click', function () {
+            if (listo) return;
+            if (b.textContent === correcta) {
+              listo = true; b.classList.add('ok'); ctl.ok();
+              feedback('¡Bien! ' + a.rom + ' de ' + tono + ' = ' + ver(cifra(a.raiz, a.tipo)) + '. ' + FUNCION[a.fun] + '.', 'ok');
+              var c = ac(); if (c) { tocar(36 + mod12(pcDe(a.raiz)), null, 1.4, 0.7); tocarVarias(voz(a.raiz, a.tipo, null), null, 1.4); }
+              luego(lec, 1800, nuevo);
+            } else {
+              b.classList.add('bad'); b.disabled = true; ctl.mal();
+              feedback('No. Cuenta los grados desde ' + ver(raiz) + ' por la escala' + (menor ? ' menor' : '') + '.', 'bad');
+            }
+          });
+        });
+      }
+      nuevo();
+    };
+  }
+
+  // Toca una progresión acorde por acorde. opts: {progs:[ids], raices?} o {cancion:true}
+  function ejProgTocar(opts) {
+    return function (el, ctl, lec) {
+      var st = S.st;
+      el.innerHTML = consignaHtml() + '<div class="pk-prog" id="pkCifras"></div><div class="pk-kbw" id="pkKb"></div>' +
+        '<div class="pk-acc"><button class="mini-app-btn" id="pkOirProg">Escuchar la progresión</button><button class="mini-app-btn" id="pkBorrar">Borrar</button><button class="mini-app-btn" id="pkOtra">Otra</button></div><p class="pk-fb" id="pkFb"></p>';
+      on('pkBorrar', 'click', function () { st.sel = []; pintar(); });
+      on('pkOtra', 'click', nuevo);
+      on('pkOirProg', 'click', function () { acompanar(st.as, ritmo('negras'), 96, {}); });
+      function nuevo() {
+        ctl.nueva(); feedback(''); parar();
+        if (opts.cancion) {
+          var c = cancionAlAzar();
+          st.as = c.acordes; st.titulo = c.titulo;
+        } else {
+          var p = prog(azar(opts.progs)), raiz = azar(opts.raices || (p.modo === 'menor' ? RAIZ_MENOR : RAIZ_MAYOR));
+          st.as = acordesProg(p, raiz).map(function (a) { return { raiz: a.raiz, tipo: a.tipo, rom: a.rom, nombre: cifra(a.raiz, a.tipo), pcs: pcsAcorde(a.raiz, a.tipo) }; });
+          st.titulo = p.nom + ' en ' + ver(raiz) + (p.modo === 'menor' ? ' menor' : '');
+        }
+        st.k = 0; st.sel = []; st.listo = false;
+        consigna(opts.cancion ? 'Acordes de una canción de tu Cancionero: tócalos en orden' : 'Toca cada acorde en orden; al completar las notas, pasa solo al siguiente', st.titulo, 'Puedes usar cualquier inversión. Mientras tocas no suena nada más: tú eres el acompañamiento.');
+        pintar();
+        S.onKey = function (m, origen) {
+          if (origen !== 'midi') return;
+          st.sel = Array.from(S.held); pintar();
+          if (new Set(st.sel.map(mod12)).size >= st.as[st.k].pcs.length) comprobar();
+        };
+      }
+      function pintar(extra) {
+        q('#pkCifras').innerHTML = st.as.map(function (a, i) {
+          return '<div class="pk-cif' + (i === st.k ? ' on' : i < st.k ? ' hecho' : '') + '">' + (a.rom ? '<span class="pk-rom">' + esc(a.rom) + '</span>' : '') + '<span class="pk-ac">' + esc(ver(a.nombre)) + '</span></div>';
+        }).join('');
+        var mk = {};
+        st.sel.forEach(function (m) { mk[m] = { c: 'sel' }; });
+        if (extra) Object.assign(mk, extra);
+        teclado(q('#pkKb'), 48, 79, mk, function (m) {
+          if (st.listo) return;
+          var i = st.sel.indexOf(m);
+          if (i >= 0) st.sel.splice(i, 1); else st.sel.push(m);
+          pintar();
+          if (new Set(st.sel.map(mod12)).size >= st.as[st.k].pcs.length) comprobar();
+        });
+      }
+      function comprobar() {
+        var a = st.as[st.k], quiero = new Set(a.pcs), tengo = new Set(st.sel.map(mod12));
+        var sobran = st.sel.filter(function (m) { return !quiero.has(mod12(m)); });
+        var faltan = a.pcs.filter(function (p) { return !tengo.has(p); });
+        if (!sobran.length && !faltan.length) {
+          var mk = {}; st.sel.forEach(function (m) { mk[m] = { c: 'ok' }; });
+          pintar(mk);
+          tocarVarias(st.sel, null, 1.2);
+          st.k++;
+          if (st.k >= st.as.length) {
+            st.listo = true;
+            var limpia = ctl.fallos() === 0;
+            ctl.ok();
+            feedback(limpia ? '¡Completa y limpia!' : 'Completa, con errores: no suma. Otra vez, más tranquilo.', limpia ? 'ok' : '');
+            luego(lec, 1800, nuevo);
+          } else { feedback(''); luego(lec, 450, function () { st.sel = []; pintar(); }); }
+        } else {
+          ctl.mal();
+          var mk2 = {}; sobran.forEach(function (m) { mk2[m] = { c: 'bad' }; });
+          pintar(mk2);
+          feedback('Ese no es ' + ver(a.nombre) + (ctl.fallos() >= 2 ? ': ' + a.pcs.map(function (p) { return ver(notaPc(p, usaBemoles(pcDe(a.raiz), false))); }).join(' – ') : '') + '.', 'bad');
+          luego(lec, 900, function () { st.sel = []; pintar(); });
+        }
+      }
+      nuevo();
+    };
+  }
+  // una canción del Cancionero con acordes (si no hay, una progresión)
+  function cancionAlAzar() {
+    var lib = [], M = SB.music;
+    try {
+      SB.store.library().forEach(function (m) {
+        var s = SB.store.get(m.id); if (!s || !s.parts) return;
+        var seq = [];
+        s.parts.forEach(function (p) {
+          (p.lines || []).forEach(function (ln) { (ln.a || []).forEach(function (a) { if (M.parseChord(a[1])) seq.push(a[1]); }); });
+          (p.grid || []).forEach(function (fila) { fila.forEach(function (c) { if (c !== '%' && M.parseChord(c)) seq.push(c); }); });
+        });
+        var out = [];
+        seq.forEach(function (c) { if (c !== out[out.length - 1]) out.push(c); });
+        if (out.length >= 3) lib.push({ titulo: s.title, acordes: out.slice(0, 8) });
+      });
+    } catch (e) {}
+    if (!lib.length) {
+      var p = prog('pop'), as = acordesProg(p, 'G');
+      return { titulo: p.nom + ' en ' + ver('G') + ' (agrega canciones con acordes al Cancionero para practicar con ellas)', acordes: as.map(function (a) { return { raiz: a.raiz, tipo: a.tipo, rom: a.rom, nombre: cifra(a.raiz, a.tipo), pcs: pcsAcorde(a.raiz, a.tipo) }; }) };
     }
-    function golpe() {
-      var c = ac(); if (!c || q('#pkTap').disabled) return;
-      var t = c.currentTime;
-      st.golpes.push(t);
-      tocarVarias([60, 64, 67], t, 0.25, 0.35);
-      var mejor = null;
-      st.esperados.forEach(function (e) { if (!e.usado && Math.abs(e.t - t) <= TOL && (!mejor || Math.abs(e.t - t) < Math.abs(mejor.t - t))) mejor = e; });
-      if (mejor) { mejor.usado = true; mejor.desv = t - mejor.t; st.res[mejor.s] = Math.abs(mejor.desv) < 0.05 ? '✓' : mejor.desv < 0 ? '←' : '→'; }
-      else st.extras = (st.extras || 0) + 1;
+    var c = azar(lib);
+    return { titulo: c.titulo, acordes: c.acordes.map(function (n) {
+      var pc = M.parseChord(n);
+      return { raiz: pc.root, tipo: tipoDeSufijo(pc.suf), nombre: n, pcs: M.pitchClasses(n) };
+    }) };
+  }
+
+  // Reconoce una progresión de oído. opts: {progs}
+  function ejProgOido(opts) {
+    return function (el, ctl, lec) {
+      var st = S.st;
+      el.innerHTML = consignaHtml() + '<div class="pk-grid" id="pkOps"></div><p class="pk-fb" id="pkFb"></p>';
+      function sonar() { acompanar(acordesProg(st.p, st.raiz), ritmo('negras'), 92, {}); }
+      function nuevo() {
+        ctl.nueva(); feedback(''); parar();
+        var lista = opts.progs.map(prog);
+        do { st.p = azar(lista); } while (lista.length > 1 && st.p === st.prev);
+        st.prev = st.p;
+        st.raiz = azar(st.p.modo === 'menor' ? RAIZ_MENOR : RAIZ_MAYOR);
+        var listo = false;
+        consigna('Escucha (empieza en el I del tono) y elige', '¿Qué progresión es?', 'Fíjate si el primer acorde es mayor o menor, y si el último deja tensión.');
+        var ops = mezclar(lista);
+        var caja = q('#pkOps');
+        caja.innerHTML = '<button class="pk-opt" id="pkRep">▶ Repetir</button>' + ops.map(function (p) { return '<button class="pk-opt" data-p="' + p.id + '">' + esc(p.nom) + '</button>'; }).join('');
+        on('pkRep', 'click', sonar);
+        caja.querySelectorAll('button[data-p]').forEach(function (b) {
+          b.addEventListener('click', function () {
+            if (listo) return;
+            if (b.dataset.p === st.p.id) {
+              listo = true; b.classList.add('ok'); ctl.ok(); parar();
+              feedback('¡Bien! ' + st.p.nom + ' en ' + ver(st.raiz) + ': ' + acordesProg(st.p, st.raiz).map(function (a) { return ver(cifra(a.raiz, a.tipo)); }).join(' – '), 'ok');
+              luego(lec, 1800, nuevo);
+            } else { b.classList.add('bad'); b.disabled = true; ctl.mal(); feedback('No. Escúchala otra vez.', 'bad'); sonar(); }
+          });
+        });
+        sonar();
+      }
+      nuevo();
+    };
+  }
+
+  // ¿Cuántos semitonos hay entre dos notas? (alternativas)
+  function ejSemitonos() {
+    return function (el, ctl, lec) {
+      el.innerHTML = consignaHtml() + '<div class="pk-grid" id="pkOps"></div><div class="pk-kbw" id="pkKb"></div><p class="pk-fb" id="pkFb"></p>';
+      function nuevo() {
+        ctl.nueva(); feedback('');
+        var a = azar(RAIZ_MAYOR), d = 1 + Math.floor(Math.random() * 7), sube = Math.random() < 0.6;
+        var b = RAIZ_MAYOR[mod12(pcDe(a) + (sube ? d : -d))], listo = false;
+        consigna('Para pasar de ' + ver(a) + ' a ' + ver(b) + (sube ? ' subiendo' : ' bajando') + ',', '¿cuántos semitonos?', 'Cuenta las teclas, blancas y negras, sin contar la de partida.');
+        var m1 = 60 + pcDe(a), mk = {}; mk[m1] = { c: 'on', t: ver(a) }; mk[m1 + (sube ? d : -d)] = { c: 'tenue', t: ver(b) };
+        teclado(q('#pkKb'), 48, 79, mk, function () {});
+        var ops = mezclar([d].concat(mezclar([1, 2, 3, 4, 5, 6, 7, 8].filter(function (x) { return x !== d; })).slice(0, 3)));
+        var caja = q('#pkOps');
+        caja.innerHTML = ops.map(function (o) { return '<button class="pk-opt" data-d="' + o + '">' + o + '</button>'; }).join('');
+        caja.querySelectorAll('button').forEach(function (bt) {
+          bt.addEventListener('click', function () {
+            if (listo) return;
+            if (+bt.dataset.d === d) {
+              listo = true; bt.classList.add('ok'); ctl.ok();
+              feedback('¡Bien! ' + d + ' semitono' + (d > 1 ? 's' : '') + (d % 2 === 0 ? ' = ' + d / 2 + ' tono' + (d > 2 ? 's' : '') : d > 1 ? ' = ' + Math.floor(d / 2) + ' tono' + (d > 3 ? 's' : '') + ' y medio' : '') + '.', 'ok');
+              var c = ac(); if (c) { tocar(m1, c.currentTime, 0.8); tocar(m1 + (sube ? d : -d), c.currentTime + 0.5, 1); }
+              luego(lec, 1500, nuevo);
+            } else { bt.classList.add('bad'); bt.disabled = true; ctl.mal(); feedback('No. Cuenta de a una tecla en el teclado de abajo.', 'bad'); }
+          });
+        });
+      }
+      nuevo();
+    };
+  }
+
+  // Transponer una progresión eligiendo cada acorde. opts: {sept}
+  function ejTransponer(opts) {
+    return function (el, ctl, lec) {
+      var st = S.st;
+      el.innerHTML = consignaHtml() + '<div class="pk-trans" id="pkTr"></div><div class="pk-acc"><button class="pr-play pk-go" id="pkComp">COMPROBAR</button></div><p class="pk-fb" id="pkFb"></p>';
+      on('pkComp', 'click', comprobar);
+      function nuevo() {
+        ctl.nueva(); feedback('');
+        var p = azar(PROGS.filter(function (x) { return !x.blues && (!!x.sept === !!opts.sept); })), menor = p.modo === 'menor';
+        var desde = azar(['C', 'G', 'D', 'A', 'E', 'F'].map(function (n) { return menor ? RAIZ_MENOR[pcDe(n)] : n; }));
+        var k = azar([-5, -4, -3, -2, -1, 1, 2, 3, 4, 5]);
+        var hasta = (menor ? RAIZ_MENOR : RAIZ_MAYOR)[mod12(pcDe(desde) + k)];
+        st.orig = acordesProg(p, desde); st.dest = acordesProg(p, hasta); st.listo = false;
+        consigna('Lleva estos acordes de ' + ver(desde) + (menor ? ' menor' : '') + ' a ' + ver(hasta) + (menor ? ' menor' : ''),
+          st.orig.map(function (a) { return ver(cifra(a.raiz, a.tipo)); }).join('  '), 'Elige la nota de cada acorde; el tipo (m, 7…) no cambia. Pista: ' + (k > 0 ? 'sube ' : 'baja ') + Math.abs(k) + ' semitono' + (Math.abs(k) > 1 ? 's' : '') + '.');
+        var ops = (menor ? RAIZ_MENOR : RAIZ_MAYOR).map(function (n) { return [n, ver(n)]; });
+        q('#pkTr').innerHTML = st.orig.map(function (a, i) {
+          return '<div class="pk-cif"><span class="pk-rom">' + esc(ver(cifra(a.raiz, a.tipo))) + ' →</span><span class="pk-ac">' + selHtml('pkT' + i, [['', '¿?']].concat(ops), '', 'Acorde ' + (i + 1)) + '<b>' + esc(sufijo(a.tipo)) + '</b></span></div>';
+        }).join('');
+      }
+      function comprobar() {
+        if (st.listo) return;
+        var bien = 0, vacios = 0;
+        st.dest.forEach(function (a, i) {
+          var sel = q('#pkT' + i), v = sel.value;
+          if (!v) { vacios++; return; }
+          var ok = pcDe(v) === pcDe(a.raiz);
+          sel.classList.toggle('ok', ok); sel.classList.toggle('bad', !ok);
+          if (ok) bien++;
+        });
+        if (vacios) { feedback('Te falta' + (vacios > 1 ? 'n ' + vacios : ' uno') + '.', ''); return; }
+        if (bien === st.dest.length) {
+          st.listo = true; ctl.ok();
+          feedback('¡Bien! ' + st.dest.map(function (a) { return ver(cifra(a.raiz, a.tipo)); }).join(' – '), 'ok');
+          acompanar(st.dest, ritmo('negras'), 96, {});
+          luego(lec, 3000, nuevo);
+        } else {
+          ctl.mal();
+          feedback(bien + ' de ' + st.dest.length + ' bien. Mueve cada acorde la misma cantidad de semitonos.' + (ctl.fallos() >= 2 ? ' Respuesta: ' + st.dest.map(function (a) { return ver(cifra(a.raiz, a.tipo)); }).join(' – ') : ''), 'bad');
+        }
+      }
+      nuevo();
+    };
+  }
+
+  // Toca el ritmo con el botón / barra espaciadora / MIDI. opts: {ritmos, bpm}
+  var PROG_RITMO = { id: 'pop', raiz: 'C' };
+  function ejRitmo(opts) {
+    return function (el, ctl, lec) {
+      var st = S.st; st.r = opts.ritmos[0]; st.bpm = opts.bpm || 70;
+      el.innerHTML = '<div class="controls">' + ctlHtml('Ritmo', selHtml('pkRit', opts.ritmos.map(function (id) { return [id, ritmo(id).nom]; }), st.r, 'Ritmo')) + stepper('pkBpm', 'Tempo') + '</div>' +
+        consignaHtml() + '<div id="pkRej"></div>' +
+        '<div class="pk-acc"><button class="pr-play pk-go" id="pkPlay">EMPEZAR</button><button class="pk-tap" id="pkTap" disabled>TOCA AQUÍ</button></div><p class="pk-fb" id="pkFb"></p>';
+      var TOL = 0.12, COMPASES = 4;
+      function pintar(paso, res) {
+        var r = ritmo(st.r);
+        consigna('Toca la mano derecha (● y números) sobre el bajo, durante ' + COMPASES + ' compases', r.nom, 'Con el botón, la barra espaciadora o cualquier tecla del teclado MIDI. Primero suena un compás de cuenta. Suma con 80 % o más.');
+        q('#pkRej').innerHTML = rejilla(r, paso, res);
+        q('#pkBpm').textContent = st.bpm;
+      }
+      function empezar() {
+        var r = ritmo(st.r), c = ac(); if (!c) return;
+        ctl.nueva(); feedback('');
+        var n = r.md.length, dur = r.comp === '6/8' ? 60 / st.bpm / 3 : 60 / st.bpm / 2;
+        st.esperados = []; st.res = {}; st.extras = 0;
+        var acs = acordesProg(prog(PROG_RITMO.id), PROG_RITMO.raiz);
+        q('#pkTap').disabled = false; q('#pkPlay').disabled = true;
+        S.onKey = function () { golpe(); };
+        reproducir({
+          dur: dur, total: n * (COMPASES + 1),
+          sched: function (i, t) {
+            var s = i % n, compas = Math.floor(i / n);
+            if (s % (r.comp === '6/8' ? 3 : 2) === 0) clic(t, s === 0);
+            if (compas === 0) return;
+            var a = acs[(compas - 1) % acs.length], b = bajo(a.raiz);
+            if (r.mi[s] === 'B') tocar(b, t, dur * 3.5, 0.75);
+            else if (r.mi[s] === '5') tocar(b + 7, t, dur * 3, 0.6);
+            else if (r.mi[s] === '8') tocar(b + 12, t, dur * 3, 0.6);
+            if (r.md[s] !== '.') st.esperados.push({ t: t, s: s, usado: false });
+          },
+          paso: function (i) { pintar(i % n, st.res); },
+          fin: function () { setTimeout(evaluar, TOL * 1000 + 50); }
+        });
+      }
+      function golpe() {
+        var c = ac(); if (!c || q('#pkTap').disabled) return;
+        var t = c.currentTime;
+        tocarVarias([60, 64, 67], t, 0.25, 0.35);
+        var mejor = null;
+        st.esperados.forEach(function (e) { if (!e.usado && Math.abs(e.t - t) <= TOL && (!mejor || Math.abs(e.t - t) < Math.abs(mejor.t - t))) mejor = e; });
+        if (mejor) { mejor.usado = true; mejor.desv = t - mejor.t; st.res[mejor.s] = Math.abs(mejor.desv) < 0.05 ? '✓' : mejor.desv < 0 ? '←' : '→'; }
+        else st.extras++;
+      }
+      function evaluar() {
+        q('#pkTap').disabled = true; q('#pkPlay').disabled = false; S.onKey = null;
+        var tot = st.esperados.length, bien = st.esperados.filter(function (e) { return e.usado; }).length, extras = st.extras;
+        var pct = tot ? Math.round(100 * Math.max(0, bien - extras) / tot) : 0;
+        var desv = st.esperados.filter(function (e) { return e.usado; }).map(function (e) { return e.desv; });
+        var prom = desv.length ? desv.reduce(function (a, b) { return a + b; }, 0) / desv.length : 0;
+        if (pct >= 80) ctl.ok(); else ctl.mal();
+        feedback(pct + '% · ' + bien + ' de ' + tot + ' golpes a tiempo' + (extras ? ', ' + extras + ' de más' : '') +
+          (Math.abs(prom) > 0.03 ? '. Vas ' + (prom < 0 ? 'adelantado' : 'atrasado') + ' unos ' + Math.round(Math.abs(prom) * 1000) + ' ms.' : '.') +
+          (pct >= 80 ? ' ¡Bien! Sube el tempo o prueba otro ritmo.' : ' Baja el tempo y cuenta en voz alta.'), pct >= 80 ? 'ok' : 'bad');
+      }
+      on('pkPlay', 'click', empezar);
+      on('pkTap', 'pointerdown', function (e) { e.preventDefault(); golpe(); });
+      on('pkRit', 'change', function () { st.r = this.value; pintar(); });
+      on('pkBpmM', 'click', function () { st.bpm = Math.max(40, st.bpm - 5); pintar(); });
+      on('pkBpmP', 'click', function () { st.bpm = Math.min(160, st.bpm + 5); pintar(); });
+      pintar();
+    };
+  }
+  var ctlHtml = ctl; // alias: dentro de los ejercicios el parámetro se llama ctl
+
+  /* ================= unidades y lecciones ================= */
+  var UNIDADES = [
+    { id: 'teclado', nom: 'El teclado', que: 'Ubicar cualquier nota rápido, octavas, tonos y semitonos', lecciones: [
+      { id: 'blancas', nom: 'Las teclas blancas', meta: 8, ej: ejNota({}),
+        txt: 'Las teclas negras van en grupos de <b>dos</b> y de <b>tres</b>. La blanca que está justo a la izquierda del grupo de dos es <b>Do</b>; de ahí siguen Re, Mi, Fa, Sol, La, Si, y vuelve a empezar. El patrón se repite por todo el piano: si ubicas Do, ubicas todo.' },
+      { id: 'negras', nom: 'Sostenidos y bemoles', meta: 8, ej: ejNota({ negras: true }),
+        txt: 'Las teclas negras no tienen nombre propio: toman el de la blanca vecina. <b>#</b> (sostenido) es "un semitono más arriba": Do# es la negra a la derecha de Do. <b>b</b> (bemol) es "un semitono más abajo": Reb es la negra a la izquierda de Re. Do# y Reb son la <b>misma tecla</b>; cuál nombre se usa depende del tono de la canción.' },
+      { id: 'octavas', nom: 'Octavas y registro', meta: 6, ej: ejNota({ octavas: true }),
+        txt: 'De un Do al siguiente hay una <b>octava</b>. Se numeran: Do4 es el Do central (frente a la marca del piano), Do3 queda una octava abajo y Do5 una arriba. Para acompañar, la mano izquierda vive entre Do2 y Do3 (los bajos) y la derecha entre Do3 y Do5 (los acordes). Más abajo suena barroso; más arriba, flaco.' },
+      { id: 'semitonos', nom: 'Tonos y semitonos', meta: 8, ej: ejSemitonos(),
+        txt: 'Un <b>semitono</b> es la distancia a la tecla vecina, sea blanca o negra (Mi–Fa y Si–Do son semitonos aunque las dos sean blancas). Un <b>tono</b> son dos semitonos. Contar semitonos es la herramienta con que se arman escalas y acordes y se transpone.' }
+    ] },
+    { id: 'intervalos', nom: 'Intervalos', que: 'La distancia entre dos notas: de ahí salen los acordes', explorar: exIntervalos, lecciones: [
+      { id: 'terceras', nom: 'Terceras mayores y menores', meta: 8, ej: ejIntervalo({ semis: [3, 4] }),
+        txt: 'Un intervalo es la distancia entre dos notas, contada en semitonos. El más importante para acompañar es la <b>tercera</b>: la <b>mayor</b> (4 semitonos, Do–Mi) hace que un acorde suene alegre; la <b>menor</b> (3 semitonos, La–Do) lo hace sonar triste. Es la nota que más define el acorde.' },
+      { id: 'quintas', nom: 'Cuartas, quintas y octavas', meta: 8, ej: ejIntervalo({ semis: [7, 12, 5] }),
+        txt: 'La <b>5ª justa</b> (7 semitonos, Do–Sol) da cuerpo: fundamental + quinta en la mano izquierda sirve para casi cualquier acorde. La <b>octava</b> (12) es la misma nota más aguda. Y la <b>4ª justa</b> (5 semitonos) es la 5ª mirada al revés: del bajo del I al del IV hay una 4ª.' },
+      { id: 'septimas', nom: 'Sextas y séptimas', meta: 8, ex: { iv: 10 }, ej: ejIntervalo({ semis: [9, 10, 11] }),
+        txt: 'La <b>7ª menor</b> (10 semitonos) es la que convierte a Sol en <b>Sol7</b>: el color del blues, el bolero y la bossa. La <b>7ª mayor</b> (11) da el Domaj7 suave de balada. La <b>6ª mayor</b> (9) está en los acordes de sexta, de bolero y swing.' },
+      { id: 'oido', nom: 'Reconocer de oído', meta: 10, ej: ejIntervalo({ semis: [3, 4, 5, 7, 12], oido: true }),
+        txt: 'Para sacar canciones de oído hay que reconocer los intervalos sin mirar. Ayuda asociarlos a canciones: la <b>3ª mayor</b> suena como el comienzo de "Cumpleaños feliz" (cum-ple), la <b>4ª justa</b> como "Aquí viene la novia", la <b>5ª</b> como el tema de "La guerra de las galaxias", la <b>octava</b> como "Somewhere over the rainbow".' }
+    ] },
+    { id: 'acordes', nom: 'Acordes', que: 'Mayores, menores, séptimas e inversiones, con las dos manos', explorar: exAcordes, lecciones: [
+      { id: 'mayores', nom: 'Tríadas mayores', meta: 8, ej: ejAcorde({ tipos: [''] }),
+        txt: 'Un acorde mayor son tres notas: la <b>fundamental</b>, su <b>3ª mayor</b> (4 semitonos arriba) y su <b>5ª justa</b> (7 semitonos). Do = Do–Mi–Sol. Cuenta semitonos y sale cualquiera: Mib = Mib–Sol–Sib.' },
+      { id: 'menores', nom: 'Tríadas menores', meta: 8, ej: ejAcorde({ tipos: ['', 'm'] }),
+        txt: 'El acorde menor cambia <b>solo la tercera</b>: baja un semitono (3 semitonos desde la fundamental). Lam = La–Do–Mi. Ejercicio mixto: fíjate bien si piden mayor o menor.' },
+      { id: 'manos', nom: 'Las dos manos', meta: 6, ej: ejAcorde({ tipos: ['', 'm'], manos: true }),
+        txt: 'Así se acompaña en piano popular: la <b>mano izquierda toca la fundamental</b> (el bajo, una sola nota, entre Do2 y Do3) y la <b>derecha toca el acorde</b>. Con eso ya suena a canción. Más adelante el bajo alterna con la quinta y la derecha cambia de inversión.' },
+      { id: 'inversiones', nom: 'Inversiones', meta: 6, ej: ejAcorde({ tipos: ['', 'm'], inversion: true }),
+        txt: 'Invertir un acorde es tocar las mismas notas empezando por otra. <b>1ª inversión</b>: la 3ª queda abajo (Mi–Sol–Do). <b>2ª inversión</b>: la 5ª abajo (Sol–Do–Mi). Sirven para pasar de un acorde a otro <b>moviendo poco la mano</b>: de Do a Fa, en vez de saltar, basta con mover dos dedos (Do–Mi–Sol → Do–Fa–La).' },
+      { id: 'septimas', nom: 'Acordes de séptima', meta: 8, ex: { tipo: '7' }, ej: ejAcorde({ tipos: ['7', 'maj7', 'm7'] }),
+        txt: 'Se agrega una cuarta nota. <b>Sol7</b> (dominante): tríada mayor + 7ª menor (10 semitonos): pide resolver al I. <b>Domaj7</b>: tríada mayor + 7ª mayor (11): suave, de balada y bossa. <b>Lam7</b>: tríada menor + 7ª menor: el menor "relajado" del pop y el jazz.' },
+      { id: 'otros', nom: 'Sus, disminuido y aumentado', meta: 8, ej: ejAcorde({ tipos: ['sus4', 'sus2', 'dim', 'aug'] }),
+        txt: '<b>Sus4</b> y <b>sus2</b> reemplazan la 3ª por la 4ª o la 2ª: quedan "suspendidos", ni mayores ni menores (Dosus4 → Do, muy usado en pop). <b>Disminuido</b> (º): menor con la 5ª bajada, acorde de paso. <b>Aumentado</b> (+): mayor con la 5ª subida, para tensión entre dos acordes.' },
+      { id: 'grados', nom: 'Armar el grado de un tono', meta: 8, ej: ejAcorde({ grado: { modo: 'mayor' }, manos: true }),
+        txt: 'Junta todo lo anterior: te piden <b>un grado de un tono</b> (por ejemplo "el IV de Sol") y tú armas el acorde con las dos manos. Cuenta por la escala mayor del tono: I, ii, iii, IV, V, vi. Mayúscula = mayor, minúscula = menor. Si no te acuerdas del campo armónico, mira la unidad 5.' }
+    ] },
+    { id: 'escalas', nom: 'Escalas', que: 'Mayor, menores, pentatónicas, blues y modos útiles', explorar: exEscalas, lecciones: [
+      { id: 'mayor', nom: 'La escala mayor', meta: 5, ej: ejEscala({ escalas: ['mayor'], raices: ['C', 'G', 'D', 'F', 'A', 'Bb', 'E', 'Eb'] }),
+        txt: 'La escala mayor es la base de todo: de ella salen los acordes de cada tono. Su fórmula es <b>T – T – S – T – T – T – S</b> (tono, tono, semitono…). En Do son las blancas. Para acompañar no hace falta tocarla rápido: hace falta saber <b>qué notas pertenecen</b> al tono. Digitación de la derecha: 1-2-3, pasa el pulgar, 1-2-3-4-5.' },
+      { id: 'menores', nom: 'Escalas menores', meta: 5, ex: { esc: 'menor', raiz: 'A' }, ej: ejEscala({ escalas: ['menor', 'armonica'] }),
+        txt: 'La <b>menor natural</b> (T – S – T – T – S – T – T) tiene las mismas notas que la mayor que está 3 semitonos arriba: La menor usa las de Do mayor. La <b>menor armónica</b> sube la 7ª un semitono, para que el V sea mayor (Mi7 en La menor): es el sonido del bolero y el tango.' },
+      { id: 'penta', nom: 'Pentatónicas y blues', meta: 5, ex: { esc: 'penta' }, ej: ejEscala({ escalas: ['penta', 'pentam', 'blues'] }),
+        txt: 'La <b>pentatónica</b> saca las dos notas más conflictivas de la escala: con sus cinco notas puedes adornar e improvisar sin chocar con nada. La mayor (Do–Re–Mi–Sol–La) sobre acordes mayores; la menor (La–Do–Re–Mi–Sol) sobre menores, rock y pop. La <b>blues</b> le agrega la ♭5 "de pasada".' },
+      { id: 'modos', nom: 'Dórica y mixolidia', meta: 4, ex: { esc: 'dorica', raiz: 'D' }, ej: ejEscala({ escalas: ['dorica', 'mixo'] }),
+        txt: 'Dos "modos" que aparecen mucho en lo popular. <b>Dórica</b>: menor con la 6ª mayor (funk, salsa, Santana). <b>Mixolidia</b>: mayor con la 7ª menor, la escala natural sobre un acorde de séptima (rock, cumbia, "Sympathy for the Devil"). Si una canción en Sol usa mucho el Fa, está en mixolidia.' }
+    ] },
+    { id: 'campo', nom: 'Campo armónico', que: 'Los siete acordes de cada tono y para qué sirve cada uno', explorar: exCampo, lecciones: [
+      { id: 'mayor', nom: 'Los acordes del tono mayor', meta: 8, ej: ejCampoQuiz({ modo: 'mayor', clases: ['acorde', 'grado'] }),
+        txt: 'Si a cada nota de la escala le armas un acorde con notas de la misma escala, salen los siete acordes del tono: su <b>campo armónico</b>. En mayor siempre es <b>I – ii – iii – IV – V – vi – viiº</b>: mayor, menor, menor, mayor, mayor, menor, disminuido. Casi todas las canciones usan solo estos (y sobre todo I, IV, V y vi).' },
+      { id: 'funciones', nom: 'Tónica, subdominante y dominante', meta: 8, ej: ejCampoQuiz({ modo: 'mayor', clases: ['funcion'] }),
+        txt: 'Cada grado cumple una <b>función</b>. <b>Tónica</b> (I, vi, iii): reposo, "estar en casa". <b>Subdominante</b> (IV, ii): se aleja, prepara. <b>Dominante</b> (V, viiº): tensión, pide volver a la tónica. Una canción es un viaje: sale de casa, se aleja, tensa y vuelve. Entender esto permite adivinar el acorde que viene.' },
+      { id: 'menor', nom: 'El tono menor', meta: 8, ex: { modo: 'menor' }, ej: ejCampoQuiz({ modo: 'menor', clases: ['acorde', 'grado'] }),
+        txt: 'En menor el campo es <b>i – iiº – III – iv – V – VI – VII</b>. Ojo con el <b>V</b>: en la música popular se toca <b>mayor</b> (Mi o Mi7 en La menor, tomado de la menor armónica), porque así tensa y "vuelve a casa". El III, el VI y el VII son los acordes del relativo mayor.' },
+      { id: 'tocar', nom: 'Tocar el grado que te piden', meta: 8, ej: ejAcorde({ grado: { modo: 'ambos' } }),
+        txt: 'Ahora en el teclado: te piden un grado de un tono mayor o menor y lo armas. Esto es exactamente lo que haces cuando alguien dice "esta canción va I – V – vi – IV en Re" y tú tocas Re – La – Sim – Sol.' }
+    ] },
+    { id: 'progresiones', nom: 'Progresiones', que: 'Las secuencias de acordes de miles de canciones, para tocarlas', explorar: exProgresiones, lecciones: [
+      { id: 'folk', nom: 'I – IV – V: la base', meta: 4, ex: { p: 'folk' }, ej: ejProgTocar({ progs: ['folk'], raices: ['C', 'G', 'D', 'F', 'A'] }),
+        txt: 'Con tónica, subdominante y dominante se acompañan miles de canciones: folclor, rancheras, rock and roll, cumbia. En Do: Do – Fa – Sol. Toca cada acorde en orden en el teclado; cuando completes las notas pasa solo al siguiente. Usa la inversión que te deje la mano quieta.' },
+      { id: 'pop', nom: 'I – V – vi – IV: el pop', meta: 4, ej: ejProgTocar({ progs: ['pop', '50s', 'emo'] }),
+        txt: 'La progresión más usada de las últimas décadas. En Do: Do – Sol – Lam – Fa. Sus variantes son I – vi – IV – V (las baladas de los 50) y vi – IV – I – V (la misma empezando en el menor, más melancólica). Quien las domina en todos los tonos puede acompañar casi cualquier canción pop.' },
+      { id: 'menor', nom: 'Progresiones en menor', meta: 4, ex: { p: 'menor', raiz: 'A' }, ej: ejProgTocar({ progs: ['menor', 'andaluza', 'menorpop'] }),
+        txt: '<b>i – iv – V</b> es la cadencia menor de boleros y baladas (Lam – Rem – Mi). La <b>andaluza</b> i – VII – VI – V baja por grados (Lam – Sol – Fa – Mi): flamenco, rumba. Y <b>i – VI – III – VII</b> es el pop en menor (Lam – Fa – Do – Sol).' },
+      { id: 'jazz', nom: 'ii – V – I con séptimas', meta: 4, ex: { p: 'iivi' }, ej: ejProgTocar({ progs: ['iivi', 'circulo'] }),
+        txt: 'La cadencia del jazz, el bolero y la bossa: <b>Rem7 – Sol7 – Domaj7</b>. Cada acorde lleva al siguiente por quintas. El "círculo" I – vi – ii – V (Domaj7 – Lam7 – Rem7 – Sol7) es su versión larga, y se repite en bucle en cientos de boleros y standards.' },
+      { id: 'oido', nom: 'Reconocer progresiones de oído', meta: 8, ej: ejProgOido({ progs: ['folk', 'pop', '50s', 'menor', 'andaluza', 'iivi'] }),
+        txt: 'Para sacar una canción basta reconocer la progresión. Pistas: ¿el primer acorde es mayor o menor? ¿el segundo sube (al IV o V) o baja (al vi)? ¿el último deja tensión (V) o reposa (I)? Escucha y elige.' }
+    ] },
+    { id: 'transponer', nom: 'Transponer', que: 'Llevar una canción a otro tono para cantarla cómodo', explorar: exTransponer, lecciones: [
+      { id: 'porque', nom: 'Elegir el tono para la voz', meta: 6, ej: ejSemitonos(),
+        txt: 'Cada voz tiene un rango cómodo. Si la canción original queda muy aguda, se <b>baja</b> el tono entero; si queda grave, se sube. Transponer es mover <b>todos</b> los acordes la misma cantidad de semitonos. Regla práctica: prueba de a un tono (2 semitonos) hasta que las notas altas del coro salgan sin apretar. Este ejercicio repasa contar semitonos, que es la base.' },
+      { id: 'grados', nom: 'Pensar en grados', meta: 8, ej: ejCampoQuiz({ modo: 'ambos', clases: ['grado'] }),
+        txt: 'El truco de los músicos populares: no memorizar acordes sino <b>grados</b>. "Sol – Mim – Do – Re" es I – vi – IV – V en Sol; en Mi es Mi – Do#m – La – Si. Si sabes el grado de cada acorde en el tono original, rearmarlo en el nuevo es inmediato.' },
+      { id: 'triadas', nom: 'Transponer progresiones', meta: 6, ej: ejTransponer({}),
+        txt: 'Ahora en serio: te doy una progresión en un tono y la llevas a otro. Cuenta los semitonos entre los dos tonos y mueve cada acorde esa misma cantidad; el tipo (mayor, menor) no cambia. Si prefieres, piensa en grados y rearma.' },
+      { id: 'septimas', nom: 'Transponer con séptimas', meta: 5, ej: ejTransponer({ sept: true }),
+        txt: 'Igual que antes, pero con acordes de séptima (ii–V–I, el círculo): el sufijo viaja intacto. Rem7 – Sol7 – Domaj7 en Do pasa a Fam7 – Sib7 – Mibmaj7 en Mib.' }
+    ] },
+    { id: 'ritmica', nom: 'Rítmica', que: 'Patrones de acompañamiento: balada, bolero, vals, cumbia, bossa…', explorar: function (el, st) { exProgresiones(el, st, { rejilla: true, p: 'folk' }); }, lecciones: [
+      { id: 'negras', nom: 'Balada en negras y corcheas', meta: 3, ej: ejRitmo({ ritmos: ['negras', 'corcheas'], bpm: 70 }),
+        txt: 'El ritmo es lo que hace que los mismos acordes suenen a balada, a cumbia o a bolero. Regla de oro: <b>la izquierda marca el bajo en los tiempos fuertes</b> (1 y 3) y la derecha dibuja el estilo. El más simple: acorde en cada negra (1 2 3 4). Luego en corcheas (1 y 2 y 3 y 4 y), marcando más el 1 y el 3. Cuenta en voz alta mientras tocas.' },
+      { id: 'arpegio', nom: 'Arpegio y bajo en octavas', meta: 3, ex: { r: 'arpegio' }, ej: ejRitmo({ ritmos: ['arpegio', 'octavas'], bpm: 70 }),
+        txt: 'En vez del acorde entero, la derecha toca sus notas una a una (1 – 3 – 5 – 8 – 5 – 3): el <b>arpegio</b> de las baladas lentas. Y la izquierda puede alternar fundamental y octava (bajo en octavas), el motor del rock and roll y de la cumbia chilena.' },
+      { id: 'vals', nom: 'Vals y 6/8', meta: 3, ex: { r: 'vals' }, ej: ejRitmo({ ritmos: ['vals', 'seisocho'], bpm: 90 }),
+        txt: 'No todo va en 4. El <b>vals</b> (3/4) es bajo – acorde – acorde: valses, valses peruanos, rancheras. El <b>6/8</b> son dos grupos de tres corcheas (1-2-3 4-5-6) con el bajo en el 1 y la quinta en el 4: cueca, tonada, baladas lentas.' },
+      { id: 'latino', nom: 'Bolero, cumbia y bossa', meta: 3, ex: { r: 'tresillo' }, ej: ejRitmo({ ritmos: ['tresillo', 'cumbia', 'bossa', 'reggae'], bpm: 85 }),
+        txt: 'Los ritmos latinos viven del <b>contratiempo</b>. El <b>tresillo</b> del bolero reparte 3 + 3 + 2 corcheas. La <b>cumbia</b> pone el acorde siempre en las "y", sobre un bajo que alterna fundamental y quinta. La <b>bossa</b> anticipa el bajo y sincopa el acorde. El <b>reggae</b> acentúa el 2 y el 4, cortito.' }
+    ] },
+    { id: 'canciones', nom: 'Acompañar canciones', que: 'Leer un cifrado y tocarlo: la meta de todo lo anterior', lecciones: [
+      { id: 'cifrado', nom: 'Leer un cifrado', meta: 4, ej: ejProgTocar({ cancion: true }),
+        txt: 'Un <b>cifrado</b> es la letra con los acordes escritos encima de la sílaba en que cambian: es como se pasan las canciones en la música popular, y es lo que guarda tu Cancionero. Aquí tocas en orden los acordes de una canción de tu Cancionero (si no tiene ninguna con acordes, usa una progresión). Prueba a tocarlos con la inversión más cercana.' },
+      { id: 'bajos', nom: 'Bajos con quinta y octava', meta: 6, ej: ejAcorde({ grado: { modo: 'mayor', grados: [0, 3, 4, 5] }, manos: true }),
+        txt: 'Cuando la izquierda ya toca el bajo seguro, hazla alternar <b>fundamental – quinta</b> (Do – Sol – Do – Sol) o <b>fundamental – octava</b>. Con eso el acompañamiento camina solo. Este ejercicio repasa las dos manos sobre los grados que más se usan (I, IV, V, vi); al tocar de verdad, alterna el bajo con su quinta en los tiempos 3.' },
+      { id: 'cadencias', nom: 'Entradas y finales', meta: 6, ej: ejProgOido({ progs: ['folk', 'iivi', 'menor', 'andaluza'] }),
+        txt: 'Para <b>entrar</b> a una canción basta tocar el V (o V7) un compás y caer al I: quien canta ya sabe el tono. Para <b>terminar</b>, la cadencia IV – V – I con el último acorde largo, o ii – V – I si la canción es bolero o bossa. Escucha y reconoce cuál es cuál.' },
+      { id: 'repaso', nom: 'Repaso general', meta: 10, ej: ejAcorde({ grado: { modo: 'ambos', sept: true }, manos: true }),
+        txt: 'Última tarea: grados con séptima, en mayor y en menor, con las dos manos. Si esto sale solo, puedes acompañar lo que te pongan adelante. Después, la mejor práctica es el propio Cancionero: elige una canción, ponle el ritmo que le quede y tócala completa.' }
+    ] }
+  ];
+  function unidad(id) { for (var i = 0; i < UNIDADES.length; i++) if (UNIDADES[i].id === id) return UNIDADES[i]; return null; }
+  UNIDADES.forEach(function (u) { u.lecciones.forEach(function (l) { l.id = u.id + '/' + l.id; l.uni = u; }); });
+  function leccion(u, id) { for (var i = 0; i < u.lecciones.length; i++) if (u.lecciones[i].id === u.id + '/' + id) return u.lecciones[i]; return null; }
+  function hechasDe(u) { var p = avance(); return u.lecciones.filter(function (l) { return p[l.id] && p[l.id].hecha; }).length; }
+  function siguienteLec(lec) {
+    var ls = lec.uni.lecciones, i = ls.indexOf(lec);
+    if (i + 1 < ls.length) return ls[i + 1];
+    var ui = UNIDADES.indexOf(lec.uni);
+    return ui + 1 < UNIDADES.length ? UNIDADES[ui + 1].lecciones[0] : null;
+  }
+  function rutaLec(lec) { return 'piano/' + lec.id; }
+
+  /* ---------- portada ---------- */
+  function portada() {
+    S.onKey = null; parar(); S.lec = null; S.uni = null;
+    var p = avance(), total = 0, hechas = 0;
+    UNIDADES.forEach(function (u) { total += u.lecciones.length; hechas += hechasDe(u); });
+    var pendiente = null;
+    UNIDADES.some(function (u) { return u.lecciones.some(function (l) { if (!(p[l.id] && p[l.id].hecha)) { pendiente = l; return true; } return false; }); });
+    S.view.innerHTML =
+      '<div class="pk-scope">' +
+      '<div class="rep-head"><div><h1>Piano popular</h1><p class="artist">' + hechas + ' de ' + total + ' lecciones completadas</p></div>' +
+      '<div class="ka-head-btns">' + segHtml('pkNot', [['1', 'Do Re Mi'], ['0', 'C D E']], S.cfg.latin ? '1' : '0') +
+      '<button class="mini-app-btn" id="pkMidi" title="Si tienes un piano digital conectado por USB, sus teclas cuentan en los ejercicios">Teclado MIDI</button>' +
+      (pendiente ? '<button class="pr-play pk-go" id="pkSeguir">SEGUIR: ' + esc(pendiente.nom) + '</button>' : '') + '</div></div>' +
+      '<p class="ed-note">Piano para acompañar canciones, no piano clásico. Cada unidad tiene lecciones cortas; cada lección es una tarea con un ejercicio que se resuelve con el mouse sobre el teclado (o con un piano MIDI) y queda marcada al cumplir la meta. Conviene ir en orden.</p>' +
+      '<p class="set-status" id="pkAviso"></p>' +
+      '<div class="pk-unis">' + UNIDADES.map(function (u, i) {
+        var h = hechasDe(u), n = u.lecciones.length;
+        return '<section class="pk-uni' + (h === n ? ' lista' : '') + '"><div class="pk-uni-head"><h2><span class="pk-num">' + (i + 1) + '</span>' + esc(u.nom) + '</h2><span class="pk-uni-av">' + h + '/' + n + '</span></div>' +
+          '<p class="pk-uni-que">' + esc(u.que) + '</p>' +
+          '<div class="pk-bar"><span style="width:' + Math.round(100 * h / n) + '%"></span></div>' +
+          '<ol class="pk-lecs">' + u.lecciones.map(function (l) {
+            var r = p[l.id];
+            return '<li><a href="#/' + rutaLec(l) + '" class="pk-lec' + (r && r.hecha ? ' hecha' : '') + '"><span class="pk-check">' + (r && r.hecha ? '✓' : '') + '</span>' + esc(l.nom) + '</a></li>';
+          }).join('') + '</ol></section>';
+      }).join('') + '</div></div>';
+    segWire('pkNot', function (v) { S.cfg.latin = v === '1'; guardarCfg(); });
+    on('pkMidi', 'click', function () { conectarMidi(q('#pkMidi')); });
+    if (S.midi) q('#pkMidi').setAttribute('aria-pressed', 'true');
+    if (pendiente) on('pkSeguir', 'click', function () { S.ctx.navigate(rutaLec(pendiente)); });
+  }
+
+  /* ---------- lección ---------- */
+  function abrirLeccion(u, lec) {
+    S.uni = u; S.lec = lec; S.onKey = null; S.st = {}; parar();
+    var p = avance(), ls = u.lecciones, idx = ls.indexOf(lec), reg = regLec(lec), sig = siguienteLec(lec);
+    S.view.innerHTML =
+      '<div class="pk-scope pk-lay">' +
+      '<aside class="pk-side"><button class="back" id="pkBack">← Piano</button>' +
+      '<div class="panel-title">Unidad ' + (UNIDADES.indexOf(u) + 1) + ' · ' + esc(u.nom) + '</div>' +
+      '<ol class="pk-lecs">' + ls.map(function (l) {
+        var r = p[l.id];
+        return '<li><a href="#/' + rutaLec(l) + '" class="pk-lec' + (r && r.hecha ? ' hecha' : '') + (l === lec ? ' actual' : '') + '"><span class="pk-check">' + (r && r.hecha ? '✓' : '') + '</span>' + esc(l.nom) + '</a></li>';
+      }).join('') + '</ol>' +
+      '<div class="pk-side-nav">' + (idx > 0 ? '<a class="mini-app-btn" href="#/' + rutaLec(ls[idx - 1]) + '">← Anterior</a>' : '') + (sig ? '<a class="mini-app-btn" href="#/' + rutaLec(sig) + '">Siguiente →</a>' : '') + '</div>' +
+      '</aside>' +
+      '<main class="pk-main">' +
+      '<div class="rep-head"><div><p class="pk-crumb">Lección ' + (idx + 1) + ' de ' + ls.length + '</p><h1>' + esc(lec.nom) + '</h1></div>' +
+      '<label class="check pk-hecha" title="Se marca sola al cumplir la meta; también puedes marcarla o desmarcarla a mano"><input type="checkbox" id="pkHecha"' + (reg.hecha ? ' checked' : '') + '> Completada</label></div>' +
+      '<div class="pk-txt">' + lec.txt + '</div>' +
+      '<section class="pk-ej"><div class="pk-ej-head"><span class="panel-title">Ejercicio</span><span class="pk-meta" id="pkMeta"></span></div><div class="pk-bar"><span id="pkBarra"></span></div>' +
+      '<div id="pkEjCuerpo"></div></section>' +
+      (u.explorar ? '<section class="pk-explorar"><div class="pk-ej-head"><span class="panel-title">Explorar</span><button class="mini-app-btn" id="pkExpBtn" aria-expanded="false">Mostrar</button></div><div id="pkExp" hidden></div></section>' : '') +
+      '<p class="set-status" id="pkAviso"></p>' +
+      '</main></div>';
+    on('pkBack', 'click', function () { S.ctx.navigate('piano'); });
+    on('pkHecha', 'change', function () { marcarHecha(lec, this.checked); pintarMeta(); pintarLateral(); });
+    if (u.explorar) {
+      var exSt = Object.assign({}, lec.ex || {});
+      on('pkExpBtn', 'click', function () {
+        var box = q('#pkExp'), abierto = !box.hidden;
+        box.hidden = abierto; this.textContent = abierto ? 'Mostrar' : 'Ocultar'; this.setAttribute('aria-expanded', String(!abierto));
+        if (!abierto && !box.innerHTML) u.explorar(box, exSt);
+        if (abierto) parar();
+      });
     }
-    function evaluar() {
-      q('#pkTap').disabled = true; q('#pkPlay').disabled = false; S.onKey = null;
-      var tot = st.esperados.length, bien = st.esperados.filter(function (e) { return e.usado; }).length, extras = st.extras || 0;
-      st.extras = 0;
-      var pct = tot ? Math.round(100 * Math.max(0, bien - extras) / tot) : 0;
-      var desv = st.esperados.filter(function (e) { return e.usado; }).map(function (e) { return e.desv; });
-      var prom = desv.length ? desv.reduce(function (a, b) { return a + b; }, 0) / desv.length : 0;
-      anotar('ritmica', pct >= 80);
-      feedback(pct + '% · ' + bien + ' de ' + tot + ' golpes a tiempo' + (extras ? ', ' + extras + ' de más' : '') +
-        (Math.abs(prom) > 0.03 ? '. Vas ' + (prom < 0 ? 'adelantado' : 'atrasado') + ' unos ' + Math.round(Math.abs(prom) * 1000) + ' ms.' : '.') +
-        (pct >= 80 ? ' ¡Bien! Sube el tempo o prueba otro ritmo.' : ' Baja el tempo y cuenta en voz alta.'), pct >= 80 ? 'ok' : 'bad');
+    // marco del ejercicio: cuenta aciertos limpios hacia la meta
+    var fallosConsigna = 0, falloAnotado = false;
+    function pintarMeta() {
+      var r = regLec(lec), el = q('#pkMeta'), b = q('#pkBarra');
+      if (!el) return;
+      el.textContent = (r.hecha ? 'Completada · ' : '') + Math.min(r.ok, lec.meta) + ' / ' + lec.meta + ' aciertos' + (r.n ? ' · ' + r.ok + ' de ' + r.n + ' intentos bien' : '');
+      b.style.width = Math.min(100, Math.round(100 * r.ok / lec.meta)) + '%';
+      var ch = q('#pkHecha'); if (ch) ch.checked = r.hecha;
     }
-    on('pkPlay', 'click', empezar);
-    on('pkTap', 'pointerdown', function (e) { e.preventDefault(); golpe(); });
-    on('pkRit', 'change', function () { st.r = this.value; pintar(); });
-    on('pkBpmM', 'click', function () { st.bpm = Math.max(40, st.bpm - 5); pintar(); });
-    on('pkBpmP', 'click', function () { st.bpm = Math.min(160, st.bpm + 5); pintar(); });
-    pintar();
+    function pintarLateral() {
+      var p2 = avance();
+      S.view.querySelectorAll('.pk-side .pk-lec').forEach(function (a, i) {
+        var r = p2[ls[i].id], hecha = r && r.hecha;
+        a.classList.toggle('hecha', !!hecha); a.querySelector('.pk-check').textContent = hecha ? '✓' : '';
+      });
+    }
+    var ctlEj = {
+      nueva: function () { fallosConsigna = 0; falloAnotado = false; },
+      fallos: function () { return fallosConsigna; },
+      ok: function () {
+        if (falloAnotado) { pintarMeta(); return; }   // la consigna ya contó como fallo
+        var r = anotar(lec, true); pintarMeta(); pintarLateral();
+        if (r.recien) celebrar();
+      },
+      mal: function () {
+        fallosConsigna++;
+        if (!falloAnotado) { falloAnotado = true; anotar(lec, false); pintarMeta(); }
+      }
+    };
+    function celebrar() {
+      aviso('Lección completada. ' + (sig ? 'Sigue con «' + sig.nom + '» cuando quieras.' : '¡Terminaste todas las lecciones!'));
+      var c = ac(); if (c) { var t = c.currentTime; [60, 64, 67, 72].forEach(function (m, i) { tocar(m, t + i * 0.08, 1.2, 0.5); }); }
+      var nav = q('.pk-side-nav');
+      if (sig && nav && !q('#pkSig')) nav.insertAdjacentHTML('beforeend', '<a class="pr-play pk-go" id="pkSig" href="#/' + rutaLec(sig) + '">Siguiente lección</a>');
+    }
+    pintarMeta();
+    lec.ej(q('#pkEjCuerpo'), ctlEj, lec);
   }
 
   /* ================= montaje ================= */
   function teclaEspacio(e) {
-    if (e.code !== 'Space' || !S.onKey || S.tema == null || S.tema.id !== 'ritmica') return;
-    if (/INPUT|SELECT|TEXTAREA/.test((e.target && e.target.tagName) || '')) return;
+    if (e.code !== 'Space' || !S.onKey || !S.lec || S.lec.uni.id !== 'ritmica') return;
+    if (/INPUT|SELECT|TEXTAREA|BUTTON/.test((e.target && e.target.tagName) || '')) return;
     e.preventDefault();
     S.onKey(0, 'espacio');
   }
@@ -1320,13 +1528,18 @@
     S.view = view; S.ctx = ctx;
     if (!S.cfg) S.cfg = cargarCfg();
     if (!S.espacio) { S.espacio = true; document.addEventListener('keydown', teclaEspacio); }
-    var partes = String(rest || '').split('/'), t = temaDe(partes[0]);
-    if (t) abrirTema(t, partes[1]); else { S.tema = null; portada(); }
+    var partes = String(rest || '').split('/'), u = unidad(partes[0]);
+    if (!u) { portada(); return; }
+    var lec = leccion(u, partes[1]) || u.lecciones[0];
+    abrirLeccion(u, lec);
   }
-  function onLeave() { parar(); S.onKey = null; S.tema = null; }
+  function onLeave() { parar(); S.onKey = null; S.lec = null; }
 
   // gancho mínimo de inspección (para probar sin exponer todo)
-  SB.piano = { estado: function () { return { st: S.st, tema: S.tema && S.tema.id, t: S.ac && S.ac.currentTime }; } };
+  SB.piano = {
+    estado: function () { return { st: S.st, lec: S.lec && S.lec.id, t: S.ac && S.ac.currentTime }; },
+    unidades: function () { return UNIDADES.map(function (u) { return { id: u.id, lecciones: u.lecciones.map(function (l) { return l.id; }) }; }); }
+  };
 
-  SB.registry.register({ id: 'piano', name: 'Piano', kind: 'primary', icon: ICON, mount: mount, onLeave: onLeave });
+  SB.registry.register({ id: 'piano', name: 'Piano', kind: 'primary', mount: mount, onLeave: onLeave });
 })();
