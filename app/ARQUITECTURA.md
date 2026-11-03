@@ -19,6 +19,7 @@ flowchart TD
     end
     CORE --> T1[tools/songbook<br/>Cancionero · primary]
     CORE --> T2[tools/practice<br/>Práctica · secondary]
+    CORE --> T3[tools/piano<br/>Piano (aprender) · primary]
     CORE --> Tn[tools/…<br/>tus próximas herramientas]
     DATA[data/songs.js<br/>biblioteca semilla] --> ST
 ```
