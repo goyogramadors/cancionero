@@ -6,7 +6,8 @@
    caché, así los cambios llegan en la siguiente carga sin quedar atascado
    en una versión vieja. Igual conviene subir CACHE en cada release.
    ============================================================ */
-const CACHE = 'cancionero-v44';
+const CACHE = 'cancionero-v45';
+const MUESTRAS = 'cancionero-muestras-v1'; // piano (Salamander): se guardan aparte y no se borran al subir CACHE
 const SHELL = [
   'index.html',
   'css/base.css',
@@ -26,6 +27,7 @@ const SHELL = [
   'tools/canta/canta-motor.js',
   'tools/canta/canta-dsp.js',
   'tools/canta/canta-pitch-worklet.js',
+  'core/piano-sonido.js',
   'tools/piano/piano.js',
   'tools/chords/chords.js',
   'tools/practice/practice.js',
@@ -48,13 +50,19 @@ self.addEventListener('install', (e) => {
 });
 self.addEventListener('activate', (e) => {
   e.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== MUESTRAS).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
+  // Muestras del piano (Salamander vía Tone.js): caché primero, para que suene sin internet
+  if (url.pathname.includes('/audio/salamander/')) {
+    e.respondWith(caches.open(MUESTRAS).then((c) => c.match(e.request).then((hit) => hit ||
+      fetch(e.request).then((res) => { if (res && res.ok) c.put(e.request, res.clone()).catch(() => {}); return res; }))));
+    return;
+  }
   if (url.origin !== self.location.origin) return; // deja pasar lo externo
   if (url.pathname.includes('/api/')) return;      // motor local: nunca cachear
   // Los paquetes de Canta (índice + canta.json + audios) cambian cuando preparas

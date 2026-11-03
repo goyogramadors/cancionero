@@ -232,42 +232,23 @@
   function bajo(raiz) { var p = pcDe(raiz); return p >= 5 ? 36 + p : 48 + p; } // de Fa2 a Mi3: grave pero no barroso
 
   /* ================= sonido ================= */
+  // El sonido es el motor del piano de Go.io (core/piano-sonido.js):
+  // muestras del Salamander Grand Piano, con cuerda simulada de respaldo.
   function ac() {
-    if (!S.ac) {
-      var C = window.AudioContext || window.webkitAudioContext;
-      if (!C) return null;
-      S.ac = new C();
-      S.out = S.ac.createGain(); S.out.gain.value = 0.55;
-      var comp = S.ac.createDynamicsCompressor();
-      S.out.connect(comp); comp.connect(S.ac.destination);
-    }
-    if (S.ac.state === 'suspended') S.ac.resume();
-    return S.ac;
+    var P = SB.pianoSonido, c = P && P.ctx();
+    if (c) { S.ac = c; P.cargar(); }
+    return c;
   }
   function tocar(m, cuando, dur, vel) {
-    var c = ac(); if (!c) return;
-    cuando = cuando || c.currentTime; dur = dur || 1.4; vel = vel == null ? 0.6 : vel;
-    var f = 440 * Math.pow(2, (m - 69) / 12);
-    var g = c.createGain(), lp = c.createBiquadFilter();
-    lp.type = 'lowpass'; lp.frequency.value = Math.min(9000, f * 7);
-    var o1 = c.createOscillator(), o2 = c.createOscillator(), g2 = c.createGain();
-    o1.type = 'triangle'; o1.frequency.value = f;
-    o2.type = 'sine'; o2.frequency.value = f * 2; g2.gain.value = 0.22;
-    o1.connect(lp); o2.connect(g2); g2.connect(lp); lp.connect(g); g.connect(S.out);
-    var pico = vel * (m < 52 ? 0.6 : 0.42);
-    g.gain.setValueAtTime(0.0001, cuando);
-    g.gain.exponentialRampToValueAtTime(pico, cuando + 0.006);
-    g.gain.exponentialRampToValueAtTime(pico * 0.35, cuando + 0.3);
-    g.gain.exponentialRampToValueAtTime(0.0001, cuando + dur);
-    o1.start(cuando); o2.start(cuando);
-    o1.stop(cuando + dur + 0.05); o2.stop(cuando + dur + 0.05);
+    if (!ac()) return;
+    SB.pianoSonido.tocar(m, cuando, dur || 1.4, vel == null ? 0.6 : vel);
   }
   function tocarVarias(ms, cuando, dur, vel) { ms.forEach(function (m) { tocar(m, cuando, dur, vel); }); }
   function clic(cuando, fuerte) {
     var c = ac(); if (!c) return;
     var o = c.createOscillator(), g = c.createGain();
     o.frequency.value = fuerte ? 1500 : 1000; o.type = 'square';
-    o.connect(g); g.connect(S.out);
+    o.connect(g); g.connect(SB.pianoSonido.salida());
     g.gain.setValueAtTime(fuerte ? 0.12 : 0.06, cuando);
     g.gain.exponentialRampToValueAtTime(0.0001, cuando + 0.04);
     o.start(cuando); o.stop(cuando + 0.05);
@@ -334,8 +315,27 @@
   // marcas: { midi: {c: 'on'|'sel'|'ok'|'bad'|'tenue', t: 'etiqueta'} }
   var NEGRAS = [1, 3, 6, 8, 10];
   function esNegra(m) { return NEGRAS.indexOf(mod12(m)) >= 0; }
+  // Teclado del computador (QWERTY español, igual que el piano de Go.io):
+  //   blancas  TAB Q W E R T Y | U I O P ` + Enter
+  //   negras   1 2 · 4 5 6 | 8 9 · ' ¡ Borrar
+  // TAB es el Do de la octava elegida (Do4 de partida); ↑ ↓ la cambian.
+  var QW = [['Tab', 'TAB'], ['Digit1', '1'], ['KeyQ', 'Q'], ['Digit2', '2'], ['KeyW', 'W'], ['KeyE', 'E'], ['Digit4', '4'],
+    ['KeyR', 'R'], ['Digit5', '5'], ['KeyT', 'T'], ['Digit6', '6'], ['KeyY', 'Y'], ['KeyU', 'U'], ['Digit8', '8'],
+    ['KeyI', 'I'], ['Digit9', '9'], ['KeyO', 'O'], ['KeyP', 'P'], ['Minus', "'"], ['BracketLeft', '`'], ['Equal', '¡'],
+    ['BracketRight', '+'], ['Backspace', '⌫'], ['Enter', '↵']];
+  var QW_KEY = { tab: 0, '1': 1, q: 2, '2': 3, w: 4, e: 5, '4': 6, r: 7, '5': 8, t: 9, '6': 10, y: 11, u: 12, '8': 13, i: 14, '9': 15,
+    o: 16, p: 17, "'": 18, '`': 19, '^': 19, '[': 19, '¡': 20, '=': 20, '+': 21, '*': 21, ']': 21, backspace: 22, enter: 23 };
+  var tactil = !!(window.matchMedia && window.matchMedia('(hover: none)').matches);
+  function baseQw() { var b = S.cfg && S.cfg.qwBase; return b >= 36 && b <= 72 ? b : 60; }
+  function tecladoTexto() {
+    var b = baseQw();
+    return 'Teclado del computador: TAB = ' + nombreMidi(b) + (Math.floor(b / 12) - 1) + ' … ↵ = ' + nombreMidi(b + 23) + (Math.floor((b + 23) / 12) - 1) + ' · ↑ ↓ cambian la octava · letras sobre las teclas';
+  }
   function teclado(el, desde, hasta, marcas, onPress) {
     if (!el) return;
+    S.teclados = (S.teclados || []).filter(function (t) { return t.el !== el && t.el.isConnected; });
+    if (onPress) S.teclados.push({ el: el, desde: desde, hasta: hasta, on: onPress });
+    var qb = baseQw(), conLetras = !tactil && !!onPress;
     var ww = 24, wh = 112, bw = 15, bh = 70, blancas = [];
     for (var m = desde; m <= hasta; m++) if (!esNegra(m)) blancas.push(m);
     var W = blancas.length * ww + 2, svg = '<svg viewBox="0 0 ' + W + ' ' + (wh + 2) + '" class="pk-kb" role="group" aria-label="Teclado">';
@@ -354,6 +354,7 @@
       var k = marcas && marcas[m], tinte = k && (k.c === 'sel' || k.c === 'ok');
       svg += '<rect data-m="' + m + '" x="' + xDe[m] + '" y="1" width="' + ww + '" height="' + wh + '" rx="2" fill="' + (tinte ? 'var(--chip)' : 'var(--bg)') + '" stroke="var(--ink)" stroke-width="1"/>';
       svg += marca(m, xDe[m], ww, wh - 14, false);
+      if (conLetras && m >= qb && m < qb + 24) svg += '<text x="' + (xDe[m] + ww / 2) + '" y="' + (bh + 13) + '" text-anchor="middle" font-size="' + (QW[m - qb][1].length > 1 ? 6 : 8) + '" fill="var(--faint)" class="pk-qw">' + esc(QW[m - qb][1]) + '</text>';
       if (mod12(m) === 0) svg += '<text x="' + (xDe[m] + ww / 2) + '" y="' + (wh - 1) + '" text-anchor="middle" font-size="7" fill="var(--faint)">' + nombreMidi(m) + (Math.floor(m / 12) - 1) + '</text>';
     });
     for (m = desde; m <= hasta; m++) {
@@ -361,6 +362,7 @@
       var x = (xDe[m - 1] || 1) + ww - bw / 2, k2 = marcas && marcas[m], tinte2 = k2 && (k2.c === 'sel' || k2.c === 'ok');
       svg += '<rect data-m="' + m + '" x="' + x + '" y="1" width="' + bw + '" height="' + bh + '" rx="2" fill="' + (tinte2 ? 'var(--mut)' : 'var(--ink)') + '" stroke="var(--ink)"/>';
       svg += marca(m, x, bw, bh - 11, true);
+      if (conLetras && m >= qb && m < qb + 24) svg += '<text x="' + (x + bw / 2) + '" y="11" text-anchor="middle" font-size="' + (QW[m - qb][1].length > 1 ? 6 : 7.5) + '" fill="var(--bg)" opacity=".7" class="pk-qw">' + esc(QW[m - qb][1]) + '</text>';
     }
     svg += '</svg>';
     el.innerHTML = svg;
@@ -375,6 +377,56 @@
         onPress(mm, 'pantalla');
       });
     }
+  }
+
+  function notaDeTecla(e) {
+    for (var i = 0; i < QW.length; i++) if (QW[i][0] === e.code) return baseQw() + i;
+    var k = String(e.key || '').toLowerCase();
+    return QW_KEY.hasOwnProperty(k) ? baseQw() + QW_KEY[k] : null;
+  }
+  var sueltas = {};
+  function teclaAbajo(e) {
+    if (document.body.dataset.tool !== 'piano' || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (/INPUT|SELECT|TEXTAREA/.test((e.target && e.target.tagName) || '')) return;
+    var vivos = (S.teclados || []).filter(function (t) { return t.el.isConnected; });
+    if (!vivos.length && !(S.onKey && S.lec)) return;
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      S.cfg.qwBase = Math.max(36, Math.min(72, baseQw() + (e.key === 'ArrowUp' ? 12 : -12))); guardarCfg();
+      var ay = q('#pkQwAyuda'); if (ay) ay.textContent = tecladoTexto();
+      vivos.forEach(function (t) { var svg = t.el.querySelector('svg'); if (svg) refrescarLetras(t); });
+      return;
+    }
+    var m = notaDeTecla(e);
+    if (m == null) return;
+    e.preventDefault(); e.stopPropagation();
+    if (e.repeat) return;
+    var t = vivos.filter(function (x) { return m >= x.desde && m <= x.hasta; })[0];
+    if (vivos.length) {
+      // suena siempre; cuenta en el ejercicio si la nota está en un teclado de la pantalla
+      sueltas[e.code || e.key] = SB.pianoSonido.apretar(m, 0.6);
+      if (t) t.on(m, 'teclado');
+    } else if (S.onKey) S.onKey(m, 'teclado');   // rítmica: cualquier tecla es un golpe
+  }
+  function teclaArriba(e) {
+    var id = sueltas[e.code || e.key];
+    if (id != null) { SB.pianoSonido.soltar(id); delete sueltas[e.code || e.key]; }
+  }
+  // tras cambiar de octava, vuelve a dibujar las letras sin tocar las marcas
+  function refrescarLetras(t) {
+    var svg = t.el.querySelector('svg'), qb = baseQw();
+    svg.querySelectorAll('.pk-qw').forEach(function (n) { n.remove(); });
+    svg.querySelectorAll('rect[data-m]').forEach(function (r) {
+      var m = +r.dataset.m; if (m < qb || m >= qb + 24) return;
+      var negra = esNegra(m), x = +r.getAttribute('x'), w = +r.getAttribute('width'), lab = QW[m - qb][1];
+      var tx = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      tx.setAttribute('x', x + w / 2); tx.setAttribute('y', negra ? 11 : 83); tx.setAttribute('text-anchor', 'middle');
+      tx.setAttribute('font-size', lab.length > 1 ? 6 : negra ? 7.5 : 8); tx.setAttribute('class', 'pk-qw');
+      tx.setAttribute('fill', negra ? 'var(--bg)' : 'var(--faint)'); if (negra) tx.setAttribute('opacity', '.7');
+      tx.textContent = lab;
+      var primeraNegra = Array.prototype.filter.call(svg.querySelectorAll('rect[data-m]'), function (n) { return esNegra(+n.dataset.m); })[0];
+      if (negra || !primeraNegra) svg.appendChild(tx); else svg.insertBefore(tx, primeraNegra);
+    });
   }
 
   /* ================= MIDI (piano digital por USB) ================= */
@@ -1437,7 +1489,8 @@
             var r = p[l.id];
             return '<li><a href="#/' + rutaLec(l) + '" class="pk-lec' + (r && r.hecha ? ' hecha' : '') + '"><span class="pk-check">' + (r && r.hecha ? '✓' : '') + '</span>' + esc(l.nom) + '</a></li>';
           }).join('') + '</ol></section>';
-      }).join('') + '</div></div>';
+      }).join('') + '</div>' +
+      '<p class="ed-note pk-credito">Sonido: el piano de Go.io, con muestras del Salamander Grand Piano de Alexander Holm (CC BY 3.0) vía Tone.js; sin internet suena un piano sintetizado.' + (tactil ? '' : ' En el computador puedes tocar con el teclado: TAB, Q, W, E… son las blancas y 1, 2, 4, 5, 6… las negras.') + '</p></div>';
     segWire('pkNot', function (v) { S.cfg.latin = v === '1'; guardarCfg(); });
     on('pkMidi', 'click', function () { conectarMidi(q('#pkMidi')); });
     if (S.midi) q('#pkMidi').setAttribute('aria-pressed', 'true');
@@ -1463,7 +1516,7 @@
       '<label class="check pk-hecha" title="Se marca sola al cumplir la meta; también puedes marcarla o desmarcarla a mano"><input type="checkbox" id="pkHecha"' + (reg.hecha ? ' checked' : '') + '> Completada</label></div>' +
       '<div class="pk-txt">' + lec.txt + '</div>' +
       '<section class="pk-ej"><div class="pk-ej-head"><span class="panel-title">Ejercicio</span><span class="pk-meta" id="pkMeta"></span></div><div class="pk-bar"><span id="pkBarra"></span></div>' +
-      '<div id="pkEjCuerpo"></div></section>' +
+      '<div id="pkEjCuerpo"></div>' + (tactil ? '' : '<p class="pk-qwayuda" id="pkQwAyuda">' + esc(tecladoTexto()) + '</p>') + '</section>' +
       (u.explorar ? '<section class="pk-explorar"><div class="pk-ej-head"><span class="panel-title">Explorar</span><button class="mini-app-btn" id="pkExpBtn" aria-expanded="false">Mostrar</button></div><div id="pkExp" hidden></div></section>' : '') +
       '<p class="set-status" id="pkAviso"></p>' +
       '</main></div>';
@@ -1527,7 +1580,13 @@
   function mount(view, rest, ctx) {
     S.view = view; S.ctx = ctx;
     if (!S.cfg) S.cfg = cargarCfg();
-    if (!S.espacio) { S.espacio = true; document.addEventListener('keydown', teclaEspacio); }
+    if (SB.pianoSonido) SB.pianoSonido.cargar();   // las muestras empiezan a bajar al entrar
+    if (!S.espacio) {
+      S.espacio = true;
+      document.addEventListener('keydown', teclaEspacio);
+      document.addEventListener('keydown', teclaAbajo, true);
+      document.addEventListener('keyup', teclaArriba, true);
+    }
     var partes = String(rest || '').split('/'), u = unidad(partes[0]);
     if (!u) { portada(); return; }
     var lec = leccion(u, partes[1]) || u.lecciones[0];

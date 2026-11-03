@@ -107,7 +107,7 @@ puede marcar o desmarcar a mano). El avance se guarda en el dispositivo. Varias 
 **Explorar** para mirar y escuchar antes de practicar. Las notas se deletrean bien (Re + 3ª mayor =
 Fa#) y se ven en Do-Re-Mi o en cifrado americano. Si hay un piano digital conectado por USB, el
 botón **Teclado MIDI** hace que sus teclas cuenten en los ejercicios (Chrome en computador o
-Android). En pantallas anchas la lección muestra a la izquierda la lista de lecciones de la unidad.
+Android). El sonido es el del piano de Go.io (muestras del Salamander Grand Piano, guardadas para usar sin internet) y en el computador se toca también con el teclado, igual que en Go.io: TAB Q W E R T Y U I O P ` + Enter son las blancas y 1 2 4 5 6 8 9 ' ¡ Borrar las negras, desde Do4; ↑ ↓ cambian la octava. En pantallas anchas la lección muestra a la izquierda la lista de lecciones de la unidad.
 La unidad «Acompañar canciones» toma los acordes de las canciones del propio Cancionero.
 
 ## Estado actual (2026-08-08)
