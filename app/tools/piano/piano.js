@@ -326,6 +326,7 @@
   var QW_KEY = { tab: 0, '1': 1, q: 2, '2': 3, w: 4, e: 5, '4': 6, r: 7, '5': 8, t: 9, '6': 10, y: 11, u: 12, '8': 13, i: 14, '9': 15,
     o: 16, p: 17, "'": 18, '`': 19, '^': 19, '[': 19, '¡': 20, '=': 20, '+': 21, '*': 21, ']': 21, backspace: 22, enter: 23 };
   var tactil = !!(window.matchMedia && window.matchMedia('(hover: none)').matches);
+  function qwOn() { return !tactil && !(S.cfg && S.cfg.qw === false); }
   function baseQw() { var b = S.cfg && S.cfg.qwBase; return b >= 36 && b <= 72 ? b : 60; }
   function tecladoTexto() {
     var b = baseQw();
@@ -335,7 +336,7 @@
     if (!el) return;
     S.teclados = (S.teclados || []).filter(function (t) { return t.el !== el && t.el.isConnected; });
     if (onPress) S.teclados.push({ el: el, desde: desde, hasta: hasta, on: onPress });
-    var qb = baseQw(), conLetras = !tactil && !!onPress;
+    var qb = baseQw(), conLetras = qwOn() && !!onPress;
     var ww = 24, wh = 112, bw = 15, bh = 70, blancas = [];
     for (var m = desde; m <= hasta; m++) if (!esNegra(m)) blancas.push(m);
     var W = blancas.length * ww + 2, svg = '<svg viewBox="0 0 ' + W + ' ' + (wh + 2) + '" class="pk-kb" role="group" aria-label="Teclado">';
@@ -388,12 +389,13 @@
   function teclaAbajo(e) {
     if (document.body.dataset.tool !== 'piano' || e.ctrlKey || e.metaKey || e.altKey) return;
     if (/INPUT|SELECT|TEXTAREA/.test((e.target && e.target.tagName) || '')) return;
+    if (!qwOn()) return;
     var vivos = (S.teclados || []).filter(function (t) { return t.el.isConnected; });
     if (!vivos.length && !(S.onKey && S.lec)) return;
     if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       e.preventDefault();
       S.cfg.qwBase = Math.max(36, Math.min(72, baseQw() + (e.key === 'ArrowUp' ? 12 : -12))); guardarCfg();
-      var ay = q('#pkQwAyuda'); if (ay) ay.textContent = tecladoTexto();
+      var ay = q('#pkQwTxt'); if (ay) ay.textContent = tecladoTexto();
       vivos.forEach(function (t) { var svg = t.el.querySelector('svg'); if (svg) refrescarLetras(t); });
       return;
     }
@@ -416,6 +418,7 @@
   function refrescarLetras(t) {
     var svg = t.el.querySelector('svg'), qb = baseQw();
     svg.querySelectorAll('.pk-qw').forEach(function (n) { n.remove(); });
+    if (!qwOn()) return;
     svg.querySelectorAll('rect[data-m]').forEach(function (r) {
       var m = +r.dataset.m; if (m < qb || m >= qb + 24) return;
       var negra = esNegra(m), x = +r.getAttribute('x'), w = +r.getAttribute('width'), lab = QW[m - qb][1];
@@ -426,6 +429,22 @@
       tx.textContent = lab;
       var primeraNegra = Array.prototype.filter.call(svg.querySelectorAll('rect[data-m]'), function (n) { return esNegra(+n.dataset.m); })[0];
       if (negra || !primeraNegra) svg.appendChild(tx); else svg.insertBefore(tx, primeraNegra);
+    });
+  }
+
+  // Interruptor de las teclas del computador (para usar sólo el mouse)
+  function qwAyudaHtml() {
+    if (tactil) return '';
+    var on_ = qwOn();
+    return '<div class="pk-qwayuda" id="pkQwAyuda"><button class="mini-app-btn pk-qwbtn" id="pkQwBtn" aria-pressed="' + on_ + '" title="Prende o apaga tocar con el teclado del computador">⌨ Teclas: ' + (on_ ? 'SÍ' : 'NO') + '</button>' +
+      '<span id="pkQwTxt">' + esc(on_ ? tecladoTexto() : 'Teclas del computador apagadas: se toca sólo con el mouse.') + '</span></div>';
+  }
+  function wireQw() {
+    on('pkQwBtn', 'click', function () {
+      S.cfg.qw = !qwOn(); guardarCfg();
+      var box = q('#pkQwAyuda'); if (box) box.outerHTML = qwAyudaHtml();
+      wireQw();
+      (S.teclados || []).forEach(function (t) { if (t.el.isConnected) refrescarLetras(t); });
     });
   }
 
@@ -514,6 +533,13 @@
     return ctl(label, '<div class="stepper"><button id="' + id + 'M" aria-label="Menos">−</button><span class="val" id="' + id + '"></span><button id="' + id + 'P" aria-label="Más">+</button></div>');
   }
   // sigue vigente esta lección (el usuario no se fue a otra parte)
+  // En la práctica "12 tonos" las raíces siguen el círculo de quintas
+  // (Do Sol Re La Mi Si Fa# Reb Lab Mib Sib Fa), retomando donde quedó.
+  var CICLO = [0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5];
+  function raizAzar(menor, lista) {
+    if (S.ciclo) return (menor ? RAIZ_MENOR : RAIZ_MAYOR)[CICLO[S.ciclo.i++ % 12]];
+    return azar(lista || (menor ? RAIZ_MENOR : RAIZ_MAYOR));
+  }
   function vigente(lec) { return S.lec === lec; }
   function luego(lec, ms, fn) { setTimeout(function () { if (vigente(lec)) fn(); }, ms); }
 
@@ -905,13 +931,21 @@
         ctl.nueva(); feedback('');
         if (opts.grado) {
           var modo = opts.grado.modo === 'ambos' ? azar(['mayor', 'menor']) : opts.grado.modo, menor = modo === 'menor';
-          st.tono = azar(menor ? RAIZ_MENOR : RAIZ_MAYOR); st.modo = modo;
+          st.tono = raizAzar(menor); st.modo = modo;
           var g = azar(opts.grado.grados || [0, 1, 2, 3, 4, 5]), a = grado(st.tono, modo, g, !!opts.grado.sept);
           st.raiz = a.raiz; st.tipo = a.tipo; st.rom = a.rom;
         } else {
-          do { st.tipo = azar(opts.tipos); } while (opts.tipos.length > 1 && st.tipo === st.prevT);
-          st.prevT = st.tipo;
-          st.raiz = azar(tipo(st.tipo).menor ? RAIZ_MENOR : RAIZ_MAYOR);
+          if (S.ciclo) {
+            // 12 tonos: cada raíz del círculo con todos los tipos pedidos, en orden
+            var nt = opts.tipos.length, kt = S.ciclo.t || 0;
+            st.tipo = opts.tipos[kt % nt];
+            st.raiz = (tipo(st.tipo).menor ? RAIZ_MENOR : RAIZ_MAYOR)[CICLO[S.ciclo.i % 12]];
+            S.ciclo.t = kt + 1; if (S.ciclo.t % nt === 0) S.ciclo.i++;
+          } else {
+            do { st.tipo = azar(opts.tipos); } while (opts.tipos.length > 1 && st.tipo === st.prevT);
+            st.prevT = st.tipo;
+            st.raiz = raizAzar(!!tipo(st.tipo).menor);
+          }
         }
         st.inv = opts.inversion ? azar([1, 2]) : 0;
         st.sel = []; st.selI = []; st.listo = false;
@@ -996,7 +1030,7 @@
       function nuevo() {
         ctl.nueva(); feedback('');
         st.e = escala(azar(opts.escalas));
-        st.raiz = azar(opts.raices || (st.e.menor ? RAIZ_MENOR : RAIZ_MAYOR));
+        st.raiz = raizAzar(!!st.e.menor, opts.raices);
         st.notas = notasEscala(st.raiz, st.e);
         st.i = 0; st.tocadas = []; st.listo = false; st.malo = null;
         consigna('Toca la escala subiendo, desde la tónica hasta la tónica de arriba', st.e.nom + ' de ' + ver(st.raiz), (st.notas.length + 1) + ' notas · ' + pasos(st.e));
@@ -1092,7 +1126,7 @@
           var c = cancionAlAzar();
           st.as = c.acordes; st.titulo = c.titulo;
         } else {
-          var p = prog(azar(opts.progs)), raiz = azar(opts.raices || (p.modo === 'menor' ? RAIZ_MENOR : RAIZ_MAYOR));
+          var p = prog(azar(opts.progs)), raiz = raizAzar(p.modo === 'menor', opts.raices);
           st.as = acordesProg(p, raiz).map(function (a) { return { raiz: a.raiz, tipo: a.tipo, rom: a.rom, nombre: cifra(a.raiz, a.tipo), pcs: pcsAcorde(a.raiz, a.tipo) }; });
           st.titulo = p.nom + ' en ' + ver(raiz) + (p.modo === 'menor' ? ' menor' : '');
         }
@@ -1337,7 +1371,7 @@
         var pct = tot ? Math.round(100 * Math.max(0, bien - extras) / tot) : 0;
         var desv = st.esperados.filter(function (e) { return e.usado; }).map(function (e) { return e.desv; });
         var prom = desv.length ? desv.reduce(function (a, b) { return a + b; }, 0) / desv.length : 0;
-        if (pct >= 80) ctl.ok(); else ctl.mal();
+        if (pct >= 80) ctl.ok(); else { ctl.mal(); if (ctl.cerrar) ctl.cerrar(); }
         feedback(pct + '% · ' + bien + ' de ' + tot + ' golpes a tiempo' + (extras ? ', ' + extras + ' de más' : '') +
           (Math.abs(prom) > 0.03 ? '. Vas ' + (prom < 0 ? 'adelantado' : 'atrasado') + ' unos ' + Math.round(Math.abs(prom) * 1000) + ' ms.' : '.') +
           (pct >= 80 ? ' ¡Bien! Sube el tempo o prueba otro ritmo.' : ' Baja el tempo y cuenta en voz alta.'), pct >= 80 ? 'ok' : 'bad');
@@ -1465,15 +1499,223 @@
   }
   function rutaLec(lec) { return 'piano/' + lec.id; }
 
+  /* ================= PRÁCTICA: sesiones largas para automatizar =================
+     Cada ejercicio es una sesión de N rondas con reloj. Lo que se mide:
+     rondas limpias (sin fallos ni pistas) y segundos por ronda. Se guarda el
+     mejor resultado, el último, cuántas veces y en qué tono quedó el círculo
+     de quintas (la próxima sesión sigue desde ahí). Las rutinas encadenan
+     varios ejercicios cortos, mezclados (práctica intercalada). */
+  var PRACKEY = 'sb.piano.practica';
+  var TODAS_PROGS = ['folk', 'pop', '50s', 'emo', 'menor', 'andaluza', 'iivi'];
+  var PRACTICAS = [
+    { grupo: 'Teclado y notas', items: [
+      { id: 'notas', nom: 'Notas relámpago', n: 24, ej: ejNota({ negras: true }),
+        que: 'Toca la nota que aparece, blancas y negras. Primero sin errores; después baja los segundos por nota.' },
+      { id: 'semitonos', nom: 'Contar semitonos', n: 20, ej: ejSemitonos(),
+        que: 'Distancias entre dos notas, subiendo y bajando: la base para armar acordes y transponer de cabeza.' }
+    ] },
+    { grupo: 'Oído', items: [
+      { id: 'int-oido', nom: 'Intervalos de oído', n: 20, ej: ejIntervalo({ semis: [2, 3, 4, 5, 7, 9, 10, 12], oido: true }),
+        que: 'Escucha y reconoce el intervalo. Hacerlo un poco cada día rinde más que mucho de una vez.' },
+      { id: 'int-tocar', nom: 'Intervalos en el teclado', n: 20, ej: ejIntervalo({ semis: [3, 4, 5, 7, 9, 10, 11, 12] }),
+        que: 'Toca el intervalo pedido sobre la nota marcada, sin contar con el dedo: que la mano lo sepa.' },
+      { id: 'prog-oido', nom: 'Progresiones de oído', n: 12, ej: ejProgOido({ progs: TODAS_PROGS }),
+        que: 'Reconoce las progresiones más usadas al escucharlas: el paso previo a sacar canciones de oído.' }
+    ] },
+    { grupo: 'Acordes en los 12 tonos', items: [
+      { id: 'triadas12', nom: 'Tríadas mayores y menores', n: 24, ciclo: true, ej: ejAcorde({ tipos: ['', 'm'] }),
+        que: 'Cada tono en mayor y en menor, recorriendo los 12 por el círculo de quintas. Una sesión más corta parte donde quedó la anterior.' },
+      { id: 'inv12', nom: 'Inversiones', n: 12, ciclo: true, ej: ejAcorde({ tipos: ['', 'm'], inversion: true }),
+        que: 'Primera y segunda inversión en todos los tonos: es lo que permite cambiar de acorde moviendo poco la mano.' },
+      { id: 'sept12', nom: 'Acordes de séptima', n: 36, ciclo: true, ej: ejAcorde({ tipos: ['7', 'maj7', 'm7'] }),
+        que: 'Dominante, séptima mayor y menor séptima de cada tono, por el círculo de quintas.' },
+      { id: 'manos12', nom: 'Bajo y acorde, dos manos', n: 12, ciclo: true, ej: ejAcorde({ tipos: ['', 'm'], manos: true }),
+        que: 'La posición básica de acompañar en los 12 tonos: fundamental en la izquierda, acorde en la derecha.' }
+    ] },
+    { grupo: 'Escalas en los 12 tonos', items: [
+      { id: 'esc-mayor', nom: 'Escalas mayores', n: 12, ciclo: true, ej: ejEscala({ escalas: ['mayor'] }),
+        que: 'Las 12 escalas mayores por el círculo de quintas (cada tono suma una alteración). Saber qué notas tiene cada tono.' },
+      { id: 'esc-menor', nom: 'Escalas menores', n: 12, ciclo: true, ej: ejEscala({ escalas: ['menor', 'armonica'] }),
+        que: 'Menor natural y armónica en todos los tonos.' },
+      { id: 'esc-penta', nom: 'Pentatónicas y blues', n: 10, ej: ejEscala({ escalas: ['penta', 'pentam', 'blues'] }),
+        que: 'Las escalas para adornar e improvisar, en tonos al azar.' }
+    ] },
+    { grupo: 'Armonía y progresiones', items: [
+      { id: 'campo-rel', nom: 'Campo armónico relámpago', n: 24, ej: ejCampoQuiz({ modo: 'ambos', clases: ['acorde', 'grado', 'funcion'] }),
+        que: 'Grados, acordes y funciones de cualquier tono mayor o menor, rápido. Es lo que hace inmediato transponer.' },
+      { id: 'grados12', nom: 'Tocar grados en los 12 tonos', n: 12, ciclo: true, ej: ejAcorde({ grado: { modo: 'ambos' }, manos: true }),
+        que: '"El IV de Mib", "el V de Do# menor": armarlo con las dos manos sin pensar.' },
+      { id: 'pop12', nom: 'I–IV–V y I–V–vi–IV en los 12 tonos', n: 12, ciclo: true, ej: ejProgTocar({ progs: ['folk', 'pop'] }),
+        que: 'Las dos progresiones que más canciones acompañan, tono por tono por el círculo de quintas.' },
+      { id: 'iivi12', nom: 'ii–V–I en los 12 tonos', n: 12, ciclo: true, ej: ejProgTocar({ progs: ['iivi'] }),
+        que: 'La cadencia de boleros, bossa y jazz, con séptimas, en todos los tonos.' },
+      { id: 'menor12', nom: 'Progresiones menores en los 12 tonos', n: 12, ciclo: true, ej: ejProgTocar({ progs: ['menor', 'andaluza', 'menorpop'] }),
+        que: 'i–iv–V, la andaluza y el pop en menor, recorriendo los tonos.' },
+      { id: 'transp', nom: 'Transponer progresiones', n: 10, ej: ejTransponer({}),
+        que: 'Lleva progresiones de un tono a otro, eligiendo cada acorde.' }
+    ] },
+    { grupo: 'Ritmo', items: [
+      { id: 'ritmos', nom: 'Ritmos con metrónomo', n: 6, ritmo: true, ej: ejRitmo({ ritmos: RITMOS.map(function (r) { return r.id; }), bpm: 70 }),
+        que: 'Seis pasadas de 4 compases. Elige el ritmo y sube el tempo de a 5 cuando pases el 80 %.' }
+    ] }
+  ];
+  var RUTINAS = [
+    { id: 'diaria', nom: 'Rutina diaria', min: 15, que: 'Un poco de todo, mezclado: notas, oído, acordes, escala, campo armónico y una progresión.',
+      pasos: [['notas', 12], ['int-oido', 10], ['triadas12', 12], ['esc-mayor', 3], ['campo-rel', 10], ['pop12', 4]] },
+    { id: 'corta', nom: 'Calentamiento', min: 5, que: 'Para los días con poco tiempo: notas, tríadas y oído.',
+      pasos: [['notas', 8], ['triadas12', 8], ['int-oido', 6]] },
+    { id: 'acomp', nom: 'Rutina de acompañante', min: 15, que: 'Lo que más se usa al tocar canciones: dos manos, inversiones, grados y progresiones.',
+      pasos: [['manos12', 8], ['inv12', 8], ['grados12', 8], ['pop12', 4], ['iivi12', 4], ['prog-oido', 6]] }
+  ];
+  PRACTICAS.forEach(function (g) { g.items.forEach(function (it) { it.grupo = g.grupo; }); });
+  function practica(id) { var r = null; PRACTICAS.forEach(function (g) { g.items.forEach(function (it) { if (it.id === id) r = it; }); }); return r; }
+  function rutina(id) { for (var i = 0; i < RUTINAS.length; i++) if (RUTINAS[i].id === id) return RUTINAS[i]; return null; }
+  function datosPr() { try { var d = JSON.parse(localStorage.getItem(PRACKEY) || '{}'); d.ej = d.ej || {}; d.dias = d.dias || []; return d; } catch (e) { return { ej: {}, dias: [] }; } }
+  function guardarPr(d) { try { localStorage.setItem(PRACKEY, JSON.stringify(d)); } catch (e) {} }
+  function hoy() { var t = new Date(); return t.getFullYear() + '-' + ('0' + (t.getMonth() + 1)).slice(-2) + '-' + ('0' + t.getDate()).slice(-2); }
+  function racha(dias) {
+    var set = {}, n = 0, t = new Date();
+    dias.forEach(function (d) { set[d] = true; });
+    function clave(x) { return x.getFullYear() + '-' + ('0' + (x.getMonth() + 1)).slice(-2) + '-' + ('0' + x.getDate()).slice(-2); }
+    if (!set[clave(t)]) t.setDate(t.getDate() - 1);   // si hoy aún no practicas, la racha cuenta hasta ayer
+    while (set[clave(t)]) { n++; t.setDate(t.getDate() - 1); }
+    return n;
+  }
+  function seg(x) { return (Math.round(x * 10) / 10).toString().replace('.', ',') + ' s'; }
+  function reloj(s_) { s_ = Math.round(s_); return Math.floor(s_ / 60) + ':' + ('0' + s_ % 60).slice(-2); }
+  function mejorQue(a, b) { return !b || a.pct > b.pct || (a.pct === b.pct && a.prom < b.prom); }
+  function tabsHtml(cual) {
+    return '<nav class="pk-tabs"><a href="#/piano" class="' + (cual === 'lecciones' ? 'on' : '') + '">Lecciones</a><a href="#/piano/practica" class="' + (cual === 'practica' ? 'on' : '') + '">Práctica</a></nav>';
+  }
+
+  function portadaPractica() {
+    S.onKey = null; parar(); S.lec = null; S.ciclo = null;
+    var d = datosPr(), r = racha(d.dias), sesHoy = d.dias.filter(function (x) { return x === hoy(); }).length;
+    S.view.innerHTML =
+      '<div class="pk-scope pk-ancho">' + tabsHtml('practica') +
+      '<div class="rep-head"><div><h1>Práctica diaria</h1><p class="artist">' +
+      (r ? 'Llevas ' + r + ' día' + (r > 1 ? 's' : '') + ' seguido' + (r > 1 ? 's' : '') : 'Todavía no hay racha: empieza hoy') +
+      (sesHoy ? ' · hoy: ' + sesHoy + (sesHoy > 1 ? ' sesiones' : ' sesión') : '') + '</p></div></div>' +
+      '<div class="pk-consejos"><div><b>Poco y seguido.</b> 10 a 15 minutos diarios rinden más que una hora a la semana: lo que se repite en días distintos se retiene mejor.</div>' +
+      '<div><b>Los 12 tonos.</b> Acordes, escalas y progresiones recorren el círculo de quintas; cada sesión parte en el tono donde quedó la anterior.</div>' +
+      '<div><b>Mezclado.</b> Las rutinas alternan ejercicios distintos. Cuesta un poco más, pero se aprende mejor que repetir uno solo.</div>' +
+      '<div><b>Primero limpio, después rápido.</b> Cuenta cada ronda sin errores; cuando estés sobre 90 %, trata de bajar los segundos por ronda.</div></div>' +
+      '<h2 class="pk-h2">Rutinas</h2><div class="pk-unis">' + RUTINAS.map(function (ru) {
+        var st_ = d.ej['rutina-' + ru.id];
+        return '<a class="pk-uni pk-card" href="#/piano/practica/rutina/' + ru.id + '"><div class="pk-uni-head"><h2>' + esc(ru.nom) + '</h2><span class="pk-uni-av">≈' + ru.min + ' min</span></div>' +
+          '<p class="pk-uni-que">' + esc(ru.que) + '</p><p class="pk-uni-que">' + ru.pasos.map(function (p) { return esc(practica(p[0]).nom); }).join(' · ') + '</p>' +
+          '<p class="pk-stat">' + (st_ ? 'Hecha ' + st_.veces + ' ' + (st_.veces > 1 ? 'veces' : 'vez') + ' · última ' + st_.f : 'Sin hacer todavía') + '</p></a>';
+      }).join('') + '</div>' +
+      PRACTICAS.map(function (g) {
+        return '<h2 class="pk-h2">' + esc(g.grupo) + '</h2><div class="pk-unis">' + g.items.map(function (it) {
+          var x = d.ej[it.id];
+          return '<a class="pk-uni pk-card" href="#/piano/practica/' + it.id + '"><div class="pk-uni-head"><h2>' + esc(it.nom) + '</h2><span class="pk-uni-av">' + it.n + ' rondas' + (it.ciclo ? ' · 12 tonos' : '') + '</span></div>' +
+            '<p class="pk-uni-que">' + esc(it.que) + '</p>' +
+            '<p class="pk-stat">' + (x && x.mejor ? 'Mejor: ' + x.mejor.pct + ' % limpias · ' + seg(x.mejor.prom) + ' por ronda · ' + x.veces + ' ' + (x.veces > 1 ? 'veces' : 'vez') : 'Sin practicar todavía') + '</p></a>';
+        }).join('') + '</div>';
+      }).join('') + '</div>';
+  }
+
+  // Sesión de un ejercicio. ru = {r: rutina, k: paso} si es parte de una rutina.
+  function abrirPractica(it, n, ru) {
+    S.onKey = null; S.st = {}; parar();
+    var d = datosPr(), x = d.ej[it.id] || {};
+    var lec = { id: 'practica/' + it.id, uni: { id: it.ritmo ? 'ritmica' : 'practica' } };
+    S.lec = lec; S.uni = null;
+    S.ciclo = it.ciclo ? { i: x.ciclo || 0, t: 0 } : null;
+    var tonoIni = it.ciclo ? ver(RAIZ_MAYOR[CICLO[(x.ciclo || 0) % 12]]) : null;
+    var lateral = ru
+      ? '<div class="panel-title">' + esc(ru.r.nom) + '</div><ol class="pk-lecs">' + ru.r.pasos.map(function (p, i) {
+          return '<li><span class="pk-lec' + (i < ru.k ? ' hecha' : '') + (i === ru.k ? ' actual' : '') + '"><span class="pk-check">' + (i < ru.k ? '✓' : '') + '</span>' + esc(practica(p[0]).nom) + ' (' + p[1] + ')</span></li>';
+        }).join('') + '</ol>'
+      : '<div class="panel-title">' + esc(it.grupo) + '</div><ol class="pk-lecs">' + PRACTICAS.filter(function (g) { return g.grupo === it.grupo; })[0].items.map(function (o) {
+          return '<li><a href="#/piano/practica/' + o.id + '" class="pk-lec' + (o === it ? ' actual' : '') + '"><span class="pk-check"></span>' + esc(o.nom) + '</a></li>';
+        }).join('') + '</ol>';
+    S.view.innerHTML =
+      '<div class="pk-scope pk-lay">' +
+      '<aside class="pk-side"><button class="back" id="pkBack">← Práctica</button>' + lateral + '</aside>' +
+      '<main class="pk-main">' +
+      '<div class="rep-head"><div><p class="pk-crumb">Práctica' + (ru ? ' · ' + esc(ru.r.nom) + ' · paso ' + (ru.k + 1) + ' de ' + ru.r.pasos.length : ' · ' + esc(it.grupo)) + '</p><h1>' + esc(it.nom) + '</h1></div>' +
+      '<div class="pk-reloj"><span id="pkReloj">0:00</span><small>tiempo</small></div></div>' +
+      '<div class="pk-txt">' + esc(it.que) + (tonoIni ? ' Hoy parte en ' + tonoIni + '.' : '') +
+      (x.mejor ? ' Tu mejor marca: ' + x.mejor.pct + ' % limpias, ' + seg(x.mejor.prom) + ' por ronda.' : '') + '</div>' +
+      '<section class="pk-ej"><div class="pk-ej-head"><span class="panel-title">Ronda <span id="pkRonda">1</span> de ' + n + '</span><span class="pk-meta" id="pkMeta"></span></div><div class="pk-bar"><span id="pkBarra"></span></div>' +
+      '<div id="pkEjCuerpo"></div>' + qwAyudaHtml() + '</section>' +
+      '<p class="set-status" id="pkAviso"></p></main></div>';
+    on('pkBack', 'click', function () { S.ctx.navigate('piano/practica'); });
+    wireQw();
+
+    var rondas = [], t0 = null, inicio = null, fallo = false, fallos = 0, fin = false;
+    var tic = setInterval(function () {
+      var el = q('#pkReloj');
+      if (!el || S.lec !== lec) { clearInterval(tic); return; }
+      if (inicio) el.textContent = reloj((Date.now() - inicio) / 1000);
+    }, 500);
+    function pintar() {
+      var limpias = rondas.filter(function (r) { return r.limpia; }).length;
+      q('#pkRonda').textContent = Math.min(rondas.length + 1, n);
+      q('#pkBarra').style.width = Math.round(100 * rondas.length / n) + '%';
+      q('#pkMeta').textContent = rondas.length ? limpias + ' de ' + rondas.length + ' limpias' : '';
+    }
+    function cerrarRonda(ok) {
+      if (fin) return;
+      rondas.push({ limpia: ok && !fallo, s: t0 ? (Date.now() - t0) / 1000 : 0 });
+      t0 = null; pintar();
+      if (rondas.length >= n) terminar();
+    }
+    var ctlP = {
+      nueva: function () { if (fin) return; fallo = false; fallos = 0; t0 = Date.now(); if (!inicio) inicio = t0; },
+      fallos: function () { return fallos; },
+      ok: function () { cerrarRonda(true); },
+      mal: function () { fallos++; fallo = true; },
+      cerrar: function () { cerrarRonda(false); }
+    };
+    function terminar() {
+      fin = true; S.lec = null; S.onKey = null; S.teclados = [];
+      var total = (Date.now() - inicio) / 1000;
+      var limpias = rondas.filter(function (r) { return r.limpia; }).length;
+      var pct = Math.round(100 * limpias / rondas.length);
+      var prom = rondas.reduce(function (a, r) { return a + r.s; }, 0) / rondas.length;
+      var res = { pct: pct, prom: prom, f: hoy() };
+      var d2 = datosPr(), y = d2.ej[it.id] || (d2.ej[it.id] = { veces: 0 });
+      var record = mejorQue(res, y.mejor) && y.veces > 0;
+      y.veces++; y.ultimo = res;
+      if (mejorQue(res, y.mejor)) y.mejor = res;
+      if (S.ciclo) y.ciclo = S.ciclo.i % 12;
+      d2.dias.push(hoy()); d2.dias = d2.dias.slice(-400);
+      var sig = ru && ru.k + 1 < ru.r.pasos.length ? ru.k + 1 : null;
+      if (ru && sig == null) { var z = d2.ej['rutina-' + ru.r.id] || (d2.ej['rutina-' + ru.r.id] = { veces: 0 }); z.veces++; z.f = hoy(); }
+      guardarPr(d2);
+      S.ciclo = null;
+      setTimeout(function () {
+        var cuerpo = q('#pkEjCuerpo'); if (!cuerpo) return;
+        var qa = q('#pkQwAyuda'); if (qa) qa.remove();
+        cuerpo.innerHTML = '<div class="pk-res">' +
+          '<div class="pk-res-num"><b>' + pct + ' %</b><span>rondas limpias</span></div>' +
+          '<div class="pk-res-num"><b>' + seg(prom) + '</b><span>por ronda</span></div>' +
+          '<div class="pk-res-num"><b>' + reloj(total) + '</b><span>en total</span></div></div>' +
+          '<p class="pk-fb ok">' + (record ? '¡Nuevo récord personal!' : pct >= 90 ? 'Muy bien. La próxima vez, trata de bajar los segundos.' : pct >= 70 ? 'Bien. Repite hasta pasar el 90 % de rondas limpias.' : 'Sin apuro: repítelo más lento, la exactitud viene antes que la velocidad.') + '</p>' +
+          '<div class="pk-acc">' + (ru
+            ? (sig != null ? '<a class="pr-play pk-go" href="#/piano/practica/rutina/' + ru.r.id + '/' + sig + '">SIGUIENTE: ' + esc(practica(ru.r.pasos[sig][0]).nom) + '</a>' : '<span class="pk-fb ok">Rutina terminada por hoy.</span>')
+            : '<button class="pr-play pk-go" id="pkOtra">OTRA VEZ</button>') +
+          '<a class="mini-app-btn" href="#/piano/practica">Volver a Práctica</a></div>';
+        on('pkOtra', 'click', function () { abrirPractica(it, n, ru); });
+        if (record || !ru || sig == null) { var c = ac(); if (c) { var t = c.currentTime; [60, 64, 67, 72].forEach(function (m, i) { tocar(m, t + i * 0.08, 1.2, 0.5); }); } }
+      }, 1000);
+    }
+    pintar();
+    it.ej(q('#pkEjCuerpo'), ctlP, lec);
+  }
+
   /* ---------- portada ---------- */
   function portada() {
-    S.onKey = null; parar(); S.lec = null; S.uni = null;
+    S.onKey = null; parar(); S.lec = null; S.uni = null; S.ciclo = null;
     var p = avance(), total = 0, hechas = 0;
     UNIDADES.forEach(function (u) { total += u.lecciones.length; hechas += hechasDe(u); });
     var pendiente = null;
     UNIDADES.some(function (u) { return u.lecciones.some(function (l) { if (!(p[l.id] && p[l.id].hecha)) { pendiente = l; return true; } return false; }); });
     S.view.innerHTML =
-      '<div class="pk-scope">' +
+      '<div class="pk-scope pk-ancho">' + tabsHtml('lecciones') +
       '<div class="rep-head"><div><h1>Piano popular</h1><p class="artist">' + hechas + ' de ' + total + ' lecciones completadas</p></div>' +
       '<div class="ka-head-btns">' + segHtml('pkNot', [['1', 'Do Re Mi'], ['0', 'C D E']], S.cfg.latin ? '1' : '0') +
       '<button class="mini-app-btn" id="pkMidi" title="Si tienes un piano digital conectado por USB, sus teclas cuentan en los ejercicios">Teclado MIDI</button>' +
@@ -1499,7 +1741,7 @@
 
   /* ---------- lección ---------- */
   function abrirLeccion(u, lec) {
-    S.uni = u; S.lec = lec; S.onKey = null; S.st = {}; parar();
+    S.uni = u; S.lec = lec; S.onKey = null; S.st = {}; S.ciclo = null; parar();
     var p = avance(), ls = u.lecciones, idx = ls.indexOf(lec), reg = regLec(lec), sig = siguienteLec(lec);
     S.view.innerHTML =
       '<div class="pk-scope pk-lay">' +
@@ -1516,7 +1758,7 @@
       '<label class="check pk-hecha" title="Se marca sola al cumplir la meta; también puedes marcarla o desmarcarla a mano"><input type="checkbox" id="pkHecha"' + (reg.hecha ? ' checked' : '') + '> Completada</label></div>' +
       '<div class="pk-txt">' + lec.txt + '</div>' +
       '<section class="pk-ej"><div class="pk-ej-head"><span class="panel-title">Ejercicio</span><span class="pk-meta" id="pkMeta"></span></div><div class="pk-bar"><span id="pkBarra"></span></div>' +
-      '<div id="pkEjCuerpo"></div>' + (tactil ? '' : '<p class="pk-qwayuda" id="pkQwAyuda">' + esc(tecladoTexto()) + '</p>') + '</section>' +
+      '<div id="pkEjCuerpo"></div>' + qwAyudaHtml() + '</section>' +
       (u.explorar ? '<section class="pk-explorar"><div class="pk-ej-head"><span class="panel-title">Explorar</span><button class="mini-app-btn" id="pkExpBtn" aria-expanded="false">Mostrar</button></div><div id="pkExp" hidden></div></section>' : '') +
       '<p class="set-status" id="pkAviso"></p>' +
       '</main></div>';
@@ -1566,7 +1808,7 @@
       var nav = q('.pk-side-nav');
       if (sig && nav && !q('#pkSig')) nav.insertAdjacentHTML('beforeend', '<a class="pr-play pk-go" id="pkSig" href="#/' + rutaLec(sig) + '">Siguiente lección</a>');
     }
-    pintarMeta();
+    pintarMeta(); wireQw();
     lec.ej(q('#pkEjCuerpo'), ctlEj, lec);
   }
 
@@ -1588,11 +1830,22 @@
       document.addEventListener('keyup', teclaArriba, true);
     }
     var partes = String(rest || '').split('/'), u = unidad(partes[0]);
+    if (partes[0] === 'practica') {
+      var ru = partes[1] === 'rutina' && rutina(partes[2]);
+      if (ru) {
+        var k = Math.max(0, Math.min(ru.pasos.length - 1, +partes[3] || 0)), paso = ru.pasos[k];
+        abrirPractica(practica(paso[0]), paso[1], { r: ru, k: k });
+        return;
+      }
+      var it = practica(partes[1]);
+      if (it) abrirPractica(it, it.n); else portadaPractica();
+      return;
+    }
     if (!u) { portada(); return; }
     var lec = leccion(u, partes[1]) || u.lecciones[0];
     abrirLeccion(u, lec);
   }
-  function onLeave() { parar(); S.onKey = null; S.lec = null; }
+  function onLeave() { parar(); S.onKey = null; S.lec = null; S.ciclo = null; }
 
   // gancho mínimo de inspección (para probar sin exponer todo)
   SB.piano = {
