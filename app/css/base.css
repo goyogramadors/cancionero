@@ -321,3 +321,51 @@ code{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:var
 .ka-latov{position:absolute;top:84px;right:12px;display:flex;align-items:center;gap:4px;font:600 11px ui-monospace,Consolas,monospace;color:var(--mut)}
 .ka-latov button{background:var(--bg);border:1px solid var(--line);border-radius:2px;color:var(--ink);cursor:pointer;font-size:10px;width:22px;height:22px;line-height:1;padding:0}
 .ka-latov button:hover{border-color:var(--ink)}
+
+/* ---------- piano (aprender) ---------- */
+.pk-scope{max-width:820px;margin:0 auto}
+.pk-scope .controls{margin-top:12px}
+.pk-sel{background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:2px;font:inherit;font-size:13px;padding:6px 7px}
+.pk-sel.ok{border-color:var(--ink);font-weight:700}
+.pk-sel.bad{border-style:dashed;border-color:var(--mut);color:var(--mut)}
+.pk-in{margin:0;font-family:ui-monospace,Consolas,monospace;font-size:17px;font-weight:700}
+.pk-puntos{margin-left:auto;font-size:11.5px;color:var(--mut);font-variant-numeric:tabular-nums}
+.pk-stage{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:18px 0 14px;min-height:110px;justify-content:center}
+.pk-big{font-family:ui-monospace,Consolas,monospace;font-size:40px;font-weight:800;letter-spacing:-.01em;line-height:1.1;text-wrap:balance}
+.pk-big.pk-mid{font-size:24px}
+.pk-sub{font-size:13px;color:var(--mut);max-width:62ch;margin:0 auto;text-align:center}
+.pk-grid{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:10px 0}
+.pk-opt{background:var(--bg);border:1px solid var(--line);border-radius:3px;color:var(--ink);cursor:pointer;font:inherit;font-size:14px;padding:9px 13px;min-width:88px}
+.pk-opt:hover{border-color:var(--ink)}
+.pk-opt[aria-pressed="true"],.pk-opt.ok{background:var(--inv);color:var(--inv-ink);border-color:var(--inv)}
+.pk-opt.bad{color:var(--faint);border-style:dashed;text-decoration:line-through}
+.pk-opt:disabled{cursor:default}
+.pk-kbw{display:flex;justify-content:center;margin:8px 0}
+.pk-kb{width:100%;max-width:640px;height:auto;display:block;touch-action:manipulation;user-select:none;-webkit-user-select:none}
+.pk-kb rect{cursor:pointer}
+.pk-manos{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2.4fr);gap:18px;align-items:end;margin-top:6px}
+.pk-manos .ctl-label{display:block;text-align:center}
+@media (max-width:620px){ .pk-manos{grid-template-columns:minmax(0,1fr)} .pk-izq .pk-kb{max-width:240px} }
+.pk-acc{display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;margin:10px 0}
+.pk-go{padding:11px 26px}
+.pk-fb{text-align:center;font-size:14px;min-height:1.5em;margin:6px 0;color:var(--mut)}
+.pk-fb.ok{color:var(--ink);font-weight:700}
+.pk-fb.bad{color:var(--ink)}
+.pk-campo tr.pk-sel-row td{background:var(--chip)}
+.pk-prog,.pk-trans{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:14px 0 6px}
+.pk-cif{display:flex;flex-direction:column;align-items:center;gap:4px;border:1px solid var(--line);border-radius:3px;padding:8px 12px;min-width:74px}
+.pk-cif.on{border-color:var(--ink);background:var(--inv);color:var(--inv-ink)}
+.pk-rom{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--mut)}
+.pk-cif.on .pk-rom{color:var(--inv-ink);opacity:.75}
+.pk-ac{font-family:ui-monospace,Consolas,monospace;font-size:20px;font-weight:800;display:flex;align-items:center;gap:3px}
+.pk-rej{display:grid;gap:3px;margin:12px 0;font-family:ui-monospace,Consolas,monospace;align-items:center}
+.pk-rej .ctl-label{font-size:9.5px}
+.pk-cu{text-align:center;font-size:11px;color:var(--faint)}
+.pk-cu.on{color:var(--ink);font-weight:700}
+.pk-cel{text-align:center;height:30px;line-height:30px;border:1px solid var(--line);border-radius:2px;font-weight:700;font-size:13px}
+.pk-cel.lleno{background:var(--chip)}
+.pk-cel.on{border-color:var(--ink)}
+.pk-cel.lleno.on{background:var(--inv);color:var(--inv-ink)}
+.pk-tap{background:var(--bg);border:2px solid var(--ink);border-radius:6px;color:var(--ink);cursor:pointer;font:inherit;font-weight:800;font-size:16px;letter-spacing:.06em;padding:22px 40px;touch-action:manipulation;user-select:none}
+.pk-tap:active{background:var(--inv);color:var(--inv-ink)}
+.pk-tap:disabled{opacity:.35;cursor:default}

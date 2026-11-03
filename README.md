@@ -94,6 +94,15 @@ borra las elegidas y **Ctrl+Z** deshace.
 Una plataforma nueva se crea **arrastrando** en el vacío; un toque suelto en el vacío no crea nada,
 solo suelta la selección.
 
+## Piano — aprender piano popular
+
+Pestaña **Piano** (`app/tools/piano/piano.js`): piano para acompañar canciones, no clásico. Siete
+temas en orden (intervalos, acordes, escalas, campo armónico, progresiones, transponer y rítmica),
+cada uno con **Aprender** (teclado en pantalla que muestra y hace sonar) y **Practicar** (ejercicios
+con puntaje que se guarda en el dispositivo). Las notas se deletrean bien (Re + 3ª mayor = Fa#) y se
+ven en Do-Re-Mi o en cifrado americano. Si hay un piano digital conectado por USB, el botón
+**Teclado MIDI** hace que sus teclas cuenten en los ejercicios (Chrome en computador o Android).
+
 ## Estado actual (2026-08-08)
 
 - **Construcción iniciada (Fase 1 lista).** La app real vive en `app/` — arquitectura extensible,

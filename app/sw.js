@@ -6,7 +6,7 @@
    caché, así los cambios llegan en la siguiente carga sin quedar atascado
    en una versión vieja. Igual conviene subir CACHE en cada release.
    ============================================================ */
-const CACHE = 'cancionero-v42';
+const CACHE = 'cancionero-v43';
 const SHELL = [
   'index.html',
   'css/base.css',
@@ -26,6 +26,7 @@ const SHELL = [
   'tools/canta/canta-motor.js',
   'tools/canta/canta-dsp.js',
   'tools/canta/canta-pitch-worklet.js',
+  'tools/piano/piano.js',
   'tools/chords/chords.js',
   'tools/practice/practice.js',
   'tools/settings/settings.js',
