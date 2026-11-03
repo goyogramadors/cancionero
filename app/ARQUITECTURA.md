@@ -137,6 +137,12 @@ inicial sale de `lec.ex`. Para sumar una lección basta agregarla al arreglo; pa
 una fábrica más. El teclado en pantalla (`teclado(el, desde, hasta, marcas, onPress)`) y el teclado
 MIDI (`S.onKey`) alimentan los mismos ejercicios, igual que el teclado del computador (mapa QWERTY de Go.io, `teclaAbajo`, que manda la nota al teclado en pantalla que la contiene). El sonido viene de `core/piano-sonido.js` (`SB.pianoSonido`): el motor del piano de Go.io, con muestras Salamander del CDN de Tone.js que el service worker guarda en un caché aparte (`cancionero-muestras-v1`) y cuerda simulada de respaldo.
 
+**Práctica** (`#/piano/practica`, `#/piano/practica/<id>`, `#/piano/practica/rutina/<id>/<paso>`): el arreglo
+`PRACTICAS` reusa las mismas fábricas de ejercicio con otro marco (`abrirPractica`): N rondas, reloj, rondas
+limpias y segundos por ronda; `ctl.cerrar()` cierra una ronda fallida (rítmica). Con `ciclo: true` las raíces
+salen de `raizAzar`, que sigue el círculo de quintas desde el tono guardado. Resultados, récords, posición del
+ciclo y días practicados en `localStorage` (`sb.piano.practica`). `RUTINAS` encadena pasos `[id, rondas]`.
+
 ## Canta para alumnos (sitio satélite, repo aparte)
 
 **https://goyogramadors.github.io/canta/** es un sitio en **otro repo**
