@@ -18,7 +18,7 @@
   window.SB = window.SB || {};
   var RAMA = 'datos', RUTA = 'progreso.json';
   // servidor abierto (nube/worker.js); vacío = se usa la rama datos del repo
-  var SERVIDOR = '', NOMBRE = 'gregorio';
+  var SERVIDOR = 'https://cancionero-progreso.crearco.workers.dev', NOMBRE = 'gregorio';
   var S = { sha: null, ultimoTraer: 0, timer: null, subiendo: false, otraVez: false, error: '', listo: false };
 
   /* ---------- cómo se unen dos versiones ---------- */
