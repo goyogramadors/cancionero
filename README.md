@@ -111,8 +111,8 @@ Android). El sonido es el del piano de Go.io (muestras del Salamander Grand Pian
 La unidad «Acompañar canciones» toma los acordes de las canciones del propio Cancionero.
 
 **Progreso en todos los navegadores:** el avance de lecciones y Práctica (y los récords de Canta) se
-guarda solo en la rama `datos` del repo y aparece en cualquier navegador. Para que un navegador
-también *suba* su progreso necesita el token de Ajustes (una vez, con tu contraseña).
+guarda solo en un pequeño servidor abierto (Cloudflare, `nube/worker.js`) y aparece en cualquier
+navegador, sin token ni sesión.
 
 ## Estado actual (2026-08-08)
 
