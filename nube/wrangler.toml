@@ -1,0 +1,8 @@
+# Despliegue: npx wrangler deploy (desde esta carpeta), con el id real del KV.
+name = "cancionero-progreso"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+[[kv_namespaces]]
+binding = "PROGRESO"
+id = "REEMPLAZAR_CON_EL_ID_DEL_KV"

@@ -17,6 +17,8 @@
 (function () {
   window.SB = window.SB || {};
   var RAMA = 'datos', RUTA = 'progreso.json';
+  // servidor abierto (nube/worker.js); vacío = se usa la rama datos del repo
+  var SERVIDOR = '', NOMBRE = 'gregorio';
   var S = { sha: null, ultimoTraer: 0, timer: null, subiendo: false, otraVez: false, error: '', listo: false };
 
   /* ---------- cómo se unen dos versiones ---------- */
@@ -79,7 +81,7 @@
     var u = SB.github && SB.github.repoDeUrl && SB.github.repoDeUrl();
     return u || { owner: 'goyogramadors', repo: 'cancionero' };
   }
-  function puedeEscribir() { return !!(SB.github && SB.github.configured()); }
+  function puedeEscribir() { return !!SERVIDOR || !!(SB.github && SB.github.configured()); }
   function url() { var r = repo(); return 'https://api.github.com/repos/' + r.owner + '/' + r.repo + '/contents/' + RUTA; }
   function cabeceras() {
     var h = { 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
@@ -89,18 +91,68 @@
   function b64enc(s) { return btoa(unescape(encodeURIComponent(s))); }
   function b64dec(s) { return decodeURIComponent(escape(atob(String(s).replace(/\n/g, '')))); }
 
+  /* Dónde vive: el servidor abierto (Cloudflare Worker, sin token) si está
+     configurado; si no, progreso.json de la rama datos del repo (escribir
+     pide el token de Ajustes). */
+  // Con servidor, lo que se haya guardado antes en la rama datos se une una
+  // vez al progreso local (leer el repo no pide token).
+  function migrar() {
+    if (S.migrado) return Promise.resolve();
+    S.migrado = true;
+    return fetch(url() + '?ref=' + RAMA, { headers: { 'Accept': 'application/vnd.github+json' }, cache: 'no-store' })
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (data) {
+        if (!data) return;
+        var viejo = {}; try { viejo = JSON.parse(b64dec(data.content)).claves || {}; } catch (e) {}
+        var hubo = false;
+        Object.keys(CLAVES).forEach(function (k) {
+          if (!viejo[k]) return;
+          var u = CLAVES[k](leer(k), viejo[k]);
+          if (!igual(u, leer(k))) { escribir(k, u); hubo = true; }
+        });
+        if (hubo) { try { window.dispatchEvent(new CustomEvent('sb:nube')); } catch (e) {} }
+      }).catch(function () {});
+  }
+  function bajar() {
+    if (SERVIDOR) {
+      return migrar().then(function () { return fetch(SERVIDOR + '/progreso/' + NOMBRE, { cache: 'no-store' }).then(function (res) {
+        if (!res.ok) throw new Error('servidor ' + res.status);
+        return res.json();
+      }); }).then(function (j) { S.hay = !!(j && j.claves); return (j && j.claves) || {}; });
+    }
+    return fetch(url() + '?ref=' + RAMA + '&t=' + Date.now(), { headers: cabeceras(), cache: 'no-store' }).then(function (res) {
+      if (res.status === 404) { S.sha = null; S.hay = false; return null; }
+      if (!res.ok) throw new Error('GitHub ' + res.status);
+      return res.json();
+    }).then(function (data) {
+      if (!data) return {};
+      S.sha = data.sha; S.hay = true;
+      try { return (JSON.parse(b64dec(data.content)).claves) || {}; } catch (e) { return {}; }
+    });
+  }
+  function guardar(datos) {
+    var texto = JSON.stringify({ v: 1, claves: datos }, null, 1);
+    if (SERVIDOR) {
+      return fetch(SERVIDOR + '/progreso/' + NOMBRE, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: texto }).then(function (res) {
+        if (!res.ok) throw new Error('servidor ' + res.status);
+        S.remoto = datos; S.hay = true; S.error = ''; return true;
+      });
+    }
+    var cuerpo = { message: 'progreso: ' + new Date().toISOString(), branch: RAMA, content: b64enc(texto) };
+    if (S.sha) cuerpo.sha = S.sha;
+    return fetch(url(), { method: 'PUT', headers: cabeceras(), body: JSON.stringify(cuerpo) }).then(function (res) {
+      if (res.status === 409 || res.status === 422) { S.otraVez = true; return false; }   // otro navegador guardó justo antes
+      if (!res.ok) throw new Error('GitHub ' + res.status);
+      return res.json().then(function (j) { S.sha = j.content && j.content.sha; S.remoto = datos; S.hay = true; S.error = ''; return true; });
+    });
+  }
+
   // Baja el progreso del repo y lo une con el de este navegador.
   // Devuelve true si cambió algo aquí (llegó progreso de otro lado).
   function traer(sinSubir) {
     if (!window.fetch) return Promise.resolve(false);
-    return fetch(url() + '?ref=' + RAMA + '&t=' + Date.now(), { headers: cabeceras(), cache: 'no-store' }).then(function (res) {
-      if (res.status === 404) { S.sha = null; return null; }
-      if (!res.ok) throw new Error('GitHub ' + res.status);
-      return res.json();
-    }).then(function (data) {
+    return bajar().then(function (remoto) {
       S.ultimoTraer = Date.now(); S.listo = true; S.error = '';
-      var remoto = {};
-      if (data) { S.sha = data.sha; try { remoto = (JSON.parse(b64dec(data.content)).claves) || {}; } catch (e) { remoto = {}; } }
       S.remoto = remoto;
       var cambio = false;
       Object.keys(CLAVES).forEach(function (k) {
@@ -130,15 +182,8 @@
     // siempre se trae primero: así se une con lo último de los otros navegadores
     return traer(true).then(function () {
       var datos = unirTodo(S.remoto || {});
-      if (S.sha && igual(datos, S.remoto)) return false;
-      var cuerpo = { message: 'progreso: ' + new Date().toISOString(), branch: RAMA,
-        content: b64enc(JSON.stringify({ v: 1, claves: datos }, null, 1)) };
-      if (S.sha) cuerpo.sha = S.sha;
-      return fetch(url(), { method: 'PUT', headers: cabeceras(), body: JSON.stringify(cuerpo) }).then(function (res) {
-        if (res.status === 409 || res.status === 422) { S.otraVez = true; return false; }   // otro navegador guardó justo antes
-        if (!res.ok) throw new Error('GitHub ' + res.status);
-        return res.json().then(function (j) { S.sha = j.content && j.content.sha; S.remoto = datos; S.error = ''; return true; });
-      });
+      if (S.hay && igual(datos, S.remoto)) return false;
+      return guardar(datos);
     }).catch(function (e) { S.error = e.message || String(e); return false; })
       .then(function (r) {
         S.subiendo = false;
