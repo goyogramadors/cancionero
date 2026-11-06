@@ -6,7 +6,7 @@
    caché, así los cambios llegan en la siguiente carga sin quedar atascado
    en una versión vieja. Igual conviene subir CACHE en cada release.
    ============================================================ */
-const CACHE = 'cancionero-v46';
+const CACHE = 'cancionero-v47';
 const MUESTRAS = 'cancionero-muestras-v1'; // piano (Salamander): se guardan aparte y no se borran al subir CACHE
 const SHELL = [
   'index.html',
@@ -16,6 +16,7 @@ const SHELL = [
   'core/ui.js',
   'core/store.js',
   'core/github.js',
+  'core/nube.js',
   'core/diagrams.js',
   'core/chords.js',
   'core/app.js',

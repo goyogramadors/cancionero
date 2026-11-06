@@ -256,6 +256,16 @@ refresca en la carga siguiente).
   `tools/settings/`. Requiere un token fino con **Contents: Read and write**. Manual por ahora
   (botones Traer/Subir); el `store` no cambia su forma, así que evolucionar a per-archivo o
   auto-sync no toca las herramientas.
+- **Progreso en la nube (automático):** `core/nube.js` (`SB.nube`) sincroniza el avance del Piano
+  (`sb.piano.progreso`, `sb.piano.practica`) y los récords de Canta (`sb.canta.best`) con
+  `progreso.json` de la rama **`datos`** del repo (no se publica, así que guardar no republica el
+  sitio). Leer no pide token (repo público): al abrir la app y al volver a la pestaña se trae y se
+  une con lo local. Escribir usa el token de Ajustes: las herramientas llaman `SB.nube.cambio()` al
+  guardar y se sube a los 4 s (y al ocultar la pestaña), trayendo primero y reintentando si otro
+  navegador guardó justo antes (409). La unión es conmutativa (máximos de contadores y récords, unión
+  de días; «Completada» la decide el cambio más reciente, campo `th`), así que el orden no importa.
+  Cuando llega progreso de otro navegador se emite `sb:nube` y el Piano redibuja sus portadas. Para
+  sincronizar otra clave, agrégala a `CLAVES` con su función de unión.
 - **Publicar plataformas de Canta:** las plataformas corregidas a mano viven en `localStorage`
   (por dispositivo). "Traer/Subir" las lleva a `data/user-songs.json`, pero eso solo lo ven los
   aparatos con el mismo token. Para que las vea **cualquiera** (incluido el sitio de alumnos), el
