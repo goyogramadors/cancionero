@@ -72,7 +72,7 @@
   function saveBest(id, v) {
     try {
       var m = JSON.parse(localStorage.getItem(BESTKEY) || '{}');
-      if (v > (m[id] || 0)) { m[id] = v; localStorage.setItem(BESTKEY, JSON.stringify(m)); }
+      if (v > (m[id] || 0)) { m[id] = v; localStorage.setItem(BESTKEY, JSON.stringify(m)); if (SB.nube) SB.nube.cambio(); }
     } catch (e) {}
   }
 

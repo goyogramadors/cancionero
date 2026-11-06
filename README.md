@@ -110,6 +110,10 @@ botón **Teclado MIDI** hace que sus teclas cuenten en los ejercicios (Chrome en
 Android). El sonido es el del piano de Go.io (muestras del Salamander Grand Piano, guardadas para usar sin internet) y en el computador se toca también con el teclado, igual que en Go.io: TAB Q W E R T Y U I O P ` + Enter son las blancas y 1 2 4 5 6 8 9 ' ¡ Borrar las negras, desde Do4; ↑ ↓ cambian la octava. Un botón «⌨ Teclas» bajo cada ejercicio prende o apaga el teclado del computador, para usar sólo el mouse. La pestaña **Práctica** (`#/piano/practica`) tiene 18 ejercicios largos para automatizar (notas, oído, acordes, escalas, armonía y ritmo, la mayoría recorriendo los 12 tonos por el círculo de quintas) y 3 rutinas mezcladas de 5 a 15 minutos; cada sesión mide rondas limpias y segundos por ronda, guarda el récord y la racha de días. En pantallas anchas la lección muestra a la izquierda la lista de lecciones de la unidad.
 La unidad «Acompañar canciones» toma los acordes de las canciones del propio Cancionero.
 
+**Progreso en todos los navegadores:** el avance de lecciones y Práctica (y los récords de Canta) se
+guarda solo en la rama `datos` del repo y aparece en cualquier navegador. Para que un navegador
+también *suba* su progreso necesita el token de Ajustes (una vez, con tu contraseña).
+
 ## Estado actual (2026-08-08)
 
 - **Construcción iniciada (Fase 1 lista).** La app real vive en `app/` — arquitectura extensible,

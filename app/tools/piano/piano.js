@@ -470,20 +470,20 @@
 
   /* ================= avance ================= */
   function avance() { try { return JSON.parse(localStorage.getItem(PROGKEY) || '{}'); } catch (e) { return {}; } }
-  function guardarAvance(p) { try { localStorage.setItem(PROGKEY, JSON.stringify(p)); } catch (e) {} }
+  function guardarAvance(p) { try { localStorage.setItem(PROGKEY, JSON.stringify(p)); } catch (e) {} if (SB.nube) SB.nube.cambio(); }
   function regLec(lec) { var p = avance(); return p[lec.id] || { ok: 0, n: 0, hecha: false }; }
   function anotar(lec, ok) {
     var p = avance(), x = p[lec.id] || (p[lec.id] = { ok: 0, n: 0, hecha: false });
     x.n++;
     if (ok) x.ok++;
     var recien = !x.hecha && x.ok >= lec.meta;
-    if (recien) x.hecha = true;
+    if (recien) { x.hecha = true; x.th = Date.now(); }
     guardarAvance(p);
     return { reg: x, recien: recien };
   }
   function marcarHecha(lec, v) {
     var p = avance(), x = p[lec.id] || (p[lec.id] = { ok: 0, n: 0, hecha: false });
-    x.hecha = !!v; guardarAvance(p);
+    x.hecha = !!v; x.th = Date.now(); guardarAvance(p);
   }
   function cargarCfg() {
     var d = { latin: true };
@@ -1571,7 +1571,7 @@
   function practica(id) { var r = null; PRACTICAS.forEach(function (g) { g.items.forEach(function (it) { if (it.id === id) r = it; }); }); return r; }
   function rutina(id) { for (var i = 0; i < RUTINAS.length; i++) if (RUTINAS[i].id === id) return RUTINAS[i]; return null; }
   function datosPr() { try { var d = JSON.parse(localStorage.getItem(PRACKEY) || '{}'); d.ej = d.ej || {}; d.dias = d.dias || []; return d; } catch (e) { return { ej: {}, dias: [] }; } }
-  function guardarPr(d) { try { localStorage.setItem(PRACKEY, JSON.stringify(d)); } catch (e) {} }
+  function guardarPr(d) { try { localStorage.setItem(PRACKEY, JSON.stringify(d)); } catch (e) {} if (SB.nube) SB.nube.cambio(); }
   function hoy() { var t = new Date(); return t.getFullYear() + '-' + ('0' + (t.getMonth() + 1)).slice(-2) + '-' + ('0' + t.getDate()).slice(-2); }
   function racha(dias) {
     var set = {}, n = 0, t = new Date();
@@ -1584,6 +1584,7 @@
   function seg(x) { return (Math.round(x * 10) / 10).toString().replace('.', ',') + ' s'; }
   function reloj(s_) { s_ = Math.round(s_); return Math.floor(s_ / 60) + ':' + ('0' + s_ % 60).slice(-2); }
   function mejorQue(a, b) { return !b || a.pct > b.pct || (a.pct === b.pct && a.prom < b.prom); }
+  function nubeHtml() { return SB.nube ? '<p class="ed-note pk-credito">☁ ' + esc(SB.nube.estado().txt) + '</p>' : ''; }
   function tabsHtml(cual) {
     return '<nav class="pk-tabs"><a href="#/piano" class="' + (cual === 'lecciones' ? 'on' : '') + '">Lecciones</a><a href="#/piano/practica" class="' + (cual === 'practica' ? 'on' : '') + '">Práctica</a></nav>';
   }
@@ -1613,7 +1614,7 @@
             '<p class="pk-uni-que">' + esc(it.que) + '</p>' +
             '<p class="pk-stat">' + (x && x.mejor ? 'Mejor: ' + x.mejor.pct + ' % limpias · ' + seg(x.mejor.prom) + ' por ronda · ' + x.veces + ' ' + (x.veces > 1 ? 'veces' : 'vez') : 'Sin practicar todavía') + '</p></a>';
         }).join('') + '</div>';
-      }).join('') + '</div>';
+      }).join('') + nubeHtml() + '</div>';
   }
 
   // Sesión de un ejercicio. ru = {r: rutina, k: paso} si es parte de una rutina.
@@ -1732,7 +1733,7 @@
             return '<li><a href="#/' + rutaLec(l) + '" class="pk-lec' + (r && r.hecha ? ' hecha' : '') + '"><span class="pk-check">' + (r && r.hecha ? '✓' : '') + '</span>' + esc(l.nom) + '</a></li>';
           }).join('') + '</ol></section>';
       }).join('') + '</div>' +
-      '<p class="ed-note pk-credito">Sonido: el piano de Go.io, con muestras del Salamander Grand Piano de Alexander Holm (CC BY 3.0) vía Tone.js; sin internet suena un piano sintetizado.' + (tactil ? '' : ' En el computador puedes tocar con el teclado: TAB, Q, W, E… son las blancas y 1, 2, 4, 5, 6… las negras.') + '</p></div>';
+      '<p class="ed-note pk-credito">Sonido: el piano de Go.io, con muestras del Salamander Grand Piano de Alexander Holm (CC BY 3.0) vía Tone.js; sin internet suena un piano sintetizado.' + (tactil ? '' : ' En el computador puedes tocar con el teclado: TAB, Q, W, E… son las blancas y 1, 2, 4, 5, 6… las negras.') + '</p>' + nubeHtml() + '</div>';
     segWire('pkNot', function (v) { S.cfg.latin = v === '1'; guardarCfg(); });
     on('pkMidi', 'click', function () { conectarMidi(q('#pkMidi')); });
     if (S.midi) q('#pkMidi').setAttribute('aria-pressed', 'true');
@@ -1845,6 +1846,12 @@
     var lec = leccion(u, partes[1]) || u.lecciones[0];
     abrirLeccion(u, lec);
   }
+  // llegó progreso de otro navegador: se redibujan las portadas (no un ejercicio en curso)
+  window.addEventListener('sb:nube', function () {
+    if (!S.view || !S.ctx || !document.body.contains(S.view)) return;
+    var h = location.hash.replace(/^#\/?/, '');
+    if (h === 'piano' || h === 'piano/' || h === 'piano/practica') mount(S.view, h.slice(6), S.ctx);
+  });
   function onLeave() { parar(); S.onKey = null; S.lec = null; S.ciclo = null; }
 
   // gancho mínimo de inspección (para probar sin exponer todo)
