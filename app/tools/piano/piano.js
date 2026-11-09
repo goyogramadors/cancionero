@@ -947,7 +947,7 @@
             st.raiz = raizAzar(!!tipo(st.tipo).menor);
           }
         }
-        st.inv = opts.inversion ? azar([1, 2]) : 0;
+        st.inv = opts.inversion ? (opts.inversion === true ? azar([1, 2]) : opts.inversion) : 0;
         st.sel = []; st.selI = []; st.listo = false;
         var nombre = ver(cifra(st.raiz, st.tipo));
         if (opts.grado) consigna('En ' + ver(st.tono) + (st.modo === 'menor' ? ' menor' : ' mayor') + ', arma el', st.rom, 'Toca las notas del acorde y comprueba' + (opts.manos ? ' (el bajo en la mano izquierda)' : ''));
@@ -1415,12 +1415,30 @@
         txt: 'El acorde menor cambia <b>solo la tercera</b>: baja un semitono (3 semitonos desde la fundamental). Lam = La–Do–Mi. Ejercicio mixto: fíjate bien si piden mayor o menor.' },
       { id: 'manos', nom: 'Las dos manos', meta: 6, ej: ejAcorde({ tipos: ['', 'm'], manos: true }),
         txt: 'Así se acompaña en piano popular: la <b>mano izquierda toca la fundamental</b> (el bajo, una sola nota, entre Do2 y Do3) y la <b>derecha toca el acorde</b>. Con eso ya suena a canción. Más adelante el bajo alterna con la quinta y la derecha cambia de inversión.' },
-      { id: 'inversiones', nom: 'Inversiones', meta: 6, ej: ejAcorde({ tipos: ['', 'm'], inversion: true }),
-        txt: 'Invertir un acorde es tocar las mismas notas empezando por otra. <b>1ª inversión</b>: la 3ª queda abajo (Mi–Sol–Do). <b>2ª inversión</b>: la 5ª abajo (Sol–Do–Mi). Sirven para pasar de un acorde a otro <b>moviendo poco la mano</b>: de Do a Fa, en vez de saltar, basta con mover dos dedos (Do–Mi–Sol → Do–Fa–La).' },
-      { id: 'septimas', nom: 'Acordes de séptima', meta: 8, ex: { tipo: '7' }, ej: ejAcorde({ tipos: ['7', 'maj7', 'm7'] }),
-        txt: 'Se agrega una cuarta nota. <b>Sol7</b> (dominante): tríada mayor + 7ª menor (10 semitonos): pide resolver al I. <b>Domaj7</b>: tríada mayor + 7ª mayor (11): suave, de balada y bossa. <b>Lam7</b>: tríada menor + 7ª menor: el menor "relajado" del pop y el jazz.' },
+      { id: 'inv1', nom: '1ª inversión', meta: 6, ex: { inv: 1 }, ej: ejAcorde({ tipos: ['', 'm'], inversion: 1 }),
+        txt: 'Invertir un acorde es tocar <b>las mismas notas</b> empezando por otra. En la <b>1ª inversión</b> la fundamental se va arriba y la <b>3ª queda abajo</b>: Do–Mi–Sol pasa a <b>Mi–Sol–Do</b>; Lam (La–Do–Mi) pasa a <b>Do–Mi–La</b>. Para armarla, piensa el acorde normal y sube la nota de abajo una octava. Suena un poco más liviana que la posición fundamental.' },
+      { id: 'inv2', nom: '2ª inversión', meta: 6, ex: { inv: 2 }, ej: ejAcorde({ tipos: ['', 'm'], inversion: 2 }),
+        txt: 'En la <b>2ª inversión</b> la que queda abajo es la <b>5ª</b>: Do–Mi–Sol pasa a <b>Sol–Do–Mi</b>; Lam pasa a <b>Mi–La–Do</b>. Es como subir dos notas de la posición fundamental. Truco para reconocerla: la fundamental queda <b>en el medio</b>, y entre las dos notas de abajo hay una 4ª (5 semitonos).' },
+      { id: 'inversiones', nom: 'Inversiones mezcladas', meta: 8, ej: ejAcorde({ tipos: ['', 'm'], inversion: true }),
+        txt: 'Ahora te piden 1ª o 2ª al azar. ¿Para qué sirven? Para pasar de un acorde a otro <b>moviendo poco la mano</b>: de Do a Fa, en vez de saltar, basta con mover dos dedos (Do–Mi–Sol → Do–Fa–La, que es Fa en 2ª inversión). Así acompañan los pianistas: la mano derecha casi quieta y el bajo marcando el acorde.' },
+      { id: 'dom7', nom: 'Séptima dominante (7)', meta: 6, ex: { tipo: '7' }, ej: ejAcorde({ tipos: ['7'] }),
+        txt: 'A la tríada mayor se le agrega una cuarta nota: la <b>7ª menor</b>, 10 semitonos sobre la fundamental (o un tono abajo de la octava). <b>Sol7</b> = Sol–Si–Re–<b>Fa</b>. Es el acorde con más tensión del tono: <b>pide resolver</b> al acorde que está una 5ª abajo (Sol7 → Do). Cuando en un cifrado ves solo un «7», es este.' },
+      { id: 'maj7', nom: 'Séptima mayor (maj7)', meta: 6, ex: { tipo: 'maj7' }, ej: ejAcorde({ tipos: ['maj7'] }),
+        txt: 'Tríada mayor + <b>7ª mayor</b>: 11 semitonos, un semitono abajo de la octava. <b>Domaj7</b> = Do–Mi–Sol–<b>Si</b>. No tensa como el 7: suena suave, soñador, de balada, bossa y jazz. Ojo con no confundirlos: <b>Do7 lleva Si♭, Domaj7 lleva Si</b>. Se escribe maj7, M7 o Δ.' },
+      { id: 'm7', nom: 'Menor séptima (m7)', meta: 6, ex: { tipo: 'm7' }, ej: ejAcorde({ tipos: ['m7'] }),
+        txt: 'Tríada <b>menor</b> + <b>7ª menor</b> (10 semitonos). <b>Lam7</b> = La–Do–Mi–<b>Sol</b>. Es el menor "relajado" del pop, el soul y el jazz; el ii del tono casi siempre se toca así (Rem7 en Do). Fíjate en un detalle útil: Lam7 tiene las mismas notas que Do6 (Do–Mi–Sol–La).' },
+      { id: 'septimas', nom: 'Las tres séptimas', meta: 8, ex: { tipo: '7' }, ej: ejAcorde({ tipos: ['7', 'maj7', 'm7'] }),
+        txt: 'Mezcladas: te piden 7, maj7 o m7 al azar. Antes de tocar, pregúntate dos cosas: <b>¿la 3ª es mayor o menor?</b> y <b>¿la 7ª es mayor (un semitono bajo la octava) o menor (un tono bajo la octava)?</b> Con esas dos respuestas sale cualquiera de los tres.' },
+      { id: 'sus2', nom: 'Suspendido 2 (sus2)', meta: 6, ex: { tipo: 'sus2' }, ej: ejAcorde({ tipos: ['sus2'] }),
+        txt: 'Un acorde <b>suspendido</b> no tiene 3ª, así que no es ni mayor ni menor. En el <b>sus2</b> la 3ª se reemplaza por la <b>2ª</b> (2 semitonos sobre la fundamental): <b>Dosus2</b> = Do–<b>Re</b>–Sol. Suena abierto, moderno, "flotante": muy usado en pop y rock como color, o para adornar un acorde mayor yendo y volviendo.' },
+      { id: 'sus4', nom: 'Suspendido 4 (sus4)', meta: 6, ex: { tipo: 'sus4' }, ej: ejAcorde({ tipos: ['sus4'] }),
+        txt: 'En el <b>sus4</b> la 3ª se reemplaza por la <b>4ª</b> (5 semitonos): <b>Dosus4</b> = Do–<b>Fa</b>–Sol. A diferencia del sus2, este sí <b>pide resolver</b>: la 4ª quiere bajar a la 3ª (Dosus4 → Do). Ese "suspenso que se resuelve" aparece en miles de finales de canción. Dato: Dosus2 y Solsus4 tienen las mismas notas.' },
+      { id: 'dim', nom: 'Disminuido (º)', meta: 6, ex: { tipo: 'dim' }, ej: ejAcorde({ tipos: ['dim'] }),
+        txt: 'El <b>disminuido</b> es un acorde menor con la <b>5ª bajada</b> un semitono: dos 3as menores apiladas (3 + 3 semitonos). <b>Siº</b> = Si–Re–Fa. Suena inestable y se usa sobre todo <b>de paso</b>, entre dos acordes que están a un tono (Do – Do#º – Rem). Es el viiº del tono mayor.' },
+      { id: 'aug', nom: 'Aumentado (+)', meta: 6, ex: { tipo: 'aug' }, ej: ejAcorde({ tipos: ['aug'] }),
+        txt: 'El <b>aumentado</b> es un acorde mayor con la <b>5ª subida</b> un semitono: dos 3as mayores apiladas (4 + 4 semitonos). <b>Do+</b> = Do–Mi–<b>Sol#</b>. Suena misterioso, de suspenso, y casi siempre va <b>entre dos acordes</b> para crear tensión: Do – Do+ – Fa, o Do – Do+ – Lam (la 5ª va subiendo de a semitono).' },
       { id: 'otros', nom: 'Sus, disminuido y aumentado', meta: 8, ej: ejAcorde({ tipos: ['sus4', 'sus2', 'dim', 'aug'] }),
-        txt: '<b>Sus4</b> y <b>sus2</b> reemplazan la 3ª por la 4ª o la 2ª: quedan "suspendidos", ni mayores ni menores (Dosus4 → Do, muy usado en pop). <b>Disminuido</b> (º): menor con la 5ª bajada, acorde de paso. <b>Aumentado</b> (+): mayor con la 5ª subida, para tensión entre dos acordes.' },
+        txt: 'Repaso mezclado de los cuatro. Guía rápida: <b>sus2</b> y <b>sus4</b> cambian la 3ª por la 2ª o la 4ª y dejan la 5ª igual; <b>disminuido</b> y <b>aumentado</b> dejan una 3ª y mueven la 5ª (abajo en el º, que va con 3ª menor; arriba en el +, que va con 3ª mayor).' },
       { id: 'grados', nom: 'Armar el grado de un tono', meta: 8, ej: ejAcorde({ grado: { modo: 'mayor' }, manos: true }),
         txt: 'Junta todo lo anterior: te piden <b>un grado de un tono</b> (por ejemplo "el IV de Sol") y tú armas el acorde con las dos manos. Cuenta por la escala mayor del tono: I, ii, iii, IV, V, vi. Mayúscula = mayor, minúscula = menor. Si no te acuerdas del campo armónico, mira la unidad 5.' }
     ] },
