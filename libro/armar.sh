@@ -37,3 +37,11 @@ pandoc libro.md -o teoria-musical.epub --from markdown+pipe_tables+implicit_figu
   --metadata author="Cancionero" --metadata lang=es-CL --metadata date="$(date +%Y-%m-%d)" \
   --metadata toc-title="Contenido"
 ls -la teoria-musical.epub
+# PDF tamaño carta: mismo texto, con los esquemas en SVG (vectorial)
+sed -E 's#\(fig/([^)]+)\.png\)#(svg/\1.svg)#g' libro.md > libro-pdf.md
+pandoc libro-pdf.md -o libro.html --from markdown+pipe_tables+implicit_figures --to html5 --standalone \
+  --toc --toc-depth=1 --css ../pdf.css --metadata title="Teoría musical simple y entretenida" \
+  --metadata lang=es-CL --metadata toc-title="Contenido" \
+  --include-before-body=<(echo '<div id="portada"><img src="svg/portada.svg" alt="Portada"/></div>')
+node ../pdf.js
+ls -la teoria-musical.pdf
