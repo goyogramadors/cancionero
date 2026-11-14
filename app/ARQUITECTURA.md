@@ -107,8 +107,10 @@ La herramienta más grande; sirve de ejemplo de una sub-herramienta con audio pe
 
 - **`canta-libre.js`** (`SB.cantaLibre`) — dos pantallas sin canción fija, que `canta.js` monta en
   `#/canta/libre` y `#/canta/rango` y que aparecen primeras en la biblioteca. **Canta Libre**: carril
-  alto (2 octavas a la vista, sigue a la voz), líneas de los Do marcadas, trazo de cada muestra y un
-  punto con cartel que dice la nota promediando 0,5 s; de fondo, opcional, la `music.m4a` de un
+  alto (4 octavas a la vista, sigue a la voz), micrófono encendido al entrar, líneas de los Do
+  marcadas, trazo suavizado (constante de 0,3 s, para aplanar el temblor natural de la voz; un salto
+  de nota corta el suavizado) y un punto con cartel que dice solo el nombre de la nota más cercana,
+  promediando 0,5 s; de fondo, opcional, la `music.m4a` de un
   paquete o un video de YouTube incrustado. **Rango vocal**: marca la nota sostenida más grave y la
   más aguda (0,8 s dentro de un semitono) y guarda `{lo, hi, fecha}` en `localStorage`
   (`sb.canta.rango`); Canta Libre lo dibuja como franja. Si el archivo no está cargado (sitio de
