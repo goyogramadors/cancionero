@@ -95,14 +95,18 @@
   function status(msg) { if (S.els && S.els.status) S.els.status.textContent = msg || ''; }
 
   /* ================= BIBLIOTECA ================= */
-  async function mountLibrary() {
-    S.screen = 'lib';
-    // volver a la biblioteca dentro de Canta no pasa por onLeave: soltar todo aquí
+  function soltarTodo() {
     if (S.raf) { cancelAnimationFrame(S.raf); S.raf = 0; }
     if (S.applyTimer) { clearTimeout(S.applyTimer); S.applyTimer = null; }
     SB.cantaPitch.stop();
     tonoParar();
     E().pause();
+  }
+
+  async function mountLibrary() {
+    S.screen = 'lib';
+    // volver a la biblioteca dentro de Canta no pasa por onLeave: soltar todo aquí
+    soltarTodo();
     S.view.innerHTML =
       '<div class="ka-scope">' +
       '<div class="rep-head"><h1>Canta</h1><span class="count" id="kaCount"></span></div>' +
@@ -605,7 +609,12 @@
       (archivas.length ? ' · ' + archivas.length + ' archivada' + (archivas.length === 1 ? '' : 's') : '');
 
     var tb = q('#kaList tbody');
-    tb.innerHTML = activas.map(function (r) { return filaLibreria(r); }).join('') ||
+    var fijas = !SB.cantaLibre ? '' :
+      '<tr class="song ka-fija" data-ruta="libre"><td class="t-title">Canta Libre</td><td>Sin canción fija: mira qué nota cantas</td>' +
+      '<td class="t-key">—</td><td class="t-acc"><span class="badge">libre</span></td></tr>' +
+      '<tr class="song ka-fija" data-ruta="rango"><td class="t-title">Rango vocal</td><td>Ejercicio: tu nota más grave y más aguda</td>' +
+      '<td class="t-key">—</td><td class="t-acc"><span class="badge">ejercicio</span></td></tr>';
+    tb.innerHTML = fijas + activas.map(function (r) { return filaLibreria(r); }).join('') ||
       '<tr class="stub"><td colspan="4">Sin canciones todavía — prepara una arriba, o prueba la demo.</td></tr>';
 
     var cajaArch = q('#kaArchBox');
@@ -626,7 +635,7 @@
     [tb, q('#kaArchList')].forEach(function (cont) {
       if (!cont) return;
       cont.querySelectorAll('tr.song').forEach(function (tr) {
-        tr.addEventListener('click', function () { S.ctx.navigate('canta/song/' + encodeURIComponent(tr.dataset.id)); });
+        tr.addEventListener('click', function () { S.ctx.navigate(tr.dataset.ruta ? 'canta/' + tr.dataset.ruta : 'canta/song/' + encodeURIComponent(tr.dataset.id)); });
       });
       cont.querySelectorAll('button[data-arch]').forEach(function (b) {
         b.addEventListener('click', function (ev) { ev.stopPropagation(); setArchivada(b.dataset.arch, true); drawLibrary(); });
@@ -689,7 +698,7 @@
     var pkg = E().current();
     S.screen = 'play';
     S.best = bestFor(pkg.id);
-    S.score = 0; S.streak = 0; S.trace = []; S.lineIdx = -1; S.wrapOff = 0;
+    S.score = 0; S.streak = 0; S.trace = []; S.lineIdx = -1; S.wrapOff = 0; S.wrapSet = false; S.wrapT = 0;
     S.pendSemis = 0; S.pendTempo = 100;
     // otra canción: la toma cargada y la grabación en curso no aplican
     S.grabando = false; S.tomaTrace = []; S.tomaTramos = []; S.tramo = null;
@@ -1596,7 +1605,17 @@
       if (target) {
         var goal = target.m + semis;
         if (S.cfg.octaveFree) {
-          S.wrapOff = 12 * Math.round((goal - sample.midi) / 12);
+          // La octava mostrada es ESTABLE. Antes se recalculaba en cada
+          // muestra hacia la plataforma: al pasar de 6 semitonos de
+          // distancia el punto saltaba al otro lado y parecía «imantado»
+          // a la nota en vez de seguir la voz. Ahora solo cambia de octava
+          // si la voz lleva un rato sostenido claramente en otra.
+          var ideal = 12 * Math.round((goal - sample.midi) / 12);
+          if (!S.wrapSet) { S.wrapOff = ideal; S.wrapSet = true; S.wrapT = 0; }
+          else if (ideal !== S.wrapOff && Math.abs(sample.midi + S.wrapOff - goal) > 7.5) {
+            S.wrapT = (S.wrapT || 0) + dt;
+            if (S.wrapT >= 0.4) { S.wrapOff = ideal; S.wrapT = 0; }
+          } else S.wrapT = 0;
           shown = sample.midi + S.wrapOff;
         }
         var hit = Math.abs(shown - goal) <= N.tol;
@@ -2889,11 +2908,20 @@
     S.mountSeq = (S.mountSeq || 0) + 1;
     if (!S.cfg) S.cfg = loadCfg();
     var m = /^song\/(.+)$/.exec(rest || '');
+    // Canta Libre y Rango vocal viven en canta-libre.js (puede no estar cargado,
+    // p. ej. en el sitio de alumnos): sin él se cae a la biblioteca.
+    if (S.libre) { S.libre(); S.libre = null; }
+    var L = SB.cantaLibre;
     if (m) openSong(decodeURIComponent(m[1]));
+    else if (L && (rest === 'libre' || rest === 'rango')) {
+      soltarTodo(); S.screen = rest;
+      S.libre = L.montar(view, rest, ctx, S.cfg);
+    }
     else mountLibrary();
   }
 
   function leave() {
+    if (S.libre) { S.libre(); S.libre = null; }
     tonoParar();
     S.mountSeq = (S.mountSeq || 0) + 1; // invalida cargas en curso
     if (S.raf) cancelAnimationFrame(S.raf);

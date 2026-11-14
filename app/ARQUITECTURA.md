@@ -105,6 +105,18 @@ La herramienta más grande; sirve de ejemplo de una sub-herramienta con audio pe
   AudioWorklet (decimación ×3). El estabilizador (compuerta de ruido adaptativa, mediana,
   anti-octava, retención) vive en `canta-pitch.js`; el modo Prueba genera el pitch desde la melodía.
 
+- **`canta-libre.js`** (`SB.cantaLibre`) — dos pantallas sin canción fija, que `canta.js` monta en
+  `#/canta/libre` y `#/canta/rango` y que aparecen primeras en la biblioteca. **Canta Libre**: carril
+  alto (2 octavas a la vista, sigue a la voz), líneas de los Do marcadas, trazo de cada muestra y un
+  punto con cartel que dice la nota promediando 0,5 s; de fondo, opcional, la `music.m4a` de un
+  paquete o un video de YouTube incrustado. **Rango vocal**: marca la nota sostenida más grave y la
+  más aguda (0,8 s dentro de un semitono) y guarda `{lo, hi, fecha}` en `localStorage`
+  (`sb.canta.rango`); Canta Libre lo dibuja como franja. Si el archivo no está cargado (sitio de
+  alumnos), Canta funciona igual sin esas filas.
+- **Octava del punto en el karaoke:** con «octava libre», la octava en que se muestra la voz es
+  estable (`S.wrapOff`): se fija con la primera muestra y solo cambia si la voz lleva 0,4 s a más de
+  7,5 semitonos de la plataforma. Antes se recalculaba en cada muestra y el punto saltaba hacia la
+  nota.
 - **`canta-motor.js`** (`SB.cantaMotor`) — puente con el **motor local** (`canta-prep/motor.py`), que
   hace lo que el navegador no puede: bajar de YouTube, separar la voz, transcribir. El motor **sirve
   la app en su mismo puerto** (8765), así que la API se pide en relativo (`api/estado`) y no hay CORS
