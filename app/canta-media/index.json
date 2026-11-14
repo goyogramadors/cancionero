@@ -12,6 +12,12 @@
     "duration": 280.73
   },
   {
+    "id": "algo-contigo",
+    "title": "Algo Contigo",
+    "artist": "Vicentico",
+    "duration": 216.17
+  },
+  {
     "id": "blues-a-dos-mujeres",
     "title": "Blues a dos mujeres",
     "artist": "La Rue Morgue",
@@ -54,10 +60,22 @@
     "duration": 191.04
   },
   {
+    "id": "rie-chinito",
+    "title": "Rie Chinito",
+    "artist": "Perota Chingo",
+    "duration": 251.39
+  },
+  {
     "id": "suspicious-minds",
     "title": "Suspicious Minds",
     "artist": "Elvis Presley",
     "duration": 272.36
+  },
+  {
+    "id": "turista",
+    "title": "Turista",
+    "artist": "Bad Bunny",
+    "duration": 232.84
   },
   {
     "id": "vocalizo-nota-larga",
