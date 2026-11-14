@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    
+    <!-- Configuración PWA / Web App -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#121212">
+    <meta name="application-name" content="ChordPad">
+    <meta name="apple-mobile-web-app-title" content="ChordPad">
+
+    <!-- Manifiesto embebido (Data URI) para instalación y pantalla completa -->
+    <link rel="manifest" href='data:application/manifest+json;charset=utf-8,{"name":"DJ Chord Pad Pro","short_name":"ChordPad","start_url":".","display":"standalone","background_color":"#121212","theme_color":"#121212","orientation":"landscape","icons":[{"src":"https://cdn-icons-png.flaticon.com/512/9393/9393356.png","sizes":"512x512","type":"image/png"}]}'>
+
+    <title>DJ Chord Pad Pro</title>
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #121212;
+            --panel-color: #1e1e1e;
+            --text-color: #e0e0e0;
+            
+            --color-maj: #00d2ff;
+            --color-min: #ff0055;
+            --color-7: #ff9900;
+            --color-m7: #00ff66;
+            --color-dim: #a020f0; 
+            --color-prog: #ffffff;
+            
+            /* Color de campo tonal (Amarillo) */
+            --color-highlight: #ffff00; 
+            
+            /* Color para Dominantes Secundarios (Cian Brillante) */
+            --color-secondary-dom: #00ffff;
+
+            /* Colores de Función Tonal (Grados) */
+            --func-rest: #00ff66;   /* Reposo (1, 3) */
+            --func-semi: #ffcc00;   /* Semitensión (2, 4, 6) */
+            --func-dom: #ff3333;    /* Tensión (5) */
+            --func-lead: #ff6600;   /* Tensión Max (7) */
+        }
+
+        * {
+            box-sizing: border-box;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Rajdhani', 'Segoe UI', sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        header {
+            background: #000;
+            padding: 8px 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #333;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            z-index: 10;
+            flex-shrink: 0;
+            padding-top: env(safe-area-inset-top); 
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 1.2rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            background: linear-gradient(90deg, #fff, #888);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .vol-label {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #888;
+        }
+
+        #stop-loop-btn {
+            background: #ff3333;
+            color: white;
+            border: none;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            display: none;
+            cursor: pointer;
+            font-family: 'Rajdhani', sans-serif;
+            text-transform: uppercase;
+            animation: pulse-red 1s infinite;
+        }
+
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(255, 51, 51, 0.7); }
+            70% { box-shadow: 0 0 0 5px rgba(255, 51, 51, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 51, 51, 0); }
+        }
+
+        .main-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 5px;
+            display: flex;
+            justify-content: center;
+            align-items: center; 
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+
+        .pad-grid {
+            display: grid;
+            grid-template-columns: repeat(9, 1fr); 
+            gap: 4px;
+            width: 100%;
+            max-width: 950px; 
+            padding-bottom: 20px;
+        }
+
+        .pad {
+            position: relative;
+            aspect-ratio: 1.3/1; 
+            background: #2a2a2a;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: transform 0.05s, box-shadow 0.2s, background-color 0.2s;
+            box-shadow: 0 2px 0 #111, inset 0 1px 1px rgba(255,255,255,0.1);
+            padding: 2px;
+            text-align: center;
+            width: 100%;
+        }
+
+        .pad:active, .pad.active {
+            transform: translateY(2px);
+            box-shadow: 0 0 0 #111, inset 0 0 10px rgba(0,0,0,0.5);
+        }
+
+        /* --- Estilos Botones Numéricos (Grados 1-7) --- */
+        .pad.degree-trigger {
+            aspect-ratio: 1/1; 
+            border-radius: 50%;
+            /* AUMENTADO EL TAMAÑO */
+            width: 90%; 
+            max-width: 60px;
+            margin: 2px auto;
+            background: #222;
+            border: 2px solid #444;
+            color: #666;
+            font-size: 1.2rem;
+            font-weight: 800;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            transition: all 0.2s ease;
+        }
+        
+        .pad.degree-trigger.func-rest { border-color: var(--func-rest); color: var(--func-rest); box-shadow: inset 0 0 10px rgba(0, 255, 102, 0.2); }
+        .pad.degree-trigger.func-semi { border-color: var(--func-semi); color: var(--func-semi); box-shadow: inset 0 0 10px rgba(255, 204, 0, 0.2); }
+        .pad.degree-trigger.func-dom  { border-color: var(--func-dom);  color: var(--func-dom);  box-shadow: inset 0 0 10px rgba(255, 51, 51, 0.2); }
+        .pad.degree-trigger.func-lead { border-color: var(--func-lead); color: var(--func-lead); box-shadow: inset 0 0 10px rgba(255, 102, 0, 0.2); }
+
+        .pad.degree-trigger.active-degree.func-rest { background: var(--func-rest); color: #000; box-shadow: 0 0 15px var(--func-rest); }
+        .pad.degree-trigger.active-degree.func-semi { background: var(--func-semi); color: #000; box-shadow: 0 0 15px var(--func-semi); }
+        .pad.degree-trigger.active-degree.func-dom  { background: var(--func-dom);  color: #fff; box-shadow: 0 0 15px var(--func-dom); }
+        .pad.degree-trigger.active-degree.func-lead { background: var(--func-lead); color: #fff; box-shadow: 0 0 15px var(--func-lead); }
+
+        .pad.degree-trigger.active-degree:not(.func-rest):not(.func-semi):not(.func-dom):not(.func-lead) {
+            background: #444;
+            color: #fff;
+            border-color: #fff;
+        }
+
+        /* Selector de Tonalidad (Arriba Derecha) */
+        .key-selector {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #333;
+            border: 1px solid #555;
+            cursor: pointer;
+            z-index: 10;
+            transition: all 0.2s;
+        }
+        .key-selector.selected {
+            background-color: var(--color-highlight);
+            box-shadow: 0 0 4px var(--color-highlight), 0 0 8px var(--color-highlight);
+            border-color: #ffffaa;
+        }
+
+        /* --- NUEVO: Indicador de Función Tonal (Abajo Derecha) --- */
+        .func-indicator {
+            position: absolute;
+            bottom: 4px;
+            right: 4px;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: transparent;
+            transition: all 0.2s;
+            pointer-events: none; /* No clickable */
+        }
+        /* Colores del indicador cuando está en tonalidad */
+        .pad.in-key .func-indicator.func-rest { background-color: var(--func-rest); box-shadow: 0 0 6px var(--func-rest); }
+        .pad.in-key .func-indicator.func-semi { background-color: var(--func-semi); box-shadow: 0 0 6px var(--func-semi); }
+        .pad.in-key .func-indicator.func-dom  { background-color: var(--func-dom);  box-shadow: 0 0 6px var(--func-dom); }
+        .pad.in-key .func-indicator.func-lead { background-color: var(--func-lead); box-shadow: 0 0 6px var(--func-lead); }
+
+
+        /* Highlight de Escala (Borde del botón) */
+        .pad.in-key {
+            box-shadow: 0 0 0 2px var(--color-highlight), 0 0 15px rgba(255, 255, 0, 0.2);
+            z-index: 2;
+            border-bottom: 2px solid transparent !important;
+        }
+
+        .pad.dominant-hint {
+            box-shadow: 0 0 0 3px var(--color-secondary-dom), 0 0 20px var(--color-secondary-dom) !important;
+            z-index: 3;
+            transform: scale(1.02);
+            transition: all 0.1s;
+        }
+        .pad.dominant-hint::after {
+            content: "V7";
+            position: absolute;
+            top: 2px;
+            left: 4px;
+            font-size: 0.7rem;
+            color: var(--color-secondary-dom);
+            font-weight: 900;
+            text-shadow: 0 0 2px #000;
+        }
+
+        /* Etiqueta de Grado (Número Romano) - CENTRADA ABAJO */
+        .degree-label {
+            position: absolute;
+            bottom: 2px; 
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.9rem; 
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.8);
+            opacity: 0; 
+            text-shadow: 0 1px 3px #000;
+            pointer-events: none;
+            line-height: 1;
+        }
+        .pad.in-key .degree-label {
+            opacity: 1;
+        }
+
+        .chord-name {
+            font-size: 1.3rem;
+            font-weight: 600;
+            pointer-events: none;
+            line-height: 1;
+            white-space: nowrap;
+            text-shadow: 0 2px 5px rgba(0,0,0,0.9);
+            letter-spacing: 0.5px;
+            margin-bottom: 2px; /* Un poco de espacio para el label abajo */
+        }
+
+        /* Estilos Colores Base */
+        .pad.type-maj { border-bottom: 3px solid var(--color-maj); color: var(--color-maj); }
+        .pad.type-min { border-bottom: 3px solid var(--color-min); color: var(--color-min); }
+        .pad.type-7 { border-bottom: 3px solid var(--color-7); color: var(--color-7); }
+        .pad.type-m7 { border-bottom: 3px solid var(--color-m7); color: var(--color-m7); }
+        
+        .pad.type-maj.active { background: var(--color-maj); color: #000; box-shadow: 0 0 15px var(--color-maj); text-shadow: none; }
+        .pad.type-min.active { background: var(--color-min); color: #fff; box-shadow: 0 0 15px var(--color-min); text-shadow: none; }
+        .pad.type-7.active { background: var(--color-7); color: #000; box-shadow: 0 0 15px var(--color-7); text-shadow: none; }
+        .pad.type-m7.active { background: var(--color-m7); color: #000; box-shadow: 0 0 15px var(--color-m7); text-shadow: none; }
+
+        /* Estilos Especiales */
+        .pad.special-dim {
+            border-bottom: 3px solid var(--color-dim);
+            color: var(--color-dim);
+            opacity: 0.3;
+            pointer-events: none;
+        }
+        .pad.special-dim.available {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .pad.special-dim.active {
+            background: var(--color-dim); color: #fff; opacity: 1;
+            box-shadow: 0 0 15px var(--color-dim);
+        }
+        
+        .pad.special-dim .chord-type {
+            font-size: 1rem; 
+            position: absolute;
+            bottom: 2px;
+            right: 4px;
+            font-weight: 700;
+        }
+
+        .pad.special-prog {
+            border-bottom: 2px solid #555;
+            color: #666;
+            font-size: 0.75rem; 
+            font-weight: 600;
+            background: #1a1a1a;
+            white-space: normal; 
+            line-height: 1.1;
+            text-transform: uppercase;
+        }
+        .pad.special-prog.ready {
+            color: #ccc;
+            border-bottom-color: #999;
+        }
+        .pad.special-prog.active-loop {
+            background: #2a2a2a;
+            border-bottom-color: var(--color-highlight);
+            color: var(--color-highlight); 
+            box-shadow: 0 0 15px rgba(255, 255, 0, 0.4); 
+        }
+
+        .row-separator {
+            grid-column: 1 / -1;
+            height: 10px; /* Separador sutil */
+        }
+
+        #start-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.95);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            flex-direction: column;
+        }
+        
+        #start-btn {
+            background: transparent;
+            border: 2px solid var(--color-maj);
+            color: var(--color-maj);
+            padding: 15px 40px;
+            font-size: 1.5rem;
+            border-radius: 50px;
+            cursor: pointer;
+            text-transform: uppercase;
+            font-weight: 800;
+            letter-spacing: 2px;
+            box-shadow: 0 0 20px rgba(0, 210, 255, 0.3);
+        }
+
+        .pad.side-col {
+            background: #1f1f1f; 
+        }
+    </style>
+</head>
+<body>
+
+    <div id="start-overlay">
+        <button id="start-btn">INICIAR SISTEMA DE AUDIO</button>
+    </div>
+
+    <header>
+        <div style="display:flex; align-items:center; gap:10px;">
+            <h1>Chord<span style="color:var(--color-maj)">Pad</span> Pro</h1>
+            <button id="stop-loop-btn" onclick="stopLoop()">STOP LOOP</button>
+        </div>
+        <div class="controls">
+            <span class="vol-label">VOL</span>
+            <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.7">
+        </div>
+    </header>
+
+    <div class="main-container">
+        <div class="pad-grid" id="grid">
+            <!-- JS Generates Grid -->
+        </div>
+    </div>
+
+    <script>
+        let audioCtx;
+        let masterGain;
+        let activeOscillators = {}; 
+        
+        let delayNode;
+        let feedbackGain;
+        let effectsBus;
+        
+        let currentLoopInterval = null;
+        let currentKeyContext = null; 
+        let currentPlayingChordId = null; 
+        let currentActiveProgBtn = null; 
+        let activeHints = {}; 
+
+        const noteFrequencies = {
+            'C': 261.63, 'C#': 277.18,
+            'D': 293.66, 'D#': 311.13,
+            'E': 329.63, 'F': 174.61, 'F#': 185.00, 'G': 196.00, 'G#': 207.65,
+            'A': 220.00, 'A#': 233.08, 'B': 246.94 
+        };
+
+        const chordStructures = {
+            'Maj': [0, 4, 7],
+            'Min': [0, 3, 7],
+            '7':   [0, 4, 7, -2],
+            'm7':  [0, 3, 7, -2],
+            'Dim': [0, 3, 6] 
+        };
+
+        const chromaticMap = {
+            'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11
+        };
+        const chromaticNotes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+        const degreeRomanMap = {
+            'Maj': ['I', 'ii', 'iii', 'IV', 'V', 'vi', 'vii°'],
+            'Min': ['i', 'ii°', 'III', 'iv', 'v', 'VI', 'VII']
+        };
+
+        // Added 'func' property for functional color matching
+        const highlightPatterns = {
+            'Maj': [
+                { interval: 0, type: 'Maj', label: 'I', func: 'func-rest' },
+                { interval: 2, type: 'Min', label: 'ii', func: 'func-semi' },
+                { interval: 4, type: 'Min', label: 'iii', func: 'func-rest' }, // 3ra es a veces reposo relativo o tension suave, lo dejaremos reposo por color verde
+                { interval: 5, type: 'Maj', label: 'IV', func: 'func-semi' },
+                { interval: 7, type: 'Maj', label: 'V', func: 'func-dom' },
+                { interval: 9, type: 'Min', label: 'vi', func: 'func-semi' },
+                { interval: 11, type: 'Dim', label: 'vii°', func: 'func-lead' } 
+            ],
+            'Min': [
+                { interval: 0, type: 'Min', label: 'i', func: 'func-rest' },
+                { interval: 2, type: 'Dim', label: 'ii°', func: 'func-semi' }, 
+                { interval: 3, type: 'Maj', label: 'III', func: 'func-rest' },
+                { interval: 5, type: 'Min', label: 'iv', func: 'func-semi' },
+                { interval: 7, type: 'Min', label: 'v', func: 'func-dom' },
+                { interval: 8, type: 'Maj', label: 'VI', func: 'func-semi' },
+                { interval: 10, type: 'Maj', label: 'VII', func: 'func-lead' }
+            ]
+        };
+
+        const scalePatterns = {
+            'Maj': [0, 2, 4, 5, 7, 9, 11],
+            'Min': [0, 2, 3, 5, 7, 8, 10]
+        };
+
+        const naturals = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+        const sharps   = ['C#', 'D#', 'SPECIAL_E', 'F#', 'G#', 'A#', 'SPECIAL_B'];
+
+        const m7Naturals = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+        const m7Sharps   = ['C#', 'D#', null, 'F#', 'G#', 'A#', null]; 
+
+        const progressionsMajor = [
+            { label: "I - V - vi - IV", degrees: ['I', 'V', 'vi', 'IV'] },
+            { label: "vi - IV - I - V", degrees: ['vi', 'IV', 'I', 'V'] },
+            { label: "I - IV - V",      degrees: ['I', 'IV', 'V'] },
+            { label: "I - vi - IV - V", degrees: ['I', 'vi', 'IV', 'V'] },
+            { label: "ii - V - I",      degrees: ['ii', 'V', 'I'] },
+            { label: "I - IV - I - V",  degrees: ['I', 'IV', 'I', 'V'] }
+        ];
+
+        const progressionsMinor = [
+            { label: "i - VII - VI - V", degrees: ['i', 'VII', 'VI', 'V'] },
+            { label: "i - VI - III - VII", degrees: ['i', 'VI', 'III', 'VII'] },
+            { label: "i - iv - v",       degrees: ['i', 'iv', 'v'] },
+            { label: "i - VII - VI - VII", degrees: ['i', 'VII', 'VI', 'VII'] },
+            { label: "ii° - V - i",      degrees: ['ii°', 'V', 'i'] },
+            { label: "i - VI - v - i",   degrees: ['i', 'VI', 'v', 'i'] }
+        ];
+
+        function getScaleChords(rootNote, scaleType) {
+            const rootVal = chromaticMap[rootNote];
+            const pattern = highlightPatterns[scaleType];
+            
+            return pattern.map(degree => {
+                const noteVal = (rootVal + degree.interval) % 12;
+                return { noteVal: noteVal, type: degree.type, label: degree.label, func: degree.func };
+            });
+        }
+
+        function initAudio() {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new AudioContext();
+            
+            masterGain = audioCtx.createGain();
+            masterGain.gain.value = 0.5;
+
+            const compressor = audioCtx.createDynamicsCompressor();
+            compressor.threshold.value = -20;
+            compressor.knee.value = 40;
+            compressor.ratio.value = 12;
+            compressor.attack.value = 0;
+            compressor.release.value = 0.25;
+
+            delayNode = audioCtx.createDelay();
+            delayNode.delayTime.value = 0.35; 
+            
+            feedbackGain = audioCtx.createGain();
+            feedbackGain.gain.value = 0.3; 
+
+            effectsBus = audioCtx.createGain();
+            effectsBus.gain.value = 0.4; 
+
+            masterGain.connect(compressor);
+            masterGain.connect(delayNode);
+            delayNode.connect(feedbackGain);
+            feedbackGain.connect(delayNode);
+            delayNode.connect(effectsBus);
+            effectsBus.connect(compressor);
+
+            compressor.connect(audioCtx.destination);
+        }
+
+        function getFrequency(rootFreq, interval) {
+            let freq = rootFreq * Math.pow(2, interval / 12);
+            if (freq > 800) freq = freq / 2;
+            return freq;
+        }
+
+        function showDominantHint(rootNote, triggerBtnId) {
+            const rootIdx = chromaticMap[rootNote];
+            const fifthIdx = (rootIdx + 7) % 12;
+            const fifthNote = chromaticNotes[fifthIdx];
+            const domId = findButtonId(fifthNote, '7');
+            if (domId) {
+                const btn = document.getElementById(domId);
+                if (btn) {
+                    btn.classList.add('dominant-hint');
+                    activeHints[triggerBtnId] = domId; 
+                }
+            }
+        }
+
+        function hideDominantHint(triggerBtnId) {
+            const domId = activeHints[triggerBtnId];
+            if (domId) {
+                const btn = document.getElementById(domId);
+                if (btn) {
+                    btn.classList.remove('dominant-hint');
+                }
+                delete activeHints[triggerBtnId];
+            }
+        }
+
+        function createVoice(freq, type, detune, startTime, duration, volumeMod = 1) {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            const filter = audioCtx.createBiquadFilter();
+
+            osc.type = type;
+            osc.frequency.value = freq;
+            osc.detune.value = detune; 
+
+            filter.type = 'lowpass';
+            filter.Q.value = 1;
+            filter.frequency.setValueAtTime(600, startTime);
+            filter.frequency.linearRampToValueAtTime(2500, startTime + 0.3);
+
+            gain.gain.setValueAtTime(0, startTime);
+            gain.gain.linearRampToValueAtTime(0.1 * volumeMod, startTime + 0.15); // Attack
+            
+            if (duration > 0) {
+                gain.gain.setValueAtTime(0.1 * volumeMod, startTime + duration - 0.2);
+                gain.gain.linearRampToValueAtTime(0, startTime + duration);
+                osc.stop(startTime + duration + 0.5);
+            }
+
+            osc.connect(filter);
+            filter.connect(gain);
+            gain.connect(masterGain);
+            
+            osc.start(startTime);
+
+            return { osc, gain, filter }; 
+        }
+
+        function playChord(root, type, btnId, duration = 0) {
+            if (!audioCtx) return;
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
+            if (duration === 0 && activeOscillators[btnId]) return; 
+
+            if (duration === 0) {
+                showDominantHint(root, btnId);
+            }
+
+            const rootFreq = noteFrequencies[root];
+            const intervals = chordStructures[type];
+            let nodes = [];
+            const now = audioCtx.currentTime;
+            
+            intervals.forEach(interval => {
+                const baseFreq = getFrequency(rootFreq, interval);
+                nodes.push(createVoice(baseFreq, 'sawtooth', 0, now, duration, 0.7));
+                nodes.push(createVoice(baseFreq, 'sawtooth', 8, now, duration, 0.5));
+                nodes.push(createVoice(baseFreq, 'square', -8, now, duration, 0.3));
+            });
+            nodes.push(createVoice(rootFreq / 2, 'sine', 0, now, duration, 1.2));
+
+            const btn = document.getElementById(btnId);
+            if(btn) btn.classList.add('active');
+
+            if (duration === 0) {
+                activeOscillators[btnId] = nodes;
+            } else {
+                setTimeout(() => {
+                    if(btn) btn.classList.remove('active');
+                }, duration * 1000);
+            }
+        }
+
+        function stopChord(btnId) {
+            hideDominantHint(btnId);
+            if (!activeOscillators[btnId]) return;
+            
+            const nodes = activeOscillators[btnId];
+            const now = audioCtx.currentTime;
+            const releaseTime = 0.4; 
+
+            nodes.forEach(voice => {
+                voice.gain.gain.cancelScheduledValues(now);
+                voice.gain.gain.setValueAtTime(voice.gain.gain.value, now);
+                voice.gain.gain.linearRampToValueAtTime(0, now + releaseTime);
+                
+                voice.filter.frequency.cancelScheduledValues(now);
+                voice.filter.frequency.setValueAtTime(voice.filter.frequency.value, now);
+                voice.filter.frequency.exponentialRampToValueAtTime(100, now + releaseTime);
+
+                voice.osc.stop(now + releaseTime + 0.1);
+            });
+            
+            delete activeOscillators[btnId];
+            const btn = document.getElementById(btnId);
+            if(btn) btn.classList.remove('active');
+        }
+
+        function parseRomanNumeral(degreeStr, keyRoot, keyType) {
+            const rootIndex = chromaticMap[keyRoot];
+            const scale = (keyType === 'Maj') ? scalePatterns.Maj : scalePatterns.Min;
+            const romanToInt = { 'i':0, 'ii':1, 'iii':2, 'iv':3, 'v':4, 'vi':5, 'vii':6, 'I':0, 'II':1, 'III':2, 'IV':3, 'V':4, 'VI':5, 'VII':6 };
+            const cleanDegree = degreeStr.replace('°', '');
+            const scaleIndex = romanToInt[cleanDegree];
+            if (scaleIndex === undefined) return null;
+            const interval = scale[scaleIndex];
+            const noteIndex = (rootIndex + interval) % 12;
+            const noteName = chromaticNotes[noteIndex];
+            let type = 'Maj';
+            if (degreeStr === degreeStr.toLowerCase()) type = 'Min';
+            if (degreeStr.includes('°')) type = 'Dim';
+            return { note: noteName, type: type };
+        }
+
+        function findButtonId(note, type) {
+            let searchNote = note;
+            if (note === 'F' && !document.getElementById(`pad-exist-F`)) searchNote = 'E#'; 
+            const buttons = document.querySelectorAll('button[id^="pad-"]');
+            for (let btn of buttons) {
+                const parts = btn.id.split('-');
+                if (parts[2] === note) {
+                    if (type === 'Dim' && btn.classList.contains('special-dim')) return btn.id;
+                    if (parts[3] === type) return btn.id;
+                }
+            }
+            if (type === 'Dim') {
+                const btnE = document.getElementById('btn-special-E');
+                const btnB = document.getElementById('btn-special-B');
+                if (btnE && btnE.dataset.note === note) return btnE.id;
+                if (btnB && btnB.dataset.note === note) return btnB.id;
+            }
+            return null;
+        }
+
+        function playProgression(progData, btnElement) {
+            if (!currentKeyContext) {
+                alert("Primero selecciona un campo tonal (punto blanco) para usar las progresiones.");
+                return;
+            }
+            if (currentActiveProgBtn === btnElement) {
+                stopLoop();
+                return;
+            }
+            stopLoop(); 
+            currentActiveProgBtn = btnElement;
+            if (currentActiveProgBtn) currentActiveProgBtn.classList.add('active-loop');
+            document.getElementById('stop-loop-btn').style.display = 'block';
+            const sequence = progData.degrees.map(deg => {
+                return parseRomanNumeral(deg, currentKeyContext.root, currentKeyContext.type);
+            });
+            let step = 0;
+            const beatDuration = 2000; 
+            const playStep = () => {
+                const chord = sequence[step];
+                if (chord) {
+                    let targetId = findButtonId(chord.note, chord.type);
+                    if (audioCtx) {
+                        playChord(chord.note, chord.type, targetId || 'ghost', 2);
+                    }
+                }
+                step = (step + 1) % sequence.length;
+            };
+            playStep();
+            currentLoopInterval = setInterval(playStep, beatDuration);
+        }
+
+        function stopLoop() {
+            if (currentLoopInterval) {
+                clearInterval(currentLoopInterval);
+                currentLoopInterval = null;
+            }
+            if (currentActiveProgBtn) {
+                currentActiveProgBtn.classList.remove('active-loop');
+                currentActiveProgBtn = null;
+            }
+            document.getElementById('stop-loop-btn').style.display = 'none';
+        }
+
+        function updateSpecialButtons(rootNote, scaleType) {
+            currentKeyContext = { root: rootNote, type: scaleType };
+
+            document.querySelectorAll('.pad.special-dim').forEach(btn => {
+                btn.classList.remove('available', 'in-key'); 
+                btn.innerHTML = '<span class="chord-name">-</span>';
+            });
+            
+            stopLoop(); 
+
+            const activeProgressions = (scaleType === 'Maj') ? progressionsMajor : progressionsMinor;
+            
+            const progButtons = document.querySelectorAll('.pad.special-prog');
+            
+            progButtons.forEach((btn, index) => {
+                if (index < activeProgressions.length) {
+                    const prog = activeProgressions[index];
+                    btn.innerHTML = `<span>${prog.label}</span>`;
+                    btn.classList.add('ready');
+                    btn.onclick = () => playProgression(prog, btn);
+                } else {
+                    btn.innerHTML = '<span>-</span>';
+                    btn.classList.remove('ready');
+                    btn.onclick = null;
+                }
+            });
+
+            if (scaleType === 'Maj') {
+                const rootIdx = chromaticMap[rootNote];
+                const dimNoteIdx = (rootIdx + 11) % 12;
+                const dimNote = chromaticNotes[dimNoteIdx];
+
+                const btnDim = document.getElementById('btn-special-B'); 
+                if (btnDim) {
+                    btnDim.classList.add('available', 'in-key'); 
+                    btnDim.innerHTML = `<span class="chord-name">${dimNote}°</span><span class="chord-type">vii°</span>`;
+                    btnDim.dataset.note = dimNote;
+                }
+            } else { 
+                const rootIdx = chromaticMap[rootNote];
+                const dimNoteIdx = (rootIdx + 2) % 12;
+                const dimNote = chromaticNotes[dimNoteIdx];
+
+                const btnDim = document.getElementById('btn-special-E');
+                if (btnDim) {
+                    btnDim.classList.add('available', 'in-key'); 
+                    btnDim.innerHTML = `<span class="chord-name">${dimNote}°</span><span class="chord-type">ii°</span>`;
+                    btnDim.dataset.note = dimNote;
+                }
+            }
+
+            updateDegreeVisuals(scaleType);
+        }
+
+        function updateDegreeVisuals(scaleType) {
+            const romans = degreeRomanMap[scaleType];
+            const degrees = [1,2,3,4,5,6,7];
+            
+            degrees.forEach((d, i) => {
+                const btn = document.getElementById(`btn-degree-${d}`);
+                if (!btn) return;
+                
+                btn.textContent = romans[i];
+                btn.className = 'pad degree-trigger';
+                
+                if (d === 1 || d === 3) btn.classList.add('func-rest');
+                else if (d === 2 || d === 4 || d === 6) btn.classList.add('func-semi');
+                else if (d === 5) btn.classList.add('func-dom');
+                else if (d === 7) btn.classList.add('func-lead');
+            });
+        }
+
+        function highlightKey(rootNote, scaleType, selectorElement) {
+            document.querySelectorAll('.key-selector').forEach(el => el.classList.remove('selected'));
+            
+            // Clear previous highlight
+            document.querySelectorAll('.pad').forEach(el => {
+                el.classList.remove('in-key');
+                const degreeEl = el.querySelector('.degree-label');
+                if(degreeEl) degreeEl.textContent = '';
+                
+                // Clear indicator colors
+                const indicator = el.querySelector('.func-indicator');
+                if (indicator) {
+                    indicator.classList.remove('func-rest', 'func-semi', 'func-dom', 'func-lead');
+                }
+            });
+            selectorElement.classList.add('selected');
+
+            updateSpecialButtons(rootNote, scaleType);
+
+            const validChords = getScaleChords(rootNote, scaleType);
+            
+            document.querySelectorAll('.pad').forEach(pad => {
+                if (pad.classList.contains('special-dim')) return;
+                if (pad.classList.contains('special-prog')) return;
+                if (pad.classList.contains('degree-trigger')) return;
+
+                const parts = pad.id.split('-');
+                if (parts.length < 4) return;
+                const note = parts[2];
+                const type = parts[3];
+                const noteVal = chromaticMap[note];
+
+                const match = validChords.find(vc => vc.noteVal === noteVal && vc.type === type);
+                
+                if (match) {
+                    pad.classList.add('in-key');
+                    const label = pad.querySelector('.degree-label');
+                    if (label) label.textContent = match.label;
+                    
+                    // Add functional color to the indicator
+                    const indicator = pad.querySelector('.func-indicator');
+                    if (indicator && match.func) {
+                        indicator.classList.add(match.func);
+                    }
+                }
+            });
+        }
+
+        function triggerDegree(degreeIndex, isStart) {
+            if (!currentKeyContext) return; 
+
+            const btnNum = document.getElementById(`btn-degree-${degreeIndex + 1}`);
+            
+            if (isStart) {
+                if(btnNum) btnNum.classList.add('active-degree');
+                
+                const validChords = getScaleChords(currentKeyContext.root, currentKeyContext.type);
+                if (degreeIndex < validChords.length) {
+                    const targetChord = validChords[degreeIndex];
+                    const targetNoteName = chromaticNotes[targetChord.noteVal];
+                    
+                    const targetBtnId = findButtonId(targetNoteName, targetChord.type);
+                    if (targetBtnId) {
+                        playChord(targetNoteName, targetChord.type, targetBtnId);
+                        btnNum.dataset.targetId = targetBtnId;
+                    }
+                }
+            } else {
+                if(btnNum) {
+                    btnNum.classList.remove('active-degree');
+                    const targetBtnId = btnNum.dataset.targetId;
+                    if (targetBtnId) {
+                        stopChord(targetBtnId);
+                        delete btnNum.dataset.targetId;
+                    }
+                }
+            }
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.repeat) return;
+            const key = e.key;
+            if (key >= '1' && key <= '7') {
+                triggerDegree(parseInt(key) - 1, true);
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            const key = e.key;
+            if (key >= '1' && key <= '7') {
+                triggerDegree(parseInt(key) - 1, false);
+            }
+        });
+
+        const rowDefinitions = [
+            { type: 'Maj', isSharp: false }, // Row 0
+            { type: 'Min', isSharp: false }, // Row 1
+            { type: '7',   isSharp: false }, // Row 2
+            { type: 'DEGREE_ROW' },          // Row 3
+            { type: 'Maj', isSharp: true },  // Row 4
+            { type: 'Min', isSharp: true },  // Row 5
+            { type: '7',   isSharp: true },  // Row 6
+        ];
+
+        function createGrid() {
+            const grid = document.getElementById('grid');
+            
+            rowDefinitions.forEach((rowDef, rowIndex) => {
+                
+                if (rowDef.type === 'DEGREE_ROW') {
+                    for (let i = 1; i <= 7; i++) {
+                        const btn = document.createElement('button');
+                        btn.id = `btn-degree-${i}`;
+                        btn.className = 'pad degree-trigger';
+                        btn.textContent = i; 
+                        
+                        const start = (e) => { e.preventDefault(); triggerDegree(i-1, true); };
+                        const end = (e) => { e.preventDefault(); triggerDegree(i-1, false); };
+                        
+                        btn.addEventListener('mousedown', start);
+                        btn.addEventListener('mouseup', end);
+                        btn.addEventListener('mouseleave', end);
+                        btn.addEventListener('touchstart', start, {passive: false});
+                        btn.addEventListener('touchend', end);
+                        btn.addEventListener('touchcancel', end);
+
+                        grid.appendChild(btn);
+                    }
+                } else {
+                    const notes = rowDef.isSharp ? sharps : naturals;
+                    
+                    notes.forEach(note => {
+                        if (note === 'SPECIAL_E' || note === 'SPECIAL_B') {
+                            if (rowDef.type === 'Maj') {
+                                const slotId = (note === 'SPECIAL_E') ? 'btn-special-E' : 'btn-special-B';
+                                const btn = document.createElement('button');
+                                btn.id = slotId;
+                                btn.className = 'pad special-dim';
+                                btn.innerHTML = '<span class="chord-name">-</span>';
+                                
+                                const start = (e) => {
+                                    if(!btn.classList.contains('available')) return;
+                                    e.preventDefault();
+                                    playChord(btn.dataset.note, 'Dim', slotId);
+                                };
+                                const end = (e) => {
+                                    if(!btn.classList.contains('available')) return;
+                                    e.preventDefault();
+                                    stopChord(slotId);
+                                };
+                                btn.addEventListener('mousedown', start); btn.addEventListener('mouseup', end);
+                                btn.addEventListener('touchstart', start); btn.addEventListener('touchend', end);
+                                grid.appendChild(btn);
+                            } else {
+                                const btn = document.createElement('button');
+                                btn.className = 'pad special-prog';
+                                btn.innerHTML = `<span>-</span>`;
+                                grid.appendChild(btn);
+                            }
+                            return;
+                        }
+
+                        const btn = document.createElement('button');
+                        const id = `pad-${rowIndex}-${note}-${rowDef.type}`;
+                        let cssType = rowDef.type.toLowerCase();
+                        if(rowDef.type === '7') cssType = '7'; 
+                        
+                        btn.id = id;
+                        btn.className = `pad type-${cssType}`;
+                        
+                        let displayText = note;
+                        if (rowDef.type === 'Min') displayText += 'm';
+                        else if (rowDef.type === '7') displayText += '7';
+
+                        // UPDATED INNER HTML: Added func-indicator
+                        let innerHTML = `<span class="chord-name">${displayText}</span><span class="degree-label"></span><div class="func-indicator"></div>`;
+                        
+                        if (!rowDef.isSharp && (rowDef.type === 'Maj' || rowDef.type === 'Min')) {
+                            innerHTML += `<div class="key-selector"></div>`;
+                        }
+                        btn.innerHTML = innerHTML;
+
+                        const start = (e) => { 
+                            if(e.target.classList.contains('key-selector')) return;
+                            e.preventDefault(); playChord(note, rowDef.type, id); 
+                        };
+                        const end = (e) => { 
+                            if(e.target.classList.contains('key-selector')) return;
+                            e.preventDefault(); stopChord(id); 
+                        };
+
+                        btn.addEventListener('mousedown', start); btn.addEventListener('mouseup', end);
+                        btn.addEventListener('mouseleave', end);
+                        btn.addEventListener('touchstart', start, {passive: false}); btn.addEventListener('touchend', end);
+                        btn.addEventListener('touchcancel', end);
+
+                        const selector = btn.querySelector('.key-selector');
+                        if (selector) {
+                            const setKey = (e) => {
+                                e.preventDefault(); e.stopPropagation(); 
+                                highlightKey(note, rowDef.type, selector);
+                            };
+                            selector.addEventListener('mousedown', setKey);
+                            selector.addEventListener('touchstart', setKey, {passive: false});
+                        }
+
+                        grid.appendChild(btn);
+                    });
+                }
+
+                const natM7Note = m7Naturals[rowIndex];
+                if (natM7Note) {
+                     const btn = document.createElement('button');
+                     const id = `pad-col8-${rowIndex}-${natM7Note}-m7`;
+                     btn.id = id;
+                     btn.className = `pad type-m7 side-col`;
+                     btn.innerHTML = `<span class="chord-name">${natM7Note}m7</span><span class="degree-label"></span><div class="func-indicator"></div>`;
+                     
+                     const start = (e) => { e.preventDefault(); playChord(natM7Note, 'm7', id); };
+                     const end = (e) => { e.preventDefault(); stopChord(id); };
+                     btn.addEventListener('mousedown', start); btn.addEventListener('mouseup', end);
+                     btn.addEventListener('mouseleave', end);
+                     btn.addEventListener('touchstart', start, {passive: false}); btn.addEventListener('touchend', end);
+                     grid.appendChild(btn);
+                } else {
+                     const spacer = document.createElement('div');
+                     grid.appendChild(spacer);
+                }
+
+                const shpM7Note = m7Sharps[rowIndex];
+                if (shpM7Note) {
+                     const btn = document.createElement('button');
+                     const id = `pad-col9-${rowIndex}-${shpM7Note}-m7`;
+                     btn.id = id;
+                     btn.className = `pad type-m7 side-col`;
+                     btn.innerHTML = `<span class="chord-name">${shpM7Note}m7</span><span class="degree-label"></span><div class="func-indicator"></div>`;
+                     
+                     const start = (e) => { e.preventDefault(); playChord(shpM7Note, 'm7', id); };
+                     const end = (e) => { e.preventDefault(); stopChord(id); };
+                     btn.addEventListener('mousedown', start); btn.addEventListener('mouseup', end);
+                     btn.addEventListener('mouseleave', end);
+                     btn.addEventListener('touchstart', start, {passive: false}); btn.addEventListener('touchend', end);
+                     grid.appendChild(btn);
+                } else {
+                     if (rowIndex === 2 || rowIndex === 6) { 
+                         const btn = document.createElement('button');
+                         btn.className = 'pad special-prog';
+                         btn.innerHTML = `<span>-</span>`;
+                         grid.appendChild(btn);
+                     } else {
+                         const spacer = document.createElement('div');
+                         grid.appendChild(spacer);
+                     }
+                }
+            });
+        }
+
+        document.getElementById('start-btn').addEventListener('click', () => {
+            initAudio();
+            document.getElementById('start-overlay').style.display = 'none';
+        });
+
+        document.getElementById('volume-slider').addEventListener('input', (e) => {
+            if (masterGain) masterGain.gain.value = parseFloat(e.target.value);
+        });
+
+        createGrid();
+        window.addEventListener('contextmenu', e => e.preventDefault());
+
+    </script>
+</body>
+</html>

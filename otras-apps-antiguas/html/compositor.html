@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Herramienta de Teoría Musical</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .function-label {
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: white;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        }
+        .tonic { background-color: #3b82f6; } /* Azul */
+        .sub-dominant { background-color: #16a34a; } /* Verde */
+        .dominant { background-color: #dc2626; } /* Rojo */
+        
+        .control-btn, .nav-btn {
+            transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out, transform 0.1s ease;
+            border: 2px solid transparent;
+        }
+        .control-btn.active, .nav-btn.active {
+            background-color: #4f46e5; /* bg-indigo-600 */
+            color: white;
+            font-weight: 600;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+        .control-btn:hover {
+             transform: translateY(-2px);
+        }
+        .control-btn.active {
+            transform: translateY(0);
+        }
+
+        /* Estilos del Piano */
+        .piano {
+            display: flex;
+            position: relative;
+            height: 220px;
+        }
+        .mini-piano {
+             display: flex;
+            position: relative;
+            height: 110px; /* Más pequeño */
+            transform: scale(0.9);
+        }
+        .key {
+            border: 1px solid #374151;
+            box-sizing: border-box;
+            position: relative;
+        }
+        .key.white {
+            width: 50px;
+            height: 100%;
+            background-color: #d1d5db;
+            border-bottom-left-radius: 5px;
+            border-bottom-right-radius: 5px;
+            display: inline-block;
+        }
+        .mini-piano .key.white { width: 25px; }
+        .key.black {
+            width: 30px;
+            height: 140px;
+            background-color: #1f2937;
+            position: absolute;
+            z-index: 10;
+            border-radius: 0 0 4px 4px;
+        }
+        .mini-piano .key.black { width: 15px; height: 70px; }
+        .key.highlighted.white {
+            background: linear-gradient(to bottom, #67e8f9, #0e7490);
+        }
+        .key.highlighted.black {
+            background: linear-gradient(to bottom, #38bdf8, #0369a1);
+        }
+        .key .note-name {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-weight: 500;
+            font-size: 0.9rem;
+            pointer-events: none;
+        }
+        .key.white .note-name {
+             color: #1f2937;
+        }
+        .key.black .note-name {
+            color: #d1d5db;
+        }
+        .key .interval-name {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-weight: 700;
+            font-size: 1rem;
+            color: #dc2626; /* red-600 */
+            text-shadow: 0 0 5px rgba(0,0,0,0.5);
+            pointer-events: none;
+        }
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex items-center justify-center p-4">
+
+    <div class="w-full max-w-5xl bg-gray-800 rounded-2xl shadow-2xl p-6 md:p-8">
+        <!-- Navegación Principal -->
+        <nav class="flex justify-center mb-6 bg-gray-900/50 p-2 rounded-lg">
+            <div id="main-nav" class="flex flex-wrap justify-center space-x-2">
+                <button class="nav-btn px-4 py-2 rounded-md active" data-page="progressions">Explorador de Progresiones</button>
+                <button class="nav-btn px-4 py-2 rounded-md" data-page="piano">Acordes en Piano</button>
+                <button class="nav-btn px-4 py-2 rounded-md" data-page="song">Tocar Canción</button>
+            </div>
+        </nav>
+
+        <!-- Contenedor de Páginas -->
+        <div id="app-container">
+            <!-- PÁGINA 1: EXPLORADOR DE PROGRESIONES -->
+            <div id="page-progressions" class="page-content">
+                 <header class="text-center mb-6">
+                    <h1 class="text-3xl md:text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-teal-300">Explorador de Progresiones</h1>
+                </header>
+                <main class="space-y-6">
+                    <div>
+                        <label class="block text-center mb-3 text-sm font-medium text-gray-300">1. Elige la Tonalidad</label>
+                        <div id="tonality-selector" class="flex flex-wrap justify-center gap-2"></div>
+                    </div>
+                    <div>
+                        <label class="block text-center mb-3 text-sm font-medium text-gray-300">2. Elige el Estilo de Armonía</label>
+                        <div id="mode-selector" class="flex flex-wrap justify-center gap-2 md:gap-3 p-2 bg-gray-700/50 rounded-lg">
+                            <button class="control-btn mode-btn active" data-mode="triads">Tríadas</button>
+                            <button class="control-btn mode-btn" data-mode="dominant7">Dominante 7</button>
+                            <button class="control-btn mode-btn" data-mode="jazzy">Jazzy</button>
+                            <button class="control-btn mode-btn" data-mode="tetrads">Tétradas</button>
+                        </div>
+                    </div>
+                     <div>
+                        <label class="block text-center mb-3 text-sm font-medium text-gray-300">3. Elige la Progresión</label>
+                        <div id="progression-selector" class="flex flex-wrap justify-center gap-2"></div>
+                    </div>
+                    <div id="result-container" class="bg-gray-900/50 p-6 rounded-xl min-h-[150px] flex items-center justify-center transition-all duration-300">
+                        <p id="placeholder-text" class="text-gray-500">Los acordes de la progresión aparecerán aquí...</p>
+                        <div id="chords-display" class="w-full flex-wrap justify-center gap-4 hidden"></div>
+                    </div>
+                     <div id="export-song-container" class="mt-4 text-center hidden">
+                        <button id="export-song-btn" class="control-btn bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg">
+                            Exportar como Canción
+                        </button>
+                    </div>
+                    <div id="tonality-degrees-container" class="mt-8 hidden">
+                        <h2 class="text-xl font-semibold text-center mb-4 text-gray-300">Campo Armónico de <span id="tonality-name-placeholder" class="text-blue-400"></span></h2>
+                        <div id="tonality-chords-display" class="w-full flex flex-wrap justify-center gap-3"></div>
+                    </div>
+                </main>
+            </div>
+
+            <!-- PÁGINA 2: ACORDES EN PIANO -->
+            <div id="page-piano" class="page-content hidden">
+                 <header class="text-center mb-6">
+                    <h1 class="text-3xl md:text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-sky-300">Acordes en Piano</h1>
+                </header>
+                <main>
+                    <div class="space-y-6">
+                        <div>
+                            <label class="block text-center mb-3 text-sm font-medium text-gray-300">1. Nota Raíz</label>
+                            <div id="piano-root-note-selector" class="flex flex-wrap justify-center gap-2"></div>
+                        </div>
+                         <div>
+                            <label class="block text-center mb-3 text-sm font-medium text-gray-300">2. Tipo de Acorde</label>
+                            <div id="piano-chord-type-selector" class="flex flex-wrap justify-center gap-2"></div>
+                        </div>
+                        <div>
+                            <label class="block text-center mb-3 text-sm font-medium text-gray-300">3. Inversión</label>
+                            <div id="piano-inversion-selector" class="flex flex-wrap justify-center gap-2"></div>
+                        </div>
+                    </div>
+                    <div class="flex justify-center p-4 mt-8 bg-gray-900/50 rounded-lg overflow-x-auto">
+                        <div id="piano-keyboard" class="piano"></div>
+                    </div>
+                    <div class="mt-6 text-center">
+                        <button id="add-to-song-btn" class="control-btn bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg">
+                            Agregar a mi canción
+                        </button>
+                    </div>
+                </main>
+            </div>
+
+            <!-- PÁGINA 3: TOCAR CANCIÓN -->
+            <div id="page-song" class="page-content hidden">
+                 <header class="text-center mb-6">
+                    <h1 class="text-3xl md:text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-lime-300">Tocar Canción</h1>
+                </header>
+                <main>
+                    <div class="mb-6">
+                         <label for="saved-songs-select" class="block text-center mb-3 text-sm font-medium text-gray-300">Mis Canciones Guardadas</label>
+                         <select id="saved-songs-select" class="w-full max-w-md mx-auto bg-gray-700 border border-gray-600 text-white text-md rounded-lg focus:ring-blue-500 focus:border-blue-500 p-3">
+                            <option value="">Cargar una canción...</option>
+                         </select>
+                    </div>
+
+                    <div id="song-chords-container" class="flex flex-col items-center gap-4">
+                        <!-- Los acordes de la canción se insertarán aquí -->
+                    </div>
+                     <div id="song-placeholder" class="text-center text-gray-500 py-16">
+                        <p>Aún no has agregado acordes a tu canción.</p>
+                        <p class="text-sm">Ve a "Acordes en Piano" para empezar a construirla.</p>
+                    </div>
+                    <div id="song-controls-container" class="mt-8 flex justify-center gap-4 hidden">
+                        <button id="save-song-btn" class="control-btn bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg">
+                            Guardar Canción
+                        </button>
+                        <button id="clear-song-btn" class="control-btn bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg">
+                            Eliminar Todo
+                        </button>
+                    </div>
+                </main>
+            </div>
+        </div>
+
+        <!-- Modal para guardar canción -->
+        <div id="save-song-modal" class="modal-overlay hidden">
+            <div class="bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-sm">
+                <h3 class="text-xl font-bold mb-4">Guardar Canción</h3>
+                <p class="text-gray-400 mb-4 text-sm">Escribe un título para tu canción.</p>
+                <input type="text" id="song-title-input" class="w-full bg-gray-700 border border-gray-600 text-white text-md rounded-lg p-3 mb-4" placeholder="Título de la canción...">
+                <div class="flex justify-end gap-3">
+                    <button id="cancel-save-btn" class="control-btn bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded-lg">Cancelar</button>
+                    <button id="confirm-save-btn" class="control-btn bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg">Guardar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- ESTADO GLOBAL Y DATOS COMPARTIDOS ---
+        let mySongChords = [];
+        let savedSongs = [];
+        const notes = { 'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3, 'E': 4, 'F': 5, 'F#': 6, 'Gb': 6, 'G': 7, 'G#': 8, 'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11 };
+        const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        const chordFormulas = { 'Mayor': { intervals: [{s:0, n:'1'}, {s:4, n:'3M'}, {s:7, n:'5j'}] }, 'Menor': { intervals: [{s:0, n:'1'}, {s:3, n:'3m'}, {s:7, n:'5j'}] }, 'Aumentado': { intervals: [{s:0, n:'1'}, {s:4, n:'3M'}, {s:8, n:'5A'}] }, 'Disminuido': { intervals: [{s:0, n:'1'}, {s:3, n:'3m'}, {s:6, n:'5d'}] }, 'Séptima (Dom)': { intervals: [{s:0, n:'1'}, {s:4, n:'3M'}, {s:7, n:'5j'}, {s:10, n:'7m'}] }, 'Séptima (Maj)': { intervals: [{s:0, n:'1'}, {s:4, n:'3M'}, {s:7, n:'5j'}, {s:11, n:'7M'}] }, 'Menor 7': { intervals: [{s:0, n:'1'}, {s:3, n:'3m'}, {s:7, n:'5j'}, {s:10, n:'7m'}] }, 'Semidisminuido': { intervals: [{s:0, n:'1'}, {s:3, n:'3m'}, {s:6, n:'5d'}, {s:10, n:'7m'}] } };
+
+
+        // --- NAVEGACIÓN PRINCIPAL ---
+        const mainNav = document.getElementById('main-nav');
+        const pages = document.querySelectorAll('.page-content');
+
+        mainNav.addEventListener('click', (e) => {
+            if (e.target.tagName === 'BUTTON') {
+                const targetPage = e.target.dataset.page;
+                mainNav.querySelectorAll('button').forEach(btn => btn.classList.remove('active'));
+                e.target.classList.add('active');
+                pages.forEach(page => {
+                    page.id === `page-${targetPage}` ? page.classList.remove('hidden') : page.classList.add('hidden');
+                });
+            }
+        });
+
+        // --- LÓGICA PÁGINA 1: EXPLORADOR DE PROGRESIONES ---
+        (function progressionsExplorer() {
+            const triadTonalities = { 'C': { I: 'C', iim: 'Dm', iiim: 'Em', IV: 'F', V: 'G', vim: 'Am', vii: 'B°', bVII: 'Bb' }, 'Db': { I: 'Db', iim: 'Ebm', iiim: 'Fm', IV: 'Gb', V: 'Ab', vim: 'Bbm', vii: 'C°', bVII: 'Cb' }, 'D': { I: 'D', iim: 'Em', iiim: 'F#m', IV: 'G', V: 'A', vim: 'Bm', vii: 'C#°', bVII: 'C' }, 'Eb': { I: 'Eb', iim: 'Fm', iiim: 'Gm', IV: 'Ab', V: 'Bb', vim: 'Cm', vii: 'D°', bVII: 'Db' }, 'E': { I: 'E', iim: 'F#m', iiim: 'G#m', IV: 'A', V: 'B', vim: 'C#m', vii: 'D#°', bVII: 'D' }, 'F': { I: 'F', iim: 'Gm', iiim: 'Am', IV: 'Bb', V: 'C', vim: 'Dm', vii: 'E°', bVII: 'Eb' }, 'F#': { I: 'F#', iim: 'G#m', iiim: 'A#m', IV: 'B', V: 'C#', vim: 'D#m', vii: 'E#°', bVII: 'E' }, 'G': { I: 'G', iim: 'Am', iiim: 'Bm', IV: 'C', V: 'D', vim: 'Em', vii: 'F#°', bVII: 'F' }, 'Ab': { I: 'Ab', iim: 'Bbm', iiim: 'Cm', IV: 'Db', V: 'Eb', vim: 'Fm', vii: 'G°', bVII: 'Gb' }, 'A': { I: 'A', iim: 'Bm', iiim: 'C#m', IV: 'D', V: 'E', vim: 'F#m', vii: 'G#°', bVII: 'G' }, 'Bb': { I: 'Bb', iim: 'Cm', iiim: 'Dm', IV: 'Eb', V: 'F', vim: 'Gm', vii: 'A°', bVII: 'Ab' }, 'B': { I: 'B', iim: 'C#m', iiim: 'D#m', IV: 'E', V: 'F#', vim: 'G#m', vii: 'A#°', bVII: 'A' }, };
+            const seventhTonalities = { 'C': { Imaj7: 'Cmaj7', iim7: 'Dm7', iiim7: 'Em7', IVmaj7: 'Fmaj7', V7: 'G7', vim7: 'Am7', viim7b5: 'Bø', bVII7: 'Bb7' }, 'Db': { Imaj7: 'Dbmaj7', iim7: 'Ebm7', iiim7: 'Fm7', IVmaj7: 'Gbmaj7', V7: 'Ab7', vim7: 'Bbm7', viim7b5: 'Cø', bVII7: 'Cb7' }, 'D': { Imaj7: 'Dmaj7', iim7: 'Em7', iiim7: 'F#m7', IVmaj7: 'Gmaj7', V7: 'A7', vim7: 'Bm7', viim7b5: 'C#ø', bVII7: 'C7' }, 'Eb': { Imaj7: 'Ebmaj7', iim7: 'Fm7', iiim7: 'Gm7', IVmaj7: 'Abmaj7', V7: 'Bb7', vim7: 'Cm7', viim7b5: 'Dø', bVII7: 'Db7' }, 'E': { Imaj7: 'Emaj7', iim7: 'F#m7', iiim7: 'G#m7', IVmaj7: 'Amaj7', V7: 'B7', vim7: 'C#m7', viim7b5: 'D#ø', bVII7: 'D7' }, 'F': { Imaj7: 'Fmaj7', iim7: 'Gm7', iiim7: 'Am7', IVmaj7: 'Bbmaj7', V7: 'C7', vim7: 'Dm7', viim7b5: 'Eø', bVII7: 'Eb7' }, 'F#': { Imaj7: 'F#maj7', iim7: 'G#m7', iiim7: 'A#m7', IVmaj7: 'Bmaj7', V7: 'C#7', vim7: 'D#m7', viim7b5: 'E#ø', bVII7: 'E7' }, 'G': { Imaj7: 'Gmaj7', iim7: 'Am7', iiim7: 'Bm7', IVmaj7: 'Cmaj7', V7: 'D7', vim7: 'Em7', viim7b5: 'F#ø', bVII7: 'F7' }, 'Ab': { Imaj7: 'Abmaj7', iim7: 'Bbm7', iiim7: 'Cm7', IVmaj7: 'Dbmaj7', V7: 'Eb7', vim7: 'Fm7', viim7b5: 'Gø', bVII7: 'Gb7' }, 'A': { Imaj7: 'Amaj7', iim7: 'Bm7', iiim7: 'C#m7', IVmaj7: 'Dmaj7', V7: 'E7', vim7: 'F#m7', viim7b5: 'G#ø', bVII7: 'G7' }, 'Bb': { Imaj7: 'Bbmaj7', iim7: 'Cm7', iiim7: 'Dm7', IVmaj7: 'Ebmaj7', V7: 'F7', vim7: 'Gm7', viim7b5: 'Aø', bVII7: 'Ab7' }, 'B': { Imaj7: 'Bmaj7', iim7: 'C#m7', iiim7: 'D#m7', IVmaj7: 'Emaj7', V7: 'F#7', vim7: 'G#m7', viim7b5: 'A#ø', bVII7: 'A7' }, };
+            const triadProgressions = { 'I - IV - V': ['I', 'IV', 'V'], 'I - V - vi - IV': ['I', 'V', 'vim', 'IV'], 'I - vi - IV - V': ['I', 'vim', 'IV', 'V'], 'I - vi - ii - V': ['I', 'vim', 'iim', 'V'], 'ii - V - I': ['iim', 'V', 'I'], 'I - iii - vi - V': ['I', 'iiim', 'vim', 'V'], 'I - bVII - IV': ['I', 'bVII', 'IV'] };
+            const seventhProgressions = { 'Imaj7 - IVmaj7 - V7': ['Imaj7', 'IVmaj7', 'V7'], 'iim7 - V7 - Imaj7': ['iim7', 'V7', 'Imaj7'], 'Imaj7 - V7 - vim7 - IVmaj7': ['Imaj7', 'V7', 'vim7', 'IVmaj7'], 'Imaj7 - vim7 - IVmaj7 - V7': ['Imaj7', 'vim7', 'IVmaj7', 'V7'], 'Imaj7 - vim7 - iim7 - V7': ['Imaj7', 'vim7', 'iim7', 'V7'], 'Imaj7 - iiim7 - vim7 - V7': ['Imaj7', 'iiim7', 'vim7', 'V7'], 'Imaj7 - bVII7 - IVmaj7': ['Imaj7', 'bVII7', 'IVmaj7'] };
+            const triadChordFunctions = { 'I': 'Tónica', 'iim': 'Subdominante', 'iiim': 'Tónica', 'IV': 'Subdominante', 'V': 'Dominante', 'vim': 'Tónica', 'vii': 'Dominante', 'bVII': 'Subdominante' };
+            const seventhChordFunctions = { 'Imaj7': 'Tónica', 'iim7': 'Subdominante', 'iiim7': 'Tónica', 'IVmaj7': 'Subdominante', 'V7': 'Dominante', 'vim7': 'Tónica', 'viim7b5': 'Dominante', 'bVII7': 'Subdominante' };
+            const functionColors = { 'Tónica': 'tonic', 'Subdominante': 'sub-dominant', 'Dominante': 'dominant' };
+            
+            const tonalitySelector = document.getElementById('tonality-selector');
+            const progressionSelector = document.getElementById('progression-selector');
+            const modeSelector = document.getElementById('mode-selector');
+            const chordsDisplay = document.getElementById('chords-display');
+            const placeholderText = document.getElementById('placeholder-text');
+            const tonalityDegreesContainer = document.getElementById('tonality-degrees-container');
+            const tonalityChordsDisplay = document.getElementById('tonality-chords-display');
+            const tonalityNamePlaceholder = document.getElementById('tonality-name-placeholder');
+            const exportSongContainer = document.getElementById('export-song-container');
+            const exportSongBtn = document.getElementById('export-song-btn');
+            
+            let progressionsState = { tonality: null, mode: 'triads', progression: null };
+
+            function createVisualButtons(selectorEl, data, activeKey) { selectorEl.innerHTML = ''; Object.keys(data).forEach(key => { const btn = document.createElement('button'); btn.className = 'control-btn px-3 py-2 rounded-md bg-gray-700 text-gray-300 text-sm'; btn.textContent = key; btn.dataset.value = key; if (key === activeKey) btn.classList.add('active'); selectorEl.appendChild(btn); }); }
+            function generateHarmonicField(tonalityKey) { const triads = triadTonalities[tonalityKey]; const sevenths = seventhTonalities[tonalityKey]; if (!triads) return {}; const field = {}; const allNumerals = [...new Set([...Object.keys(triads), ...Object.keys(sevenths)])]; allNumerals.forEach(numeral => { if (triads[numeral]) field[numeral] = triads[numeral]; if (sevenths[numeral]) field[numeral] = sevenths[numeral]; }); return field; }
+            function displayResults() { const { tonality, mode, progression } = progressionsState; exportSongContainer.classList.add('hidden'); if (!tonality) { tonalityDegreesContainer.classList.add('hidden'); placeholderText.textContent = 'Selecciona una tonalidad para empezar.'; placeholderText.classList.remove('hidden'); chordsDisplay.classList.add('hidden'); progressionSelector.innerHTML = ''; return; } const harmonicField = generateHarmonicField(tonality); displayTonalityDegrees(harmonicField); if (!progression) { placeholderText.textContent = 'Ahora, elige una progresión.'; placeholderText.classList.remove('hidden'); chordsDisplay.classList.add('hidden'); } else { displayProgression(progression, harmonicField); } }
+            function displayProgression(progressionKey, harmonicField) { const useSevenths = progressionsState.mode === 'jazzy' || progressionsState.mode === 'tetrads'; const progressions = useSevenths ? seventhProgressions : triadProgressions; const functions = useSevenths ? seventhChordFunctions : triadChordFunctions; const progressionNumerals = progressions[progressionKey]; chordsDisplay.innerHTML = ''; progressionNumerals.forEach(numeral => { const chordName = harmonicField[numeral]; const functionName = functions[numeral]; const colorClass = functionColors[functionName]; const chordCard = `<div class="flex flex-col items-center gap-3 text-center p-4 bg-gray-700 rounded-lg shadow-md w-28 md:w-32"><div class="text-3xl font-bold text-teal-300">${chordName || '?'}</div><div class="text-sm text-gray-400 font-mono">${numeral}</div><div class="function-label ${colorClass}">${functionName}</div></div>`; chordsDisplay.innerHTML += chordCard; }); placeholderText.classList.add('hidden'); chordsDisplay.classList.remove('hidden'); chordsDisplay.classList.add('flex'); exportSongContainer.classList.remove('hidden'); }
+            function displayTonalityDegrees(harmonicField) { const tonalityDisplayNames = { 'Db': 'C# / Db', 'Eb': 'D# / Eb', 'F#': 'F# / Gb', 'Ab': 'G# / Ab', 'Bb': 'A# / Bb' }; tonalityNamePlaceholder.textContent = tonalityDisplayNames[progressionsState.tonality] || progressionsState.tonality; tonalityChordsDisplay.innerHTML = ''; const numeralsToShow = progressionsState.mode === 'tetrads' ? ['Imaj7', 'iim7', 'iiim7', 'IVmaj7', 'V7', 'vim7', 'viim7b5'] : ['I', 'iim', 'iiim', 'IV', 'V', 'vim', 'vii']; numeralsToShow.forEach(numeral => { let chordName, functionName, colorClass; const baseNumeral = numeral.replace(/maj7|m7b5|m7|7/g, '').replace('ø', 'vii'); if (progressionsState.mode === 'dominant7' && baseNumeral === 'V') { const seventhNumeral = 'V7'; chordName = harmonicField[seventhNumeral]; functionName = seventhChordFunctions[seventhNumeral]; } else if (progressionsState.mode === 'jazzy' && ['I', 'iim', 'IV', 'V'].includes(baseNumeral)) { const seventhNumeral = Object.keys(seventhChordFunctions).find(k => k.toLowerCase().startsWith(baseNumeral.toLowerCase().replace('°', 'm7b5'))); chordName = harmonicField[seventhNumeral]; functionName = seventhChordFunctions[seventhNumeral]; } else { chordName = harmonicField[numeral]; functionName = progressionsState.mode === 'tetrads' ? seventhChordFunctions[numeral] : triadChordFunctions[numeral]; } colorClass = functionColors[functionName]; const degreeCard = `<div class="flex flex-col items-center gap-2 text-center p-3 bg-gray-700/50 rounded-lg shadow-md flex-grow" style="min-width: 80px;"><div class="text-xl font-bold text-teal-300">${chordName || '?'}</div><div class="text-xs text-gray-400 font-mono">${numeral}</div><div class="function-label text-xs ${colorClass}">${functionName}</div></div>`; tonalityChordsDisplay.innerHTML += degreeCard; }); tonalityDegreesContainer.classList.remove('hidden'); }
+            function updateUI() { const tonalityDisplayNames = { 'Db': 'C# / Db', 'Eb': 'D# / Eb', 'F#': 'F# / Gb', 'Ab': 'G# / Ab', 'Bb': 'A# / Bb' }; const tonalitiesForButtons = {}; Object.keys(triadTonalities).forEach(k => tonalitiesForButtons[tonalityDisplayNames[k] || k] = k); const activeTonalityKey = Object.keys(tonalitiesForButtons).find(key => tonalitiesForButtons[key] === progressionsState.tonality); createVisualButtons(tonalitySelector, tonalitiesForButtons, activeTonalityKey); if (progressionsState.tonality) { const useSevenths = progressionsState.mode === 'jazzy' || progressionsState.mode === 'tetrads'; const progressions = useSevenths ? seventhProgressions : triadProgressions; createVisualButtons(progressionSelector, progressions, progressionsState.progression); } else { progressionSelector.innerHTML = '<p class="text-gray-500 text-sm">Elige una tonalidad para ver las progresiones</p>'; } displayResults(); }
+            
+            function exportProgressionToSong() {
+                if (!progressionsState.progression) return;
+                
+                const useSevenths = progressionsState.mode === 'jazzy' || progressionsState.mode === 'tetrads';
+                const progressions = useSevenths ? seventhProgressions : triadProgressions;
+                const harmonicField = generateHarmonicField(progressionsState.tonality);
+                const progressionNumerals = progressions[progressionsState.progression];
+
+                const numeralToChordTypeMap = { 'maj7': 'Séptima (Maj)', 'm7': 'Menor 7', '7': 'Séptima (Dom)', 'ø': 'Semidisminuido', 'm': 'Menor', '°': 'Disminuido', 'aug': 'Aumentado' };
+
+                mySongChords = progressionNumerals.map(numeral => {
+                    const chordName = harmonicField[numeral];
+                    const root = chordName.match(/^[A-G][#b]?/)[0];
+                    const suffix = chordName.substring(root.length);
+                    
+                    let chordType = 'Mayor'; // Default
+                    if (suffix.includes('maj7')) chordType = 'Séptima (Maj)';
+                    else if (suffix.includes('m7')) chordType = 'Menor 7';
+                    else if (suffix.includes('7')) chordType = 'Séptima (Dom)';
+                    else if (suffix.includes('ø')) chordType = 'Semidisminuido';
+                    else if (suffix.includes('m')) chordType = 'Menor';
+                    else if (suffix.includes('°')) chordType = 'Disminuido';
+                    else if (suffix.includes('aug')) chordType = 'Aumentado';
+
+                    const rootNoteMidi = notes[root] + 48;
+                    const formula = chordFormulas[chordType];
+                    const chordNotes = formula.intervals.map(interval => rootNoteMidi + interval.s);
+
+                    return { id: Date.now() + Math.random(), notes: chordNotes, details: { root: root, type: chordType, inversion: 0 }};
+                });
+                
+                window.renderSongPage();
+                document.querySelector('.nav-btn[data-page="song"]').click();
+            }
+
+            tonalitySelector.addEventListener('click', e => { const button = e.target.closest('.control-btn'); if (!button) return; const tonalityDisplayNames = { 'Db': 'C# / Db', 'Eb': 'D# / Eb', 'F#': 'F# / Gb', 'Ab': 'G# / Ab', 'Bb': 'A# / Bb' }; const tonalitiesForButtons = {}; Object.keys(triadTonalities).forEach(k => tonalitiesForButtons[tonalityDisplayNames[k] || k] = k); progressionsState.tonality = tonalitiesForButtons[button.dataset.value]; progressionsState.progression = null; updateUI(); });
+            progressionSelector.addEventListener('click', e => { const button = e.target.closest('.control-btn'); if (!button) return; progressionsState.progression = button.dataset.value; updateUI(); });
+            modeSelector.addEventListener('click', (e) => { const button = e.target.closest('.mode-btn'); if (!button) return; progressionsState.mode = button.dataset.value; progressionsState.progression = null; modeSelector.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active')); button.classList.add('active'); updateUI(); });
+            exportSongBtn.addEventListener('click', exportProgressionToSong);
+            document.addEventListener('DOMContentLoaded', updateUI);
+        })();
+
+        // --- LÓGICA PÁGINA 2: ACORDES EN PIANO ---
+        (function pianoChords() {
+            let pianoState = { root: 'C', type: 'Mayor', inversion: 0 };
+            const rootNoteSelector = document.getElementById('piano-root-note-selector');
+            const chordTypeSelector = document.getElementById('piano-chord-type-selector');
+            const inversionSelector = document.getElementById('piano-inversion-selector');
+            const pianoKeyboard = document.getElementById('piano-keyboard');
+            const addToSongBtn = document.getElementById('add-to-song-btn');
+            const PIANO_START_NOTE = 48; const PIANO_END_NOTE = 71;
+
+            function createPiano() { pianoKeyboard.innerHTML = ''; let whiteKeyIndex = 0; for (let i = PIANO_START_NOTE; i <= PIANO_END_NOTE; i++) { const noteName = noteNames[i % 12]; if (!noteName.includes('#')) { const keyElement = document.createElement('div'); keyElement.className = 'key white'; keyElement.dataset.midi = i; const noteNameElement = document.createElement('div'); noteNameElement.className = 'note-name'; noteNameElement.textContent = noteName; keyElement.appendChild(noteNameElement); pianoKeyboard.appendChild(keyElement); } } for (let i = PIANO_START_NOTE; i <= PIANO_END_NOTE; i++) { const noteName = noteNames[i % 12]; if (!noteName.includes('#')) { whiteKeyIndex++; } else { const keyElement = document.createElement('div'); keyElement.className = 'key black'; keyElement.dataset.midi = i; keyElement.style.left = `${(whiteKeyIndex * 50) - 15}px`; const noteNameElement = document.createElement('div'); noteNameElement.className = 'note-name'; noteNameElement.textContent = noteName; keyElement.appendChild(noteNameElement); pianoKeyboard.appendChild(keyElement); } } }
+            function createControlButtons(selectorEl, data, activeValue, stateKey) { selectorEl.innerHTML = ''; Object.entries(data).forEach(([key, value]) => { const btn = document.createElement('button'); btn.className = 'control-btn px-3 py-2 rounded-md bg-gray-700 text-gray-300'; btn.textContent = key; btn.dataset.value = (stateKey === 'inversion') ? value : key; if (key === activeValue || value === activeValue) { btn.classList.add('active'); } selectorEl.appendChild(btn); }); }
+            function setupEventListeners() { rootNoteSelector.addEventListener('click', (e) => handleControlClick(e, 'root')); chordTypeSelector.addEventListener('click', (e) => handleControlClick(e, 'type')); inversionSelector.addEventListener('click', (e) => handleControlClick(e, 'inversion')); addToSongBtn.addEventListener('click', addCurrentChordToSong); }
+            function handleControlClick(e, stateKey) { const button = e.target.closest('.control-btn'); if (!button) return; const valueToSet = button.dataset.value; pianoState[stateKey] = (stateKey === 'inversion') ? parseInt(valueToSet, 10) : valueToSet; if (stateKey === 'type') { pianoState.inversion = 0; } updateUI(); }
+            function updateUI() { const rootNoteData = {}; noteNames.forEach(n => rootNoteData[n] = n); createControlButtons(rootNoteSelector, rootNoteData, pianoState.root, 'root'); createControlButtons(chordTypeSelector, chordFormulas, pianoState.type, 'type'); const selectedChord = chordFormulas[pianoState.type]; const noteCount = selectedChord.intervals.length; const inversions = { 'Fundamental': 0, '1ra Inversión': 1, '2da Inversión': 2 }; if (noteCount === 4) { inversions['3ra Inversión'] = 3; } const activeInversionKey = Object.keys(inversions).find(key => inversions[key] === pianoState.inversion); createControlButtons(inversionSelector, inversions, activeInversionKey, 'inversion'); calculateAndHighlightChord(); }
+            function calculateChordNotes() { const rootNoteMidi = notes[pianoState.root] + 48; const selectedChord = chordFormulas[pianoState.type]; let chordNotes = selectedChord.intervals.map(interval => ({ midi: rootNoteMidi + interval.s, interval: interval.n })); for (let i = 0; i < pianoState.inversion; i++) { if (chordNotes.length > 0) { let firstNote = chordNotes.shift(); firstNote.midi += 12; chordNotes.push(firstNote); } } return chordNotes; }
+            function calculateAndHighlightChord() { const chordNotes = calculateChordNotes(); pianoKeyboard.querySelectorAll('.key').forEach(key => { key.classList.remove('highlighted'); const oldInterval = key.querySelector('.interval-name'); if(oldInterval) oldInterval.remove(); }); chordNotes.forEach(note => { let midiToDisplay = note.midi; while (midiToDisplay > PIANO_END_NOTE) { midiToDisplay -= 12; } while (midiToDisplay < PIANO_START_NOTE) { midiToDisplay += 12; } const keyElement = pianoKeyboard.querySelector(`.key[data-midi="${midiToDisplay}"]`); if (keyElement) { keyElement.classList.add('highlighted'); const intervalElement = document.createElement('div'); intervalElement.className = 'interval-name'; intervalElement.textContent = note.interval; keyElement.appendChild(intervalElement); } }); }
+            function addCurrentChordToSong() { const chordNotes = calculateChordNotes(); const chordInfo = { id: Date.now(), notes: chordNotes.map(n => n.midi), details: { ...pianoState } }; mySongChords.push(chordInfo); window.renderSongPage(); const originalText = addToSongBtn.textContent; addToSongBtn.textContent = '¡Agregado!'; addToSongBtn.classList.add('bg-indigo-600'); setTimeout(() => { addToSongBtn.textContent = originalText; addToSongBtn.classList.remove('bg-indigo-600'); }, 1000); }
+            document.addEventListener('DOMContentLoaded', () => { if(pianoKeyboard) { createPiano(); setupEventListeners(); updateUI(); } });
+        })();
+
+        // --- LÓGICA PÁGINA 3: TOCAR CANCIÓN ---
+        (function songPlayer() {
+            const container = document.getElementById('song-chords-container');
+            const placeholder = document.getElementById('song-placeholder');
+            const songControlsContainer = document.getElementById('song-controls-container');
+            const clearBtn = document.getElementById('clear-song-btn');
+            const saveBtn = document.getElementById('save-song-btn');
+            const saveModal = document.getElementById('save-song-modal');
+            const cancelSaveBtn = document.getElementById('cancel-save-btn');
+            const confirmSaveBtn = document.getElementById('confirm-save-btn');
+            const songTitleInput = document.getElementById('song-title-input');
+            const savedSongsSelect = document.getElementById('saved-songs-select');
+            const PIANO_START_NOTE = 48; const PIANO_END_NOTE = 71;
+
+            function createMiniPiano(notesToHighlight) {
+                const pianoEl = document.createElement('div');
+                pianoEl.className = 'mini-piano';
+                let whiteKeyIndex = 0;
+                for (let i = PIANO_START_NOTE; i <= PIANO_END_NOTE; i++) {
+                    const noteName = noteNames[i % 12];
+                    if (!noteName.includes('#')) {
+                        const keyElement = document.createElement('div');
+                        keyElement.className = 'key white';
+                        if (notesToHighlight.includes(i)) keyElement.classList.add('highlighted');
+                        pianoEl.appendChild(keyElement);
+                    }
+                }
+                for (let i = PIANO_START_NOTE; i <= PIANO_END_NOTE; i++) {
+                    const noteName = noteNames[i % 12];
+                    if (!noteName.includes('#')) {
+                        whiteKeyIndex++;
+                    } else {
+                        const keyElement = document.createElement('div');
+                        keyElement.className = 'key black';
+                        keyElement.style.left = `${(whiteKeyIndex * 25) - 7.5}px`;
+                        if (notesToHighlight.includes(i)) keyElement.classList.add('highlighted');
+                        pianoEl.appendChild(keyElement);
+                    }
+                }
+                return pianoEl;
+            }
+
+            function renderSavedSongsSelect() {
+                savedSongsSelect.innerHTML = '<option value="">Cargar una canción...</option>';
+                savedSongs.forEach(song => {
+                    const option = document.createElement('option');
+                    option.value = song.id;
+                    option.textContent = song.title;
+                    savedSongsSelect.appendChild(option);
+                });
+            }
+
+            window.renderSongPage = function() {
+                container.innerHTML = '';
+                if (mySongChords.length === 0) {
+                    placeholder.classList.remove('hidden');
+                    songControlsContainer.classList.add('hidden');
+                    return;
+                }
+                
+                placeholder.classList.add('hidden');
+                songControlsContainer.classList.remove('hidden');
+
+                const inversionMap = { 0: 'Fundamental', 1: '1ra Inversión', 2: '2da Inversión', 3: '3ra Inversión' };
+
+                mySongChords.forEach(chord => {
+                    const chordWrapper = document.createElement('div');
+                    chordWrapper.className = 'bg-gray-700/50 p-4 rounded-lg flex items-center justify-between gap-4 w-full max-w-lg';
+                    
+                    const notesToDisplay = chord.notes.map(midi => {
+                        let midiToDisplay = midi;
+                        while (midiToDisplay > PIANO_END_NOTE) midiToDisplay -= 12;
+                        while (midiToDisplay < PIANO_START_NOTE) midiToDisplay += 12;
+                        return midiToDisplay;
+                    });
+
+                    const miniPiano = createMiniPiano(notesToDisplay);
+                    
+                    const chordNameEl = document.createElement('div');
+                    chordNameEl.className = 'text-center flex-grow';
+                    const inversionText = inversionMap[chord.details.inversion] || '';
+                    chordNameEl.innerHTML = `
+                        <p class="font-bold text-lg text-teal-300">${chord.details.root} ${chord.details.type}</p>
+                        <p class="text-sm text-gray-400">${inversionText}</p>
+                    `;
+
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.className = 'control-btn bg-red-800 text-white text-xs py-1 px-3 rounded-full flex-shrink-0';
+                    deleteBtn.textContent = 'Eliminar';
+                    deleteBtn.dataset.id = chord.id;
+
+                    chordWrapper.appendChild(miniPiano);
+                    chordWrapper.appendChild(chordNameEl);
+                    chordWrapper.appendChild(deleteBtn);
+                    container.appendChild(chordWrapper);
+                });
+            }
+
+            container.addEventListener('click', (e) => {
+                if(e.target.dataset.id) {
+                    const idToDelete = parseInt(e.target.dataset.id, 10);
+                    mySongChords = mySongChords.filter(c => c.id !== idToDelete);
+                    window.renderSongPage();
+                }
+            });
+
+            clearBtn.addEventListener('click', () => {
+                mySongChords = [];
+                window.renderSongPage();
+            });
+
+            saveBtn.addEventListener('click', () => {
+                songTitleInput.value = '';
+                saveModal.classList.remove('hidden');
+            });
+
+            cancelSaveBtn.addEventListener('click', () => saveModal.classList.add('hidden'));
+
+            confirmSaveBtn.addEventListener('click', () => {
+                const title = songTitleInput.value.trim();
+                if (title && mySongChords.length > 0) {
+                    const newSong = { id: Date.now(), title: title, chords: mySongChords };
+                    savedSongs.push(newSong);
+                    localStorage.setItem('savedSongs', JSON.stringify(savedSongs));
+                    renderSavedSongsSelect();
+                    saveModal.classList.add('hidden');
+                }
+            });
+
+            savedSongsSelect.addEventListener('change', (e) => {
+                const songId = parseInt(e.target.value, 10);
+                if (!songId) return;
+                const songToLoad = savedSongs.find(s => s.id === songId);
+                if (songToLoad) {
+                    mySongChords = songToLoad.chords;
+                    window.renderSongPage();
+                }
+            });
+
+            document.addEventListener('DOMContentLoaded', () => {
+                savedSongs = JSON.parse(localStorage.getItem('savedSongs')) || [];
+                renderSavedSongsSelect();
+                window.renderSongPage();
+            });
+        })();
+    </script>
+</body>
+</html>
