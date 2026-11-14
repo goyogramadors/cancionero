@@ -19,6 +19,7 @@
   var VENTANA = 14;      // segundos de trazo a la vista
   var X_AHORA = 0.72;    // dónde va el punto (fracción del ancho)
   var PROM = 0.5;        // segundos que promedia el cartel
+  var SUAVE = 0.3;       // constante de tiempo (s) del suavizado del trazo
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -90,11 +91,24 @@
 
     c.muestra = function (midi) {
       var t = ahora();
-      if (midi == null) return;
-      c.traza.push({ t: t, m: midi });
+      if (midi == null) { c.suave = null; c.fuera = 0; return; }
+      // La voz cantada tiembla ±medio semitono varias veces por segundo aunque
+      // la nota se sostenga (un silbido no). El trazo va suavizado para que una
+      // nota sostenida se vea plana; un cambio de nota de verdad (más de 1,2
+      // semitonos, dos muestras seguidas) corta el suavizado y se dibuja al tiro.
+      var dt = c.tPrev ? Math.min(0.1, Math.max(0.005, t - c.tPrev)) : 0.02;
+      c.tPrev = t;
+      if (c.suave == null) c.suave = midi;
+      else if (Math.abs(midi - c.suave) > 1.2) {
+        if (++c.fuera >= 2) { c.suave = midi; c.fuera = 0; }
+      } else {
+        c.fuera = 0;
+        c.suave += (midi - c.suave) * (1 - Math.exp(-dt / SUAVE));
+      }
+      c.traza.push({ t: t, m: c.suave });
       while (c.traza.length && t - c.traza[0].t > VENTANA + 2) c.traza.shift();
     };
-    c.limpiar = function () { c.traza = []; c.cartel = null; };
+    c.limpiar = function () { c.traza = []; c.cartel = null; c.suave = null; };
     c.ultima = function () {
       var p = c.traza[c.traza.length - 1];
       return p && ahora() - p.t < 0.3 ? p : null;
@@ -150,8 +164,8 @@
         } else if (natural) {
           g.strokeStyle = C.line; g.lineWidth = 1;
           g.beginPath(); g.moveTo(margenIzq, y); g.lineTo(W, y); g.stroke();
-          if (paso >= 13) {
-            g.fillStyle = C.faint; g.font = '11px system-ui, sans-serif';
+          if (paso >= 11) {
+            g.fillStyle = C.faint; g.font = (paso >= 13 ? 11 : 10) + 'px system-ui, sans-serif';
             g.fillText(nombreNota(m, c.latin).replace(/-?\d+$/, ''), 6, y);
           }
         }
@@ -198,22 +212,17 @@
         g.strokeStyle = C.bg; g.lineWidth = 2;
         g.beginPath(); g.arc(xAhora, yp, 11, 0, Math.PI * 2); g.stroke();
 
-        var txt = nombreNota(c.cartel, c.latin);
-        var cents = Math.round((prom - c.cartel) * 100);
-        var sub = Math.abs(cents) <= 12 ? 'afinada' : (cents > 0 ? '+' + cents + ' alta' : cents + ' baja');
+        // solo el nombre de la nota más cercana: la octava se lee en las líneas
+        var txt = nombreNota(c.cartel, c.latin).replace(/-?\d+$/, '');
         g.font = '800 24px system-ui, sans-serif';
-        var wT = g.measureText(txt).width;
-        g.font = '11px system-ui, sans-serif';
-        var wS = g.measureText(sub).width;
-        var bw = Math.max(wT, wS) + 22, bh = 50;
+        var bw = g.measureText(txt).width + 22, bh = 38;
         var bx = Math.min(W - bw - 6, xAhora + 20), by = Math.max(4, Math.min(H - bh - 4, yp - bh / 2));
         g.fillStyle = C.ink;
         g.beginPath();
         if (g.roundRect) g.roundRect(bx, by, bw, bh, 6); else g.rect(bx, by, bw, bh);
         g.fill();
-        g.fillStyle = C.bg; g.textAlign = 'left'; g.textBaseline = 'alphabetic';
-        g.font = '800 24px system-ui, sans-serif'; g.fillText(txt, bx + 11, by + 27);
-        g.font = '11px system-ui, sans-serif'; g.fillText(sub, bx + 11, by + 42);
+        g.fillStyle = C.bg; g.textAlign = 'left'; g.textBaseline = 'middle';
+        g.fillText(txt, bx + 11, by + bh / 2 + 1);
       } else if (!ult) {
         c.cartel = null;
       }
@@ -273,7 +282,7 @@
       '<div class="ka-scope kl">' +
       '<button class="back" id="klVolver">← Canta</button>' +
       '<div class="rep-head"><h1>Canta Libre</h1><span class="count" id="klRango"></span></div>' +
-      '<p class="ed-note">Canta lo que quieras: el punto sigue tu voz, el cartel dice la nota y el trazo queda dibujado. ' +
+      '<p class="ed-note">Canta lo que quieras: el micrófono parte encendido, el punto sigue tu voz, el cartel dice la nota y el trazo queda dibujado. ' +
       'Las líneas gruesas son los Do.</p>' +
       '<div class="kl-ctl">' + SEG_MIC +
       '<div class="ctl"><span class="ctl-label">Trazo</span><button class="mini-app-btn" id="klLimpiar">Limpiar</button></div>' +
@@ -291,10 +300,10 @@
     var estado = function (m) { var e = q('#klEstado'); if (e) e.textContent = m || ''; };
 
     var carril = Carril(q('#klCanvas'), {
-      latin: cfg.latin !== false, span: 24, centro: rg ? (rg.lo + rg.hi) / 2 : 57
+      latin: cfg.latin !== false, span: 48, centro: rg ? (rg.lo + rg.hi) / 2 : 57
     });
     carril.banda = rg;
-    carril.aviso = 'Prende el micrófono y canta';
+    carril.aviso = 'Canta: el micrófono ya está escuchando';
 
     q('#klRango').innerHTML = rg
       ? 'Tu rango: ' + esc(nombreNota(rg.lo, carril.latin)) + ' a ' + esc(nombreNota(rg.hi, carril.latin)) +
@@ -302,10 +311,19 @@
       : '<a href="#/canta/rango">Medir mi rango vocal</a>';
 
     var t0 = ahora();
-    Escucha(view, cfg, carril.muestra, function () {
-      var t = ahora() - t0;
-      return 57 + 6 * Math.sin(t * 0.45) + 0.18 * Math.sin(t * 6.5);
+    var escucha = Escucha(view, cfg, carril.muestra, function () {
+      // prueba: notas sostenidas con el temblor típico de la voz
+      var t = ahora() - t0, k = Math.floor(t / 2.5) % 6;
+      return 55 + [0, 2, 4, 7, 4, 12][k] + 0.45 * Math.sin(t * 34) + 0.2 * Math.sin(t * 13);
     }, estado);
+    // El micrófono parte encendido. Si el navegador todavía no deja sonar la
+    // página (se entró directo por el link), el primer toque lo despierta.
+    escucha.poner('mic');
+    var despertar = function () {
+      var a = SB.cantaEngine.ctx();
+      if (a.state === 'suspended' && a.resume) a.resume();
+    };
+    document.addEventListener('pointerdown', despertar);
 
     q('#klVolver').addEventListener('click', function () { ctx.navigate('canta'); });
     q('#klLimpiar').addEventListener('click', function () { carril.limpiar(); });
@@ -361,7 +379,7 @@
       });
     });
 
-    return function () { vivo = false; carril.parar(); SB.cantaPitch.stop(); quitar(); };
+    return function () { vivo = false; document.removeEventListener('pointerdown', despertar); carril.parar(); SB.cantaPitch.stop(); quitar(); };
   }
 
   /* ================= RANGO VOCAL ================= */
