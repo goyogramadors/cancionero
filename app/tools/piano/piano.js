@@ -18,7 +18,13 @@
 (function () {
   window.SB = window.SB || {};
 
-  var CFGKEY = 'sb.piano.cfg', PROGKEY = 'sb.piano.progreso';
+  // Sitios satélite (p. ej. goyogramadors/profedomingo) comparten el origen
+  // goyogramadors.github.io y por lo tanto el localStorage: con un prefijo
+  // propio su progreso no se mezcla con el del cancionero personal.
+  var PRE = window.SB_PIANO_PREFIJO || 'sb.piano';
+  var SATELITE = !!window.SB_PIANO_SATELITE;      // sin Cancionero al lado
+  var QW_DEFECTO = window.SB_PIANO_QW !== false;  // teclas del computador al entrar
+  var CFGKEY = PRE + '.cfg', PROGKEY = PRE + '.progreso';
   var S = { view: null, ctx: null, cfg: null, uni: null, lec: null, st: {}, onKey: null, held: new Set(), midi: null };
 
   /* ================= teoría: nombres y deletreo ================= */
@@ -326,7 +332,7 @@
   var QW_KEY = { tab: 0, '1': 1, q: 2, '2': 3, w: 4, e: 5, '4': 6, r: 7, '5': 8, t: 9, '6': 10, y: 11, u: 12, '8': 13, i: 14, '9': 15,
     o: 16, p: 17, "'": 18, '`': 19, '^': 19, '[': 19, '¡': 20, '=': 20, '+': 21, '*': 21, ']': 21, backspace: 22, enter: 23 };
   var tactil = !!(window.matchMedia && window.matchMedia('(hover: none)').matches);
-  function qwOn() { return !tactil && !(S.cfg && S.cfg.qw === false); }
+  function qwOn() { var v = S.cfg && S.cfg.qw; return !tactil && (v == null ? QW_DEFECTO : v !== false); }
   function baseQw() { var b = S.cfg && S.cfg.qwBase; return b >= 36 && b <= 72 ? b : 60; }
   function tecladoTexto() {
     var b = baseQw();
@@ -1131,7 +1137,7 @@
           st.titulo = p.nom + ' en ' + ver(raiz) + (p.modo === 'menor' ? ' menor' : '');
         }
         st.k = 0; st.sel = []; st.listo = false;
-        consigna(opts.cancion ? 'Acordes de una canción de tu Cancionero: tócalos en orden' : 'Toca cada acorde en orden; al completar las notas, pasa solo al siguiente', st.titulo, 'Puedes usar cualquier inversión. Mientras tocas no suena nada más: tú eres el acompañamiento.');
+        consigna(opts.cancion ? (SATELITE ? 'Acordes de una progresión típica: tócalos en orden' : 'Acordes de una canción de tu Cancionero: tócalos en orden') : 'Toca cada acorde en orden; al completar las notas, pasa solo al siguiente', st.titulo, 'Puedes usar cualquier inversión. Mientras tocas no suena nada más: tú eres el acompañamiento.');
         pintar();
         S.onKey = function (m, origen) {
           if (origen !== 'midi') return;
@@ -1185,7 +1191,7 @@
   function cancionAlAzar() {
     var lib = [], M = SB.music;
     try {
-      SB.store.library().forEach(function (m) {
+      (SATELITE ? [] : SB.store.library()).forEach(function (m) {
         var s = SB.store.get(m.id); if (!s || !s.parts) return;
         var seq = [];
         s.parts.forEach(function (p) {
@@ -1199,7 +1205,7 @@
     } catch (e) {}
     if (!lib.length) {
       var p = prog('pop'), as = acordesProg(p, 'G');
-      return { titulo: p.nom + ' en ' + ver('G') + ' (agrega canciones con acordes al Cancionero para practicar con ellas)', acordes: as.map(function (a) { return { raiz: a.raiz, tipo: a.tipo, rom: a.rom, nombre: cifra(a.raiz, a.tipo), pcs: pcsAcorde(a.raiz, a.tipo) }; }) };
+      return { titulo: p.nom + ' en ' + ver('G') + (SATELITE ? '' : ' (agrega canciones con acordes al Cancionero para practicar con ellas)'), acordes: as.map(function (a) { return { raiz: a.raiz, tipo: a.tipo, rom: a.rom, nombre: cifra(a.raiz, a.tipo), pcs: pcsAcorde(a.raiz, a.tipo) }; }) };
     }
     var c = azar(lib);
     return { titulo: c.titulo, acordes: c.acordes.map(function (n) {
@@ -1573,6 +1579,15 @@
         txt: 'Última tarea: grados con séptima, en mayor y en menor, con las dos manos. Si esto sale solo, puedes acompañar lo que te pongan adelante. Después, la mejor práctica es el propio Cancionero: elige una canción, ponle el ritmo que le quede y tócala completa.' }
     ] }
   ];
+  // En un sitio satélite no hay Cancionero al lado: los textos no lo nombran.
+  if (SATELITE) UNIDADES.forEach(function (u) {
+    u.lecciones.forEach(function (l) {
+      if (!l.txt) return;
+      l.txt = l.txt
+        .replace(', y es lo que guarda tu Cancionero. Aquí tocas en orden los acordes de una canción de tu Cancionero (si no tiene ninguna con acordes, usa una progresión).', '. Aquí tocas en orden los acordes de una progresión típica.')
+        .replace('la mejor práctica es el propio Cancionero: elige una canción,', 'la mejor práctica es una canción que te guste: busca su cifrado,');
+    });
+  });
   function unidad(id) { for (var i = 0; i < UNIDADES.length; i++) if (UNIDADES[i].id === id) return UNIDADES[i]; return null; }
   UNIDADES.forEach(function (u) { u.lecciones.forEach(function (l) { l.id = u.id + '/' + l.id; l.uni = u; }); });
   function leccion(u, id) { for (var i = 0; i < u.lecciones.length; i++) if (u.lecciones[i].id === u.id + '/' + id) return u.lecciones[i]; return null; }
@@ -1591,7 +1606,7 @@
      mejor resultado, el último, cuántas veces y en qué tono quedó el círculo
      de quintas (la próxima sesión sigue desde ahí). Las rutinas encadenan
      varios ejercicios cortos, mezclados (práctica intercalada). */
-  var PRACKEY = 'sb.piano.practica';
+  var PRACKEY = PRE + '.practica';
   var TODAS_PROGS = ['folk', 'pop', '50s', 'emo', 'menor', 'andaluza', 'iivi'];
   var PRACTICAS = [
     { grupo: 'Teclado y notas', items: [

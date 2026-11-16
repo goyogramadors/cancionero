@@ -304,3 +304,24 @@ refresca en la carga siguiente).
   contraseña (PBKDF2-SHA256, 600.000 iteraciones, mínimo 16 caracteres). En un dispositivo nuevo,
   "Desbloquear" lee ese archivo **sin token** (API pública) y lo descifra localmente. La contraseña
   nunca sale del navegador; la seguridad depende de su largo, porque el archivo es público.
+
+## Piano para alumnos (sitio satélite, repo aparte)
+
+`goyogramadors/profedomingo` (https://goyogramadors.github.io/profedomingo/) muestra **solo** la
+herramienta Piano (lecciones y práctica), con el mismo esquema que «Canta para alumnos»: su
+`index.html` carga `core/music.js`, `registry.js`, `ui.js`, `store.js`, `piano-sonido.js`,
+`tools/piano/piano.js` y `core/app.js` de este repo por ruta absoluta (`/cancionero/app/...`).
+No carga `core/nube.js`: el avance queda solo en el navegador de cada persona.
+
+`piano.js` lee tres globales que ese `index.html` fija antes de cargarlo:
+
+- `SB_PIANO_PREFIJO` (`'pd.piano'`): prefijo de las claves de `localStorage` (`.cfg`, `.progreso`,
+  `.practica`). Los dos sitios comparten origen y por lo tanto `localStorage`; con el prefijo, el
+  avance del sitio satélite no se mezcla con el del cancionero personal (`sb.piano.*`).
+- `SB_PIANO_SATELITE` (`true`): no hay Cancionero al lado; los ejercicios no leen canciones de
+  `SB.store` y los textos no lo nombran.
+- `SB_PIANO_QW` (`false`): las teclas del computador parten apagadas (el botón «⌨ Teclas» las prende
+  y la elección queda guardada).
+
+Si cambia `piano.js` u otro archivo de ese shell, además de subir `CACHE` acá hay que subirlo en
+`profedomingo/sw.js` (`profedomingo-vN`).
