@@ -305,9 +305,10 @@ refresca en la carga siguiente).
   "Desbloquear" lee ese archivo **sin token** (API pública) y lo descifra localmente. La contraseña
   nunca sale del navegador; la seguridad depende de su largo, porque el archivo es público.
 
-## Piano para alumnos (sitio satélite, repo aparte)
+## Piano para alumnos (sitio satélite, carpeta `profedomingo/`)
 
-`goyogramadors/profedomingo` (https://goyogramadors.github.io/profedomingo/) muestra **solo** la
+La carpeta `profedomingo/` de este repo (https://goyogramadors.github.io/cancionero/profedomingo/;
+Gregorio prefirió no abrir otro repositorio, 16-11-2026) muestra **solo** la
 herramienta Piano (lecciones y práctica), con el mismo esquema que «Canta para alumnos»: su
 `index.html` carga `core/music.js`, `registry.js`, `ui.js`, `store.js`, `piano-sonido.js`,
 `tools/piano/piano.js` y `core/app.js` de este repo por ruta absoluta (`/cancionero/app/...`).

@@ -1,0 +1,5 @@
+/* Ajustes visuales SOLO de este sitio. Se carga después de
+   /cancionero/app/css/base.css, que no se toca desde acá. */
+.top .wordmark{white-space:nowrap}
+/* Una sola herramienta: no hace falta la barra de pestañas. */
+#navPrimary,#navSecondary{display:none}
