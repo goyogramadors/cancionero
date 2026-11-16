@@ -24,6 +24,9 @@
   var PRE = window.SB_PIANO_PREFIJO || 'sb.piano';
   var SATELITE = !!window.SB_PIANO_SATELITE;      // sin Cancionero al lado
   var QW_DEFECTO = window.SB_PIANO_QW !== false;  // teclas del computador al entrar
+  // HTML propio del sitio satélite para la columna derecha de la portada (su logo)
+  var TITULO = window.SB_PIANO_TITULO || 'Piano popular';   // título de la portada
+  var LATERAL = typeof window.SB_PIANO_LATERAL === 'string' ? window.SB_PIANO_LATERAL : '';
   var CFGKEY = PRE + '.cfg', PROGKEY = PRE + '.progreso';
   var S = { view: null, ctx: null, cfg: null, uni: null, lec: null, st: {}, onKey: null, held: new Set(), midi: null };
 
@@ -1817,13 +1820,14 @@
     var pendiente = null;
     UNIDADES.some(function (u) { return u.lecciones.some(function (l) { if (!(p[l.id] && p[l.id].hecha)) { pendiente = l; return true; } return false; }); });
     S.view.innerHTML =
-      '<div class="pk-scope pk-ancho">' + tabsHtml('lecciones') +
-      '<div class="rep-head"><div><h1>Piano popular</h1><p class="artist">' + hechas + ' de ' + total + ' lecciones completadas</p></div>' +
+      '<div class="pk-scope pk-ancho">' + (LATERAL ? '<div class="pk-portada"><div class="pk-port-izq">' : '') + tabsHtml('lecciones') +
+      '<div class="rep-head"><div><h1>' + esc(TITULO) + '</h1><p class="artist">' + hechas + ' de ' + total + ' lecciones completadas</p></div>' +
       '<div class="ka-head-btns">' + segHtml('pkNot', [['1', 'Do Re Mi'], ['0', 'C D E']], S.cfg.latin ? '1' : '0') +
       '<button class="mini-app-btn" id="pkMidi" title="Si tienes un piano digital conectado por USB, sus teclas cuentan en los ejercicios">Teclado MIDI</button>' +
       (pendiente ? '<button class="pr-play pk-go" id="pkSeguir">SEGUIR: ' + esc(pendiente.nom) + '</button>' : '') + '</div></div>' +
       '<p class="ed-note">Piano para acompañar canciones, no piano clásico. Cada unidad tiene lecciones cortas; cada lección es una tarea con un ejercicio que se resuelve con el mouse sobre el teclado (o con un piano MIDI) y queda marcada al cumplir la meta. Conviene ir en orden.</p>' +
       '<p class="set-status" id="pkAviso"></p>' +
+      (LATERAL ? '</div><div class="pk-port-der">' + LATERAL + '</div></div>' : '') +
       '<div class="pk-unis">' + UNIDADES.map(function (u, i) {
         var h = hechasDe(u), n = u.lecciones.length;
         return '<section class="pk-uni' + (h === n ? ' lista' : '') + '"><div class="pk-uni-head"><h2><span class="pk-num">' + (i + 1) + '</span>' + esc(u.nom) + '</h2><span class="pk-uni-av">' + h + '/' + n + '</span></div>' +

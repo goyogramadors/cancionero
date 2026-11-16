@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#ffffff">
-  <title>Piano · Profe Domingo</title>
+  <title>Teoría Musical en el piano · Profesor Domingo</title>
   <meta name="description" content="Lecciones y práctica de piano popular, paso a paso. Tu avance queda guardado en este navegador.">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icono-192.png" type="image/png">
@@ -14,12 +14,10 @@
 </head>
 <body>
   <div class="app">
-    <header class="top">
-      <span class="wordmark">Piano · Profe Domingo</span>
-      <nav class="tabs" id="navPrimary" role="tablist" hidden></nav>
-      <div id="navSecondary" hidden></div>
-      <img class="pd-logo" src="logo.jpg" alt="Profesor Domingo" width="428" height="436">
-    </header>
+    <!-- Sin barra superior: el logo va en la portada (SB_PIANO_LATERAL). La
+         navegación queda oculta porque el sitio tiene una sola herramienta. -->
+    <nav id="navPrimary" hidden></nav>
+    <div id="navSecondary" hidden></div>
     <main id="view"></main>
   </div>
 
@@ -31,6 +29,9 @@
     window.SB_PIANO_PREFIJO = 'pd.piano';  // progreso propio, aparte del cancionero personal
     window.SB_PIANO_SATELITE = true;       // sin Cancionero al lado
     window.SB_PIANO_QW = false;            // teclas del computador apagadas al entrar
+    window.SB_PIANO_TITULO = 'Teoría Musical en el piano';
+    // columna derecha de la portada: la estampilla
+    window.SB_PIANO_LATERAL = '<img class="pd-logo" src="logo.webp" alt="Profesor Domingo" width="720" height="574">';
   </script>
 
   <!-- Núcleo compartido, reusado tal cual desde app/ -->
