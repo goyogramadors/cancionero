@@ -9,7 +9,7 @@ const SHELL = [
   'index.html',
   'manifest.webmanifest',
   'theme.css',
-  'logo.jpg',
+  'logo.webp',
   'icono-192.png',
   '/cancionero/app/css/base.css',
   '/cancionero/app/core/music.js',
