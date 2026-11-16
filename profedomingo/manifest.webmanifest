@@ -1,0 +1,13 @@
+{
+  "name": "Piano · Profe Domingo",
+  "short_name": "Piano",
+  "description": "Lecciones y práctica de piano popular, paso a paso.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    { "src": "icono.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <title>Piano · Profe Domingo</title>
+  <meta name="description" content="Lecciones y práctica de piano popular, paso a paso. Tu avance queda guardado en este navegador.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icono.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icono.svg">
+  <link rel="stylesheet" href="/cancionero/app/css/base.css">
+  <link rel="stylesheet" href="theme.css">
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <span class="wordmark">Piano · Profe Domingo</span>
+      <nav class="tabs" id="navPrimary" role="tablist" hidden></nav>
+      <div id="navSecondary" hidden></div>
+    </header>
+    <main id="view"></main>
+  </div>
+
+  <script>
+    // Sitio de una sola herramienta (las lecciones y la práctica de Piano).
+    // Vive en una carpeta de este mismo repo y reusa el código de app/ por
+    // ruta ABSOLUTA, sin duplicar nada. Detalle en app/ARQUITECTURA.md ->
+    // "Piano para alumnos".
+    window.SB_PIANO_PREFIJO = 'pd.piano';  // progreso propio, aparte del cancionero personal
+    window.SB_PIANO_SATELITE = true;       // sin Cancionero al lado
+    window.SB_PIANO_QW = false;            // teclas del computador apagadas al entrar
+  </script>
+
+  <!-- Núcleo compartido, reusado tal cual desde app/ -->
+  <script src="/cancionero/app/core/music.js"></script>
+  <script src="/cancionero/app/core/registry.js"></script>
+  <script src="/cancionero/app/core/ui.js"></script>
+  <script src="/cancionero/app/core/store.js"></script>
+
+  <!-- Solo la herramienta Piano. Sin core/nube.js: el avance queda en este navegador. -->
+  <script src="/cancionero/app/core/piano-sonido.js"></script>
+  <script src="/cancionero/app/tools/piano/piano.js"></script>
+
+  <!-- Arranque (mismo core/app.js: router por hash y registro de SW) -->
+  <script src="/cancionero/app/core/app.js"></script>
+</body>
+</html>
