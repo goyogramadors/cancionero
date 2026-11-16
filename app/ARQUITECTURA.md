@@ -323,6 +323,10 @@ No carga `core/nube.js`: el avance queda solo en el navegador de cada persona.
   `SB.store` y los textos no lo nombran.
 - `SB_PIANO_QW` (`false`): las teclas del computador parten apagadas (el botón «⌨ Teclas» las prende
   y la elección queda guardada).
+- `SB_PIANO_TITULO`: título de la portada (por defecto «Piano popular»).
+- `SB_PIANO_LATERAL` (HTML): parte la portada en dos columnas; a la izquierda van pestañas, título,
+  botones y texto, y a la derecha ese HTML (el logo). Los estilos de esas columnas (`.pk-portada`)
+  viven en `profedomingo/theme.css`.
 
 Si cambia `piano.js` u otro archivo de ese shell, además de subir `CACHE` acá hay que subirlo en
 `profedomingo/sw.js` (`profedomingo-vN`).
