@@ -4,12 +4,13 @@
    plano. El shell incluye rutas absolutas hacia /cancionero/app/.
    Si cambia algún archivo del shell, sube el número de CACHE.
    ============================================================ */
-const CACHE = 'profedomingo-v1';
+const CACHE = 'profedomingo-v2';
 const SHELL = [
   'index.html',
   'manifest.webmanifest',
   'theme.css',
-  'icono.svg',
+  'logo.jpg',
+  'icono-192.png',
   '/cancionero/app/css/base.css',
   '/cancionero/app/core/music.js',
   '/cancionero/app/core/registry.js',

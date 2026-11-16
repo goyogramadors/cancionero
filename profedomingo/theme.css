@@ -3,3 +3,15 @@
 .top .wordmark{white-space:nowrap}
 /* Una sola herramienta: no hace falta la barra de pestañas. */
 #navPrimary,#navSecondary{display:none}
+
+/* Colores del sitio: el café de la tinta del logo en las letras. El sitio es
+   siempre claro (el logo es una estampilla sobre papel), aunque el equipo o
+   el cancionero personal estén en tema oscuro. */
+html:root, html:root[data-theme]{
+  --bg:#ffffff; --ink:#4c3526; --mut:#8a7566; --faint:#b9a999;
+  --line:#e9e0d4; --panel:#fbf7f1; --chip:#f4ece1; --inv:#4c3526; --inv-ink:#ffffff;
+}
+/* Logo arriba a la derecha */
+header.top{align-items:center}
+.pd-logo{display:block;height:84px;width:auto;margin-left:auto}
+@media (max-width:600px){ .pd-logo{height:60px} }
